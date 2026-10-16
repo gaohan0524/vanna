@@ -1513,6 +1513,8 @@ You can:
         async def _stream_once() -> LlmResponse:
             accumulated_content = ""
             accumulated_tool_calls = []
+            finish_reason = None
+            usage = None
             async for chunk in self.llm_service.stream_request(request):
                 if chunk.content:
                     accumulated_content += chunk.content
@@ -1521,9 +1523,17 @@ You can:
                 if chunk.tool_calls:
                     accumulated_tool_calls.extend(chunk.tool_calls)
 
+                # 收集结束原因与 token 用量（通常在终止分片中携带）
+                if chunk.finish_reason:
+                    finish_reason = chunk.finish_reason
+                if chunk.usage:
+                    usage = chunk.usage
+
             return LlmResponse(
                 content=accumulated_content if accumulated_content else None,
                 tool_calls=accumulated_tool_calls if accumulated_tool_calls else None,
+                finish_reason=finish_reason,
+                usage=usage,
             )
 
         # Create span for streaming

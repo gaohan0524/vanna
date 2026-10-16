@@ -69,7 +69,7 @@ class AzureOpenAILlmService(LlmService):
         **extra_client_kwargs: Any,
     ) -> None:
         try:
-            from openai import AzureOpenAI
+            from openai import AsyncAzureOpenAI
         except Exception as e:  # pragma: no cover
             raise ImportError(
                 "openai package is required. Install with: pip install 'vanna[azureopenai]' "
@@ -114,15 +114,15 @@ class AzureOpenAILlmService(LlmService):
                 )
             client_kwargs["api_key"] = api_key
 
-        self._client = AzureOpenAI(**client_kwargs)
+        self._client = AsyncAzureOpenAI(**client_kwargs)
         self._is_reasoning_model = _is_reasoning_model(self.model)
 
     async def send_request(self, request: LlmRequest) -> LlmResponse:
         """Send a non-streaming request to Azure OpenAI and return the response."""
         payload = self._build_payload(request)
 
-        # Call the API synchronously; this function is async but we can block here.
-        resp = self._client.chat.completions.create(**payload, stream=False)
+        # 异步调用，避免在事件循环里阻塞线程
+        resp = await self._client.chat.completions.create(**payload, stream=False)
 
         if not resp.choices:
             return LlmResponse(content=None, tool_calls=None, finish_reason=None)
@@ -159,15 +159,27 @@ class AzureOpenAILlmService(LlmService):
         accumulated and emitted in a final chunk when the stream ends.
         """
         payload = self._build_payload(request)
+        # 请求在流末尾携带 usage（用于成本核算与截断判断）
+        payload.setdefault("stream_options", {})["include_usage"] = True
 
-        # Synchronous streaming iterator; iterate within async context.
-        stream = self._client.chat.completions.create(**payload, stream=True)
+        # 异步流式调用
+        stream = await self._client.chat.completions.create(**payload, stream=True)
 
         # Builders for streamed tool-calls (index -> partial)
         tc_builders: Dict[int, Dict[str, Optional[str]]] = {}
         last_finish: Optional[str] = None
+        usage: Optional[Dict[str, int]] = None
 
-        for event in stream:
+        async for event in stream:
+            # 携带 usage 的终止分片（choices 为空但 usage 非空）
+            if getattr(event, "usage", None):
+                u = event.usage
+                usage = {
+                    "prompt_tokens": int(getattr(u, "prompt_tokens", 0) or 0),
+                    "completion_tokens": int(getattr(u, "completion_tokens", 0) or 0),
+                    "total_tokens": int(getattr(u, "total_tokens", 0) or 0),
+                }
+
             if not getattr(event, "choices", None):
                 continue
 
@@ -225,10 +237,14 @@ class AzureOpenAILlmService(LlmService):
             )
 
         if final_tool_calls:
-            yield LlmStreamChunk(tool_calls=final_tool_calls, finish_reason=last_finish)
+            yield LlmStreamChunk(
+                tool_calls=final_tool_calls,
+                finish_reason=last_finish,
+                usage=usage,
+            )
         else:
             # Still emit a terminal chunk to signal completion
-            yield LlmStreamChunk(finish_reason=last_finish or "stop")
+            yield LlmStreamChunk(finish_reason=last_finish or "stop", usage=usage)
 
     async def validate_tools(self, tools: List[ToolSchema]) -> List[str]:
         """Validate tool schemas. Returns a list of error messages."""

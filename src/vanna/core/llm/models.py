@@ -102,5 +102,7 @@ class LlmStreamChunk(BaseModel):
     tool_calls: Optional[List[ToolCall]] = None
     # 结束原因
     finish_reason: Optional[str] = None
+    # token 用量统计（通常在流的终止分片中给出）
+    usage: Optional[Dict[str, int]] = None
     # 附加元数据
     metadata: Dict[str, Any] = Field(default_factory=dict)

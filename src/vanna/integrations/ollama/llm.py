@@ -59,16 +59,16 @@ class OllamaLlmService(LlmService):
         self.temperature = temperature
         self.extra_options = extra_options
 
-        # Create Ollama client
-        self._client = ollama.Client(host=self.host, timeout=timeout)
+        # Create Ollama async client
+        self._client = ollama.AsyncClient(host=self.host, timeout=timeout)
 
     async def send_request(self, request: LlmRequest) -> LlmResponse:
         """Send a non-streaming request to Ollama and return the response."""
         payload = self._build_payload(request)
 
-        # Call the Ollama API
+        # 异步调用 Ollama API
         try:
-            resp = self._client.chat(**payload)
+            resp = await self._client.chat(**payload)
         except Exception as e:
             raise RuntimeError(f"Ollama request failed: {str(e)}") from e
 
@@ -105,17 +105,18 @@ class OllamaLlmService(LlmService):
         """
         payload = self._build_payload(request)
 
-        # Ollama streaming
+        # Ollama 异步流式
         try:
-            stream = self._client.chat(**payload, stream=True)
+            stream = await self._client.chat(**payload, stream=True)
         except Exception as e:
             raise RuntimeError(f"Ollama streaming request failed: {str(e)}") from e
 
         # Accumulate tool calls if present
         accumulated_tool_calls: List[ToolCall] = []
         last_finish: Optional[str] = None
+        usage: Optional[Dict[str, int]] = None
 
-        for chunk in stream:
+        async for chunk in stream:
             message = chunk.get("message", {})
 
             # Yield text content
@@ -128,18 +129,26 @@ class OllamaLlmService(LlmService):
             if tool_calls:
                 accumulated_tool_calls.extend(tool_calls)
 
-            # Track finish reason
+            # Track finish reason + usage on terminal chunk
             if chunk.get("done"):
                 last_finish = chunk.get("done_reason", "stop")
+                usage = {
+                    "prompt_tokens": chunk.get("prompt_eval_count", 0),
+                    "completion_tokens": chunk.get("eval_count", 0),
+                    "total_tokens": chunk.get("prompt_eval_count", 0)
+                    + chunk.get("eval_count", 0),
+                }
 
         # Emit final chunk with tool calls if any
         if accumulated_tool_calls:
             yield LlmStreamChunk(
-                tool_calls=accumulated_tool_calls, finish_reason=last_finish or "stop"
+                tool_calls=accumulated_tool_calls,
+                finish_reason=last_finish or "stop",
+                usage=usage,
             )
         else:
             # Emit terminal chunk to signal completion
-            yield LlmStreamChunk(finish_reason=last_finish or "stop")
+            yield LlmStreamChunk(finish_reason=last_finish or "stop", usage=usage)
 
     async def validate_tools(self, tools: List[ToolSchema]) -> List[str]:
         """Validate tool schemas. Returns a list of error messages."""
