@@ -3,6 +3,10 @@ Default system prompt builder implementation with memory workflow support.
 
 This module provides a default implementation of the SystemPromptBuilder interface
 that automatically includes memory workflow instructions when memory tools are available.
+
+本模块提供默认系统提示词构建器：它会根据「当前用户可见的工具」动态决定是否注入
+MEMORY SYSTEM 指令。当记忆相关工具（search/save）可用时，强制 LLM 形成「先检索历史
+成功模式 → 执行工具 → 保存成功经验」的闭环，这是 Vanna 持续学习能力的提示词侧实现。
 """
 
 from typing import TYPE_CHECKING, List, Optional
@@ -21,6 +25,9 @@ class DefaultSystemPromptBuilder(SystemPromptBuilder):
     Dynamically generates system prompts that include memory workflow
     instructions when memory tools (search_saved_correct_tool_uses and
     save_question_tool_args) are available.
+
+    默认构建器：固定输出 Vanna 分析师角色 + 响应准则 + 工具清单，并按可用工具
+    动态追加「工具使用记忆工作流」与「文本记忆」两类指令。
     """
 
     def __init__(self, base_prompt: Optional[str] = None):
@@ -28,6 +35,8 @@ class DefaultSystemPromptBuilder(SystemPromptBuilder):
 
         Args:
             base_prompt: Optional base system prompt. If not provided, uses a default.
+
+        若传入 base_prompt 则直接返回它（完全接管提示词），否则走默认的动态拼接逻辑。
         """
         self.base_prompt = base_prompt
 
@@ -48,12 +57,14 @@ class DefaultSystemPromptBuilder(SystemPromptBuilder):
             return self.base_prompt
 
         # Check which memory tools are available
+        # 根据当前可见工具决定注入哪些记忆指令（工具名即开关）
         tool_names = [tool.name for tool in tools]
         has_search = "search_saved_correct_tool_uses" in tool_names
         has_save = "save_question_tool_args" in tool_names
         has_text_memory = "save_text_memory" in tool_names
 
         # Get today's date
+        # 注入「今天日期」，帮助模型理解与时间相关的查询
         today_date = datetime.now().strftime("%Y-%m-%d")
 
         # Base system prompt
@@ -72,6 +83,7 @@ class DefaultSystemPromptBuilder(SystemPromptBuilder):
             )
 
         # Add memory workflow instructions based on available tools
+        # 仅当存在记忆类工具时才追加 MEMORY SYSTEM 段落
         if has_search or has_save or has_text_memory:
             prompt_parts.append("\n" + "=" * 60)
             prompt_parts.append("MEMORY SYSTEM:")
@@ -152,6 +164,7 @@ class DefaultSystemPromptBuilder(SystemPromptBuilder):
 
         if has_search or has_save or has_text_memory:
             # Remove empty strings from the list
+            # 过滤掉内联条件表达式产生的空串（某些工具缺失时对应行被置为 ""）
             prompt_parts = [part for part in prompt_parts if part != ""]
 
         return "\n".join(prompt_parts)

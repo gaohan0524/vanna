@@ -4,6 +4,11 @@ Agent memory tools.
 This module provides agent memory operations through an abstract AgentMemory interface,
 allowing for different implementations (local vector DB, remote cloud service, etc.).
 The tools access AgentMemory via ToolContext, which is populated by the Agent.
+
+中文说明：
+智能体记忆工具。本模块通过抽象的 AgentMemory 接口提供智能体记忆操作，
+允许使用不同的实现（本地向量数据库、远程云服务等）。
+这些工具通过由 Agent 填充的 ToolContext 来访问 AgentMemory。
 """
 
 import logging
@@ -23,7 +28,10 @@ from vanna.components import (
 
 
 class SaveQuestionToolArgsParams(BaseModel):
-    """Parameters for saving question-tool-argument combinations."""
+    """Parameters for saving question-tool-argument combinations.
+
+    中文：保存“问题-工具-参数”组合的参数模型。
+    """
 
     question: str = Field(description="The original question that was asked")
     tool_name: str = Field(
@@ -35,7 +43,10 @@ class SaveQuestionToolArgsParams(BaseModel):
 
 
 class SearchSavedCorrectToolUsesParams(BaseModel):
-    """Parameters for searching saved tool usage patterns."""
+    """Parameters for searching saved tool usage patterns.
+
+    中文：搜索已保存工具使用模式的参数模型。
+    """
 
     question: str = Field(
         description="The question to find similar tool usage patterns for"
@@ -52,13 +63,19 @@ class SearchSavedCorrectToolUsesParams(BaseModel):
 
 
 class SaveTextMemoryParams(BaseModel):
-    """Parameters for saving free-form text memories."""
+    """Parameters for saving free-form text memories.
+
+    中文：保存自由格式文本记忆的参数模型。
+    """
 
     content: str = Field(description="The text content to save as a memory")
 
 
 class SaveQuestionToolArgsTool(Tool[SaveQuestionToolArgsParams]):
-    """Tool for saving successful question-tool-argument combinations."""
+    """Tool for saving successful question-tool-argument combinations.
+
+    中文：用于保存成功“问题-工具-参数”组合的工具。
+    """
 
     @property
     def name(self) -> str:
@@ -76,7 +93,10 @@ class SaveQuestionToolArgsTool(Tool[SaveQuestionToolArgsParams]):
     async def execute(
         self, context: ToolContext, args: SaveQuestionToolArgsParams
     ) -> ToolResult:
-        """Save the tool usage pattern to agent memory."""
+        """Save the tool usage pattern to agent memory.
+
+        中文：将工具使用模式保存到智能体记忆。
+        """
         try:
             await context.agent_memory.save_tool_usage(
                 question=args.question,
@@ -118,7 +138,10 @@ class SaveQuestionToolArgsTool(Tool[SaveQuestionToolArgsParams]):
 
 
 class SearchSavedCorrectToolUsesTool(Tool[SearchSavedCorrectToolUsesParams]):
-    """Tool for searching saved tool usage patterns."""
+    """Tool for searching saved tool usage patterns.
+
+    中文：用于搜索已保存工具使用模式的工具。
+    """
 
     @property
     def name(self) -> str:
@@ -134,7 +157,10 @@ class SearchSavedCorrectToolUsesTool(Tool[SearchSavedCorrectToolUsesParams]):
     async def execute(
         self, context: ToolContext, args: SearchSavedCorrectToolUsesParams
     ) -> ToolResult:
-        """Search for similar tool usage patterns."""
+        """Search for similar tool usage patterns.
+
+        中文：搜索相似的工具使用模式。
+        """
         try:
             results = await context.agent_memory.search_similar_usage(
                 question=args.question,
@@ -149,7 +175,7 @@ class SearchSavedCorrectToolUsesTool(Tool[SearchSavedCorrectToolUsesParams]):
                     "No similar tool usage patterns found for this question."
                 )
 
-                # Check if user has access to detailed memory results
+                # 检查用户是否有权访问详细的记忆结果
                 ui_features_available = context.metadata.get(
                     "ui_features_available", []
                 )
@@ -158,9 +184,9 @@ class SearchSavedCorrectToolUsesTool(Tool[SearchSavedCorrectToolUsesParams]):
                     in ui_features_available
                 )
 
-                # Create UI component based on access level
+                # 根据访问级别创建 UI 组件
                 if show_detailed_results:
-                    # Admin view: Show card indicating 0 results
+                    # 管理员视图：显示“0 条结果”卡片
                     ui_component = UiComponent(
                         rich_component=CardComponent(
                             title="🧠 Memory Search: 0 Results",
@@ -174,7 +200,7 @@ class SearchSavedCorrectToolUsesTool(Tool[SearchSavedCorrectToolUsesParams]):
                         simple_component=None,
                     )
                 else:
-                    # Non-admin view: Simple status message
+                    # 非管理员视图：仅显示简单状态消息
                     ui_component = UiComponent(
                         rich_component=StatusBarUpdateComponent(
                             status="idle",
@@ -190,7 +216,7 @@ class SearchSavedCorrectToolUsesTool(Tool[SearchSavedCorrectToolUsesParams]):
                     ui_component=ui_component,
                 )
 
-            # Format results for LLM
+            # 格式化结果以供 LLM 使用
             results_text = f"Found {len(results)} similar tool usage pattern(s):\n\n"
             for i, result in enumerate(results, 1):
                 memory = result.memory
@@ -200,16 +226,16 @@ class SearchSavedCorrectToolUsesTool(Tool[SearchSavedCorrectToolUsesParams]):
 
             logger.info(f"Agent memory search results: {results_text.strip()}")
 
-            # Check if user has access to detailed memory results
+            # 检查用户是否有权访问详细的记忆结果
             ui_features_available = context.metadata.get("ui_features_available", [])
             show_detailed_results = (
                 UiFeature.UI_FEATURE_SHOW_MEMORY_DETAILED_RESULTS
                 in ui_features_available
             )
 
-            # Create UI component based on access level
+            # 根据访问级别创建 UI 组件
             if show_detailed_results:
-                # Admin view: Show detailed results in collapsible card
+                # 管理员视图：在可折叠卡片中显示详细结果
                 detailed_content = "**Retrieved memories passed to LLM:**\n\n"
                 for i, result in enumerate(results, 1):
                     memory = result.memory
@@ -235,7 +261,7 @@ class SearchSavedCorrectToolUsesTool(Tool[SearchSavedCorrectToolUsesParams]):
                     simple_component=None,
                 )
             else:
-                # Non-admin view: Simple status message
+                # 非管理员视图：仅显示简单状态消息
                 ui_component = UiComponent(
                     rich_component=StatusBarUpdateComponent(
                         status="success",
@@ -267,7 +293,10 @@ class SearchSavedCorrectToolUsesTool(Tool[SearchSavedCorrectToolUsesParams]):
 
 
 class SaveTextMemoryTool(Tool[SaveTextMemoryParams]):
-    """Tool for saving free-form text memories."""
+    """Tool for saving free-form text memories.
+
+    中文：用于保存自由格式文本记忆的工具。
+    """
 
     @property
     def name(self) -> str:
@@ -283,7 +312,10 @@ class SaveTextMemoryTool(Tool[SaveTextMemoryParams]):
     async def execute(
         self, context: ToolContext, args: SaveTextMemoryParams
     ) -> ToolResult:
-        """Save a text memory to agent memory."""
+        """Save a text memory to agent memory.
+
+        中文：将一条文本记忆保存到智能体记忆。
+        """
         try:
             text_memory = await context.agent_memory.save_text_memory(
                 content=args.content, context=context

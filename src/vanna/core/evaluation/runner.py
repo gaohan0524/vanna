@@ -4,6 +4,9 @@ Evaluation runner with parallel execution support.
 This module provides the EvaluationRunner class that executes test cases
 against agents with configurable parallelism for efficient evaluation,
 especially when comparing multiple LLMs or model versions.
+
+本模块提供评测执行器 EvaluationRunner：用可配置并发对智能体跑测试用例，支持单个
+评测、多变体对比与流式对比，尤其适用于「不同 LLM/模型版本」的高效对比评测。
 """
 
 import asyncio
@@ -42,6 +45,9 @@ class EvaluationRunner:
         ...     agent_variants=[claude_variant, gpt_variant],
         ...     test_cases=dataset.test_cases
         ... )
+
+    评测执行器：内部用 asyncio.Semaphore 限流并发；compare_agents 是 LLM 对比的主
+    入口（并行跑所有变体），compare_agents_streaming 用于实时观察进度的长评测。
     """
 
     def __init__(
@@ -303,6 +309,9 @@ class EvaluationRunner:
 
         # TODO: Extract tool calls and LLM requests from observability
         # For now, these will be empty unless we hook into observability
+        # 注意：目前 tool_calls / llm_requests 未从 observability 提取，恒为空列表。
+        # 因此 TrajectoryEvaluator 依赖的「工具调用轨迹」维度当前无法生效，需先接入
+        # 可观测性钩子才能补齐。  【待确认设计】
 
         return AgentResult(
             test_case_id=test_case.id,

@@ -3,6 +3,10 @@ Development utilities for validating Pydantic models.
 
 This module provides utilities that can be used during development
 and testing to catch forward reference issues early.
+
+本模块提供开发期工具：扫描包内所有 Pydantic 模型，尽早发现前向引用（forward
+reference）未解析、模型不完整等问题。核心包大量使用 TYPE_CHECKING 与字符串注解
+来规避循环导入，这些工具用于在测试/开发阶段提前暴露此类隐患。
 """
 
 from typing import Any, Dict, List, Tuple, Type
@@ -23,6 +27,9 @@ def validate_pydantic_models_in_package(package_name: str) -> Dict[str, Any]:
 
     Returns:
         Dictionary with validation results
+
+    遍历包的子模块，对每个 Pydantic 模型检查「前向引用」与「JSON Schema 是否可生成」，
+    汇总为包含 total_models / incomplete_models / summary 的结果字典。
     """
     results: Dict[str, Any] = {
         "total_models": 0,
@@ -36,6 +43,7 @@ def validate_pydantic_models_in_package(package_name: str) -> Dict[str, Any]:
         package = importlib.import_module(package_name)
 
         # Get all submodules
+        # 枚举包下所有子模块（跳过导入失败的，如缺少可选依赖）
         submodules = []
         if hasattr(package, "__path__"):
             import pkgutil
@@ -63,6 +71,7 @@ def validate_pydantic_models_in_package(package_name: str) -> Dict[str, Any]:
                     results["total_models"] += 1
 
                     # Check for forward references
+                    # 检测字段注解是否为尚未解析的前向引用（ForwardRef）
                     forward_refs: List[Tuple[str, str]] = []
                     for field_name, field_info in obj.model_fields.items():
                         annotation = field_info.annotation
@@ -74,6 +83,7 @@ def validate_pydantic_models_in_package(package_name: str) -> Dict[str, Any]:
                             )
 
                     # Check completeness
+                    # 以「能否生成 JSON Schema」作为模型完整性的判据
                     try:
                         obj.model_json_schema()
                         is_complete = True
@@ -116,6 +126,8 @@ def check_models_health() -> bool:
 
     Returns:
         True if all models are healthy, False otherwise
+
+    对核心包做一次快速健康检查，返回是否全部模型完好。
     """
     core_packages = [
         "vanna.core.tool.models",

@@ -1,4 +1,7 @@
-"""Tool for visualizing DataFrame data from CSV files."""
+"""Tool for visualizing DataFrame data from CSV files.
+
+中文说明：用于将 CSV 文件中的 DataFrame 数据可视化的工具。
+"""
 
 from typing import Optional, Type
 import logging
@@ -21,7 +24,10 @@ logger = logging.getLogger(__name__)
 
 
 class VisualizeDataArgs(BaseModel):
-    """Arguments for visualize_data tool."""
+    """Arguments for visualize_data tool.
+
+    中文：visualize_data 工具的参数模型。
+    """
 
     filename: str = Field(description="Name of the CSV file to visualize")
     title: Optional[str] = Field(
@@ -30,7 +36,10 @@ class VisualizeDataArgs(BaseModel):
 
 
 class VisualizeDataTool(Tool[VisualizeDataArgs]):
-    """Tool that reads CSV files and generates visualizations using dependency injection."""
+    """Tool that reads CSV files and generates visualizations using dependency injection.
+
+    中文：通过依赖注入读取 CSV 文件并生成可视化的工具。
+    """
 
     def __init__(
         self,
@@ -42,6 +51,10 @@ class VisualizeDataTool(Tool[VisualizeDataArgs]):
         Args:
             file_system: FileSystem implementation for reading CSV files (defaults to LocalFileSystem)
             plotly_generator: PlotlyChartGenerator for creating Plotly charts (defaults to PlotlyChartGenerator())
+
+        中文：使用 FileSystem 和 PlotlyChartGenerator 初始化工具。
+            file_system：用于读取 CSV 文件的 FileSystem 实现（默认 LocalFileSystem）
+            plotly_generator：用于生成 Plotly 图表的 PlotlyChartGenerator（默认 PlotlyChartGenerator()）
         """
         self.file_system = file_system or LocalFileSystem()
         self.plotly_generator = plotly_generator or PlotlyChartGenerator()
@@ -60,15 +73,18 @@ class VisualizeDataTool(Tool[VisualizeDataArgs]):
     async def execute(
         self, context: ToolContext, args: VisualizeDataArgs
     ) -> ToolResult:
-        """Read CSV file and generate visualization."""
+        """Read CSV file and generate visualization.
+
+        中文：读取 CSV 文件并生成可视化。
+        """
         try:
             logger.info(f"Starting visualization for file: {args.filename}")
 
-            # Read the CSV file using FileSystem
+            # 通过 FileSystem 读取 CSV 文件
             csv_content = await self.file_system.read_file(args.filename, context)
             logger.info(f"Read {len(csv_content)} bytes from CSV file")
 
-            # Parse CSV into DataFrame
+            # 将 CSV 解析为 DataFrame
             import io
 
             df = pd.read_csv(io.StringIO(csv_content))
@@ -76,22 +92,22 @@ class VisualizeDataTool(Tool[VisualizeDataArgs]):
                 f"Parsed DataFrame with shape {df.shape}, columns: {df.columns.tolist()}, dtypes: {df.dtypes.to_dict()}"
             )
 
-            # Generate title
+            # 生成图表标题
             title = args.title or f"Visualization of {args.filename}"
 
-            # Generate chart using PlotlyChartGenerator
+            # 使用 PlotlyChartGenerator 生成图表
             logger.info("Generating chart...")
             chart_dict = self.plotly_generator.generate_chart(df, title)
             logger.info(
                 f"Chart generated, type: {type(chart_dict)}, keys: {list(chart_dict.keys()) if isinstance(chart_dict, dict) else 'N/A'}"
             )
 
-            # Create result message
+            # 构造结果消息
             row_count = len(df)
             col_count = len(df.columns)
             result = f"Created visualization from '{args.filename}' ({row_count} rows, {col_count} columns)."
 
-            # Create ChartComponent
+            # 创建 ChartComponent 组件
             logger.info("Creating ChartComponent...")
             chart_component = ChartComponent(
                 chart_type="plotly",

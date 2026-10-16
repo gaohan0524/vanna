@@ -3,6 +3,9 @@ Evaluation reporting with HTML, CSV, and console output.
 
 This module provides classes for generating evaluation reports,
 including comparison reports for evaluating multiple agent variants.
+
+本模块提供评测报告：EvaluationReport（单智能体）与 ComparisonReport（多变体对比），
+支持控制台摘要、CSV 与 HTML 三种输出，用于模型对比时直观呈现通过率/得分/耗时。
 """
 
 import csv
@@ -23,6 +26,9 @@ class EvaluationReport:
         evaluators: List of evaluators used
         metadata: Additional metadata about the agent/run
         timestamp: When the evaluation was run
+
+    单个智能体的评测报告：汇总通过率、平均分、平均耗时、总 token 与失败用例，
+    提供 print_summary 控制台输出。
     """
 
     agent_name: str
@@ -96,6 +102,9 @@ class ComparisonReport:
         reports: Dict mapping variant name to EvaluationReport
         test_cases: Test cases used for comparison
         timestamp: When the comparison was run
+
+    多变体对比报告：LLM 对比场景的主报告类型。提供 get_best_variant（按指标选最优）、
+    save_csv / save_html（导出 CSV 与交互式 HTML 报告）。
     """
 
     variants: List[AgentVariant]

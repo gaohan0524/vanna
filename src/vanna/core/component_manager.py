@@ -1,5 +1,14 @@
 """
 Component state management and update protocol for rich components.
+
+本模块实现组件树的状态管理与增量更新协议：ComponentManager 维护一棵组件树
+（flat_index 支持 O(1) 查找）与 update_history 增量日志，通过 emit() 做智能生命周期
+判定（新 id → CREATE、已存在且 UPDATE → diff、否则 REPLACE），并支持 batch 批量与
+get_updates_since 增量同步。
+
+注意：这套持久化增量协议当前在 servers/base/rich_chat_handler.py 中被整体注释掉，
+运行时主链路是 Agent 直接流式 yield UiComponent，并不经过 ComponentManager 的
+状态树。它属于预留的「有状态前端」能力。  【待确认设计】
 """
 
 import uuid
@@ -13,7 +22,10 @@ from ..components.rich import ComponentLifecycle, RichComponent
 
 
 class UpdateOperation(str, Enum):
-    """Types of component update operations."""
+    """Types of component update operations.
+
+    更新操作类型：创建/更新/替换/移除/重排/批量更新。
+    """
 
     CREATE = "create"
     UPDATE = "update"
@@ -32,7 +44,11 @@ class Position(BaseModel):
 
 
 class ComponentUpdate(BaseModel):
-    """Represents a change to the component tree."""
+    """Represents a change to the component tree.
+
+    一次组件树变更：记录操作类型、目标组件、局部更新/位置信息，可序列化为前端
+    消费的增量指令（serialize_for_frontend）。
+    """
 
     operation: UpdateOperation
     target_id: str  # Component being affected
@@ -56,7 +72,10 @@ class ComponentUpdate(BaseModel):
 
 
 class ComponentNode(BaseModel):
-    """Node in the component tree."""
+    """Node in the component tree.
+
+    组件树节点：持有组件、子节点列表与父 ID，提供子树查找/删除/收集 ID 的能力。
+    """
 
     component: RichComponent
     children: List["ComponentNode"] = Field(default_factory=list)
@@ -91,7 +110,10 @@ class ComponentNode(BaseModel):
 
 
 class ComponentTree(BaseModel):
-    """Hierarchical structure for managing component layout."""
+    """Hierarchical structure for managing component layout.
+
+    组件的层级结构：root 表达树，flat_index 用 id→node 映射实现 O(1) 查找。
+    """
 
     root: Optional[ComponentNode] = None
     flat_index: Dict[str, ComponentNode] = Field(default_factory=dict)
@@ -209,7 +231,11 @@ class ComponentTree(BaseModel):
 
 
 class ComponentManager:
-    """Manages component lifecycle and state updates."""
+    """Manages component lifecycle and state updates.
+
+    组件生命周期与状态管理器：持有组件字典、组件树与更新历史，支持批量更新与
+    增量同步，是无状态后端实现「有状态前端」的预留能力。
+    """
 
     def __init__(self) -> None:
         self.components: Dict[str, RichComponent] = {}
@@ -218,7 +244,11 @@ class ComponentManager:
         self.active_batch: Optional[str] = None
 
     def emit(self, component: RichComponent) -> Optional[ComponentUpdate]:
-        """Emit a component with smart lifecycle management."""
+        """Emit a component with smart lifecycle management.
+
+        智能生命周期判定：新 id → CREATE；已存在且 lifecycle=UPDATE → 计算 diff 做
+        UPDATE；已存在但非 UPDATE → REPLACE。据此生成正确的增量指令并记录历史。
+        """
         if component.id in self.components:
             # Existing component - determine if this is an update or replace
             existing = self.components[component.id]
@@ -309,7 +339,10 @@ class ComponentManager:
     def get_updates_since(
         self, timestamp: Optional[str] = None
     ) -> List[ComponentUpdate]:
-        """Get all updates since a given timestamp."""
+        """Get all updates since a given timestamp.
+
+        增量同步：返回给定时间戳之后的全部更新；timestamp 为 None 时返回完整历史。
+        """
         if not timestamp:
             return self.update_history.copy()
 

@@ -7,6 +7,10 @@ user messages before they are sent to the LLM. This is useful for:
 - Pattern-based routing (e.g., report generation)
 - State-based workflows (e.g., onboarding flows)
 - Quota enforcement with custom responses
+
+本模块定义确定性工作流接口。它在用户消息进入 LLM 之前提供「短路」能力：命令处理、
+规则路由、状态机工作流、配额拦截等确定性逻辑无需调用 LLM 即可完成，既省 token 又
+保证响应可预期。
 """
 
 from abc import ABC, abstractmethod
@@ -62,6 +66,10 @@ class WorkflowResult:
 
         # Not handled, continue to agent
         WorkflowResult(should_skip_llm=False)
+
+    try_handle 的返回结果：should_skip_llm=True 表示本次消息已被确定性工作流处理，
+    跳过 LLM；components 支持 list 或 AsyncGenerator 两种流式形态；conversation_mutation
+    是可选回调，用于改写会话状态（如清空历史）。
     """
 
     should_skip_llm: bool
@@ -128,6 +136,11 @@ class WorkflowHandler(ABC):
         The agent automatically creates an "agent.workflow_handler" span when
         a WorkflowHandler is configured, allowing you to monitor handler
         performance and outcomes.
+
+    确定性工作流处理器抽象基类。它是 Agent 消息处理链路中的第一个扩展点：在用户
+    解析与会话加载之后、消息写入历史与调用 LLM 之前运行。try_handle 返回
+    should_skip_llm=True 时短路 LLM（且消息不自动入历史）；get_starter_ui 用于
+    会话打开时渲染欢迎/快捷操作。
     """
 
     @abstractmethod
@@ -191,6 +204,8 @@ class WorkflowHandler(ABC):
 
                 # Continue to agent
                 return WorkflowResult(should_skip_llm=False)
+
+        对每条用户消息在进入 LLM 前调用，决定是否由确定性工作流接管（短路）还是放行。
         """
         pass
 
@@ -250,5 +265,8 @@ class WorkflowHandler(ABC):
                     ]
 
                 return None
+
+        会话开始（空消息 / starter_ui_request 标记）时提供欢迎组件；返回 None 表示
+        不提供初始界面。
         """
         return None

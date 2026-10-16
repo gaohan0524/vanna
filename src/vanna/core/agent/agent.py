@@ -98,6 +98,10 @@ class Agent:
         user_resolver: UserResolver,
         agent_memory: AgentMemory,
         conversation_store: Optional[ConversationStore] = None,
+        # 注意：config / system_prompt_builder 的默认实例在「函数定义时」只求值一次，
+        # 所有未显式传参的 Agent 会共享同一实例；lifecycle_hooks 等空列表也是 Python
+        # 可变默认参数。当前代码对它们只读不写，暂无危害；若未来需要 mutate，应改为
+        # default_factory 模式，否则会出现跨实例的状态串扰。  【待确认设计】
         config: AgentConfig = AgentConfig(),
         system_prompt_builder: SystemPromptBuilder = DefaultSystemPromptBuilder(),
         lifecycle_hooks: List[LifecycleHook] = [],
@@ -110,6 +114,8 @@ class Agent:
         observability_provider: Optional[ObservabilityProvider] = None,
         audit_logger: Optional[AuditLogger] = None,
     ):
+        # 4 个必填依赖定义框架的四个自由度：换模型（llm_service）、换工具集
+        # （tool_registry）、换认证方式（user_resolver）、换记忆后端（agent_memory）。
         self.llm_service = llm_service
         self.tool_registry = tool_registry
         self.user_resolver = user_resolver
@@ -428,9 +434,12 @@ class Agent:
         if conversation_id is None:
             conversation_id = str(uuid.uuid4())
 
+        # request_id 每次请求都重新生成，用于本次请求内的链路追踪（工具执行、审计、
+        # 埋点都以它关联），与客户端传来的 ChatRequest.request_id 是两回事。
         request_id = str(uuid.uuid4())
 
         # Update status to working
+        # 先进入「处理中」状态；若后续异常，send_message 的容错壳负责复位，避免输入框卡死。
         yield UiComponent(  # type: ignore
             rich_component=StatusBarUpdateComponent(
                 status="working",
@@ -540,14 +549,18 @@ class Agent:
                 # Fall through to normal LLM processing on error
 
             finally:
+                # 注意：except 分支已 end_span，这里 finally 再 end_span 一次。因
+                # Span.end() 内部用 end_time 判空保护，重复结束是幂等的，无害。
                 if self.observability_provider and trigger_span:
                     await self.observability_provider.end_span(trigger_span)
 
         # Persist new conversation to store before adding message
+        # 新建会话先落库（此时尚无消息），确保后续流程中途失败时会话元数据不丢失。
         if is_new_conversation:
             await self.conversation_store.update_conversation(conversation)
 
         # Not triggered, add user message to conversation now
+        # 走到这里说明 workflow 未短路；用户消息此刻才写入历史，故 /help 等命令不会污染会话。
         conversation.add_message(Message(role="user", content=message))
 
         # Add initial task
@@ -561,6 +574,8 @@ class Agent:
         )
 
         # Collect available UI features for auditing
+        # 预计算当前用户可见的 UI 功能列表，注入 ToolContext.metadata，供 ToolRegistry
+        # 在执行工具时做审计，也与前端展示能力对齐（用户能看到什么信息）。
         ui_features_available = []
         for feature_name in self.config.ui_features.feature_group_access.keys():
             if self.config.ui_features.can_user_access_feature(feature_name, user):
@@ -714,6 +729,9 @@ class Agent:
 
                 if response.content is not None:
                     # Yield any partial content from the assistant before tool execution
+                    # 若 LLM 在调用工具前先「说了话」（如解释要查什么），这段文字是否作为
+                    # 聊天消息展示由 UI_FEATURE_SHOW_TOOL_INVOCATION_MESSAGE_IN_CHAT 控制；
+                    # 无权限时降级为状态栏提示而非丢弃，体现「不泄露但也不丢信息」。
                     has_tool_invocation_message_in_chat = (
                         self.config.ui_features.can_user_access_feature(
                             UiFeature.UI_FEATURE_SHOW_TOOL_INVOCATION_MESSAGE_IN_CHAT,
@@ -1000,6 +1018,8 @@ class Agent:
                         )
 
                     # Yield tool result
+                    # 结果展示遵循「成功人人可见，失败详情仅 tool_error 组可见」：错误信息
+                    # 会回喂 LLM（供自我修复），但默认不展示给普通用户（可能含 SQL 报错细节）。
                     if result.ui_component:
                         # For errors, check if user has access to see error details
                         if not result.success:
@@ -1096,6 +1116,8 @@ class Agent:
                 break
 
         # Check if we hit the tool iteration limit
+        # 注意语义：达到上限时，最后一次工具调用的结果已写回会话，但循环已退出，
+        # LLM 没有机会据此生成总结——用户得到的是「达到上限」警告而非那次查询的答案。
         if tool_iterations >= self.config.max_tool_iterations:
             # The loop exited due to hitting the limit, not due to a natural completion
             logger.warning(
@@ -1208,7 +1230,11 @@ You can:
                 )
 
     async def get_available_tools(self, user: User) -> List[ToolSchema]:
-        """Get tools available to the user."""
+        """Get tools available to the user.
+
+        便捷方法：返回该用户可见的工具 schema（已过第一道权限闸门），供外部
+        （如前端、评测脚本）了解当前用户的能力边界。
+        """
         return await self.tool_registry.get_schemas(user)
 
     async def _build_llm_request(
@@ -1251,6 +1277,8 @@ You can:
                         tags={"filter": filter.__class__.__name__},
                     )
 
+        # 存储模型（storage.Message）到 LLM 通信模型（LlmMessage）的映射点：两者字段
+        # 几乎一致但分属不同层，此处显式转换以解耦存储格式与模型协议。
         messages = []
         for msg in filtered_messages:
             llm_msg = LlmMessage(

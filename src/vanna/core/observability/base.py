@@ -3,6 +3,10 @@ Base observability provider interface.
 
 Observability providers allow you to collect telemetry data about
 agent execution for monitoring and debugging.
+
+本模块定义可观测性提供者的抽象基类。它是「横切面」扩展点之一：不传 provider 时
+Agent 全程零埋点开销（所有方法空实现），传入后即可把 span/metric 上报到任意监控
+后端（Prometheus、OpenTelemetry、日志等）。
 """
 
 from abc import ABC
@@ -43,6 +47,10 @@ class ObservabilityProvider(ABC):
             llm_service=...,
             observability_provider=PrometheusProvider(registry)
         )
+
+    可观测性提供者的抽象基类。所有方法都是空实现，因此不传该扩展点时框架行为
+    完全不变（零开销）。Agent 在整条链路的每个阶段都会调用 create_span / end_span /
+    record_metric，你只需重写关心的方法即可把遥测数据接入外部系统。
     """
 
     async def record_metric(
@@ -59,6 +67,8 @@ class ObservabilityProvider(ABC):
             value: Metric value
             unit: Unit of measurement (e.g., "ms", "tokens")
             tags: Additional tags/labels for the metric
+
+        记录一次指标测量（默认空实现，子类可上报到监控系统）。
         """
         pass
 
@@ -76,6 +86,9 @@ class ObservabilityProvider(ABC):
 
         Note:
             Call span.end() when the operation completes.
+
+        创建一个追踪 span（默认返回本地 Span 对象，不上报）。调用方应在操作完成后
+        调用 end_span 或 span.end() 关闭它。
         """
         return Span(name=name, attributes=attributes or {})
 
@@ -84,5 +97,7 @@ class ObservabilityProvider(ABC):
 
         Args:
             span: The span to end
+
+        结束并记录一个 span（默认实现仅调用 span.end() 标记结束时间）。
         """
         span.end()

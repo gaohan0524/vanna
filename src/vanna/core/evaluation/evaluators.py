@@ -6,6 +6,10 @@ This module provides ready-to-use evaluators for:
 - Output evaluation (content matching, quality)
 - LLM-as-judge evaluation (custom criteria)
 - Efficiency evaluation (time, tokens, cost)
+
+本模块提供四类开箱即用的评测器：轨迹评测（是否调用/未调用预期工具）、输出评测
+（答案内容匹配）、LLM 评委（用另一个 LLM 按自然语言标准打分）与效率评测
+（耗时/token/成本）。评测器可组合使用，覆盖 Text2SQL 智能体质量的不同维度。
 """
 
 from typing import Dict, Any, Optional
@@ -20,6 +24,9 @@ class TrajectoryEvaluator(Evaluator):
 
     Checks if the agent called the expected tools and didn't call
     unexpected ones. Useful for verifying agent reasoning and planning.
+
+    轨迹评测器：校验智能体是否调用了期望的工具、是否误调了不该调的工具。用于验证
+    推理与规划是否正确（Text2SQL 中最典型：是否正确调用 run_sql 而非凭空编答案）。
     """
 
     @property
@@ -95,6 +102,9 @@ class OutputEvaluator(Evaluator):
 
     Checks if the output contains expected content and doesn't
     contain forbidden content. Case-insensitive substring matching.
+
+    输出评测器：检查最终答案是否包含期望内容、是否不含禁止内容（大小写不敏感子串
+    匹配）。适合校验答案里是否出现关键字段/结论，或是否泄露了不该出现的信息。
     """
 
     @property
@@ -173,6 +183,9 @@ class LLMAsJudgeEvaluator(Evaluator):
 
     This evaluator uses a separate LLM to assess the quality of the
     agent's output based on natural language criteria.
+
+    LLM 评委评测器：用另一个 LLM（judge_llm，建议 temperature=0）按自然语言标准
+    对答案打分，返回 SCORE/PASSED/REASONING。适合规则难以表达的开放式质量判断。
     """
 
     def __init__(self, judge_llm: LlmService, criteria: str):
@@ -293,6 +306,9 @@ class EfficiencyEvaluator(Evaluator):
     """Evaluate resource usage (time, tokens, cost).
 
     Checks if the agent completed within acceptable resource limits.
+
+    效率评测器：检查执行耗时、token 用量是否在可接受阈值内（阈值来自构造参数或
+    用例的 expected_outcome.max_execution_time_ms）。
     """
 
     def __init__(

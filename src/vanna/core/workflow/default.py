@@ -3,6 +3,10 @@ Default workflow handler implementation with setup health checking.
 
 This module provides a default implementation of the WorkflowHandler interface
 that provides a smart starter UI based on available tools and setup status.
+
+本模块提供默认工作流处理器：实现 /help、/status、/memories、/delete 等确定性命令
+（不经过 LLM），并根据当前可用工具生成「配置体检」欢迎卡片。它是开箱即用体验的
+入口——用户装好工具后，首次打开聊天即可看到系统是否配置完整。
 """
 
 from typing import TYPE_CHECKING, List, Optional, Dict, Any
@@ -37,6 +41,10 @@ class DefaultWorkflowHandler(WorkflowHandler):
     - Checks if memory tools are available (warning if missing)
     - Checks if visualization tools are available
     - Provides appropriate setup guidance based on what's missing
+
+    默认工作流处理器：命令分发（try_handle）识别 /help、/status、/memories、/delete；
+    其余消息放行给 LLM。get_starter_ui 依据 _analyze_setup 的检测结果生成欢迎卡片。
+    /status、/memories、/delete 均为 admin 专属（硬编码校验 group_memberships）。
     """
 
     def __init__(self, welcome_message: Optional[str] = None):
@@ -51,7 +59,11 @@ class DefaultWorkflowHandler(WorkflowHandler):
     async def try_handle(
         self, agent: "Agent", user: "User", conversation: "Conversation", message: str
     ) -> WorkflowResult:
-        """Handle basic commands, but mostly passes through to LLM."""
+        """Handle basic commands, but mostly passes through to LLM.
+
+        命令分发：识别 /help、/status、/memories、/delete 四类命令（均短路 LLM），
+        /status 等管理命令校验 admin 分组；其余消息返回 should_skip_llm=False 放行。
+        """
 
         # Handle basic help command
         if message.strip().lower() in ["/help", "help", "/h"]:
@@ -164,7 +176,11 @@ class DefaultWorkflowHandler(WorkflowHandler):
     async def get_starter_ui(
         self, agent: "Agent", user: "User", conversation: "Conversation"
     ) -> Optional[List[UiComponent]]:
-        """Generate starter UI based on available tools and setup status."""
+        """Generate starter UI based on available tools and setup status.
+
+        会话打开时生成欢迎卡片：按用户可见工具做配置体检，admin 看到完整状态与
+        记忆管理入口，普通用户只看到欢迎文案。
+        """
 
         # Get available tools
         tools = await agent.tool_registry.get_schemas(user)
@@ -283,7 +299,11 @@ class DefaultWorkflowHandler(WorkflowHandler):
         )
 
     def _analyze_setup(self, tool_names: List[str]) -> Dict[str, Any]:
-        """Analyze the current tool setup and return status."""
+        """Analyze the current tool setup and return status.
+
+        核心的「配置体检」：按工具名检测是否具备 SQL（关键）、记忆（重要）、
+        可视化（可选）等能力，返回结构化状态供欢迎卡片与 /status 使用。
+        """
 
         # Critical tools
         has_sql = any(
@@ -399,7 +419,11 @@ class DefaultWorkflowHandler(WorkflowHandler):
     def _generate_setup_guidance(
         self, analysis: Dict[str, Any]
     ) -> Optional[UiComponent]:
-        """Generate setup guidance based on what's missing (used by /status command)."""
+        """Generate setup guidance based on what's missing (used by /status command).
+
+        按缺失能力生成配置引导。示例代码使用 register_local_tool(tool, access_groups)
+        正确注册工具（access_groups 为必填参数，空列表表示所有用户可见）。
+        """
 
         if not analysis["has_sql"]:
             # Critical guidance - need SQL
@@ -407,11 +431,14 @@ class DefaultWorkflowHandler(WorkflowHandler):
                 "## 🚨 Setup Required\n\n"
                 "To get started with Vanna AI, you need to configure a SQL connection tool:\n\n"
                 "```python\n"
+                "from vanna.integrations.sqlite import SqliteRunner\n"
                 "from vanna.tools import RunSqlTool\n\n"
                 "# Add SQL tool to your agent\n"
-                "tool_registry.register(RunSqlTool(\n"
-                '    connection_string="your-database-connection"\n'
-                "))\n"
+                "sql_runner = SqliteRunner('your-database.sqlite')\n"
+                "tool_registry.register_local_tool(\n"
+                "    RunSqlTool(sql_runner=sql_runner),\n"
+                "    access_groups=['admin', 'user']\n"
+                ")\n"
                 "```\n\n"
                 "**Next Steps:**\n"
                 "1. Configure your database connection\n"
@@ -427,9 +454,16 @@ class DefaultWorkflowHandler(WorkflowHandler):
                 suggestions.append(
                     "**🧠 Add Memory Tools** - Help me learn from successful queries:\n"
                     "```python\n"
-                    "from vanna.tools import SearchSavedCorrectToolUses, SaveQuestionToolArgs\n"
-                    "tool_registry.register(SearchSavedCorrectToolUses())\n"
-                    "tool_registry.register(SaveQuestionToolArgs())\n"
+                    "from vanna.tools.agent_memory import (\n"
+                    "    SearchSavedCorrectToolUsesTool,\n"
+                    "    SaveQuestionToolArgsTool,\n"
+                    ")\n\n"
+                    "tool_registry.register_local_tool(\n"
+                    "    SearchSavedCorrectToolUsesTool(), access_groups=['admin', 'user']\n"
+                    ")\n"
+                    "tool_registry.register_local_tool(\n"
+                    "    SaveQuestionToolArgsTool(), access_groups=['admin']\n"
+                    ")\n"
                     "```"
                 )
 
@@ -438,7 +472,9 @@ class DefaultWorkflowHandler(WorkflowHandler):
                     "**📊 Add Visualization** - Create charts and graphs:\n"
                     "```python\n"
                     "from vanna.tools import VisualizeDataTool\n"
-                    "tool_registry.register(VisualizeDataTool())\n"
+                    "tool_registry.register_local_tool(\n"
+                    "    VisualizeDataTool(), access_groups=['admin', 'user']\n"
+                    ")\n"
                     "```"
                 )
 
@@ -455,7 +491,10 @@ class DefaultWorkflowHandler(WorkflowHandler):
     async def _generate_status_check(
         self, agent: "Agent", user: "User"
     ) -> WorkflowResult:
-        """Generate a detailed status check response."""
+        """Generate a detailed status check response.
+
+        /status 命令：输出配置体检报告（工具清单 + 状态卡 + 缺失项引导）。
+        """
 
         # Get available tools
         tools = await agent.tool_registry.get_schemas(user)
@@ -512,7 +551,10 @@ class DefaultWorkflowHandler(WorkflowHandler):
     async def _get_recent_memories(
         self, agent: "Agent", user: "User", conversation: "Conversation"
     ) -> WorkflowResult:
-        """Get and display recent memories from agent memory."""
+        """Get and display recent memories from agent memory.
+
+        /memories 命令：拉取工具记忆与文本记忆，逐条渲染为带删除按钮的卡片。
+        """
         try:
             # Check if agent has memory capability
             if not hasattr(agent, "agent_memory") or agent.agent_memory is None:
@@ -683,7 +725,10 @@ class DefaultWorkflowHandler(WorkflowHandler):
     async def _delete_memory(
         self, agent: "Agent", user: "User", conversation: "Conversation", memory_id: str
     ) -> WorkflowResult:
-        """Delete a memory by its ID."""
+        """Delete a memory by its ID.
+
+        /delete [id] 命令：先按工具记忆删除，未命中再尝试文本记忆。
+        """
         try:
             # Check if agent has memory capability
             if not hasattr(agent, "agent_memory") or agent.agent_memory is None:

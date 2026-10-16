@@ -3,6 +3,10 @@ Base audit logger interface.
 
 Audit loggers enable tracking user actions, tool invocations, and access control
 decisions for security, compliance, and debugging.
+
+本模块定义审计日志的抽象基类 AuditLogger。它记录用户动作、工具调用、访问控制
+判定等，是 Text2SQL 场景下安全与合规的核心组件。只需实现 log_event 一个方法，
+即可把审计事件写入任意后端（数据库、文件、SIEM、云服务）。
 """
 
 import hashlib
@@ -45,6 +49,10 @@ class AuditLogger(ABC):
             llm_service=...,
             audit_logger=PostgresAuditLogger(db_pool)
         )
+
+    审计日志抽象基类。抽象方法只有 log_event 一个，其余都是「组装事件 → 调
+    log_event」的便利方法，并内置参数脱敏能力。由 Agent 在初始化时注入到
+    ToolRegistry（权限判定与工具执行都在 registry 层落审计点）。
     """
 
     @abstractmethod
@@ -56,6 +64,8 @@ class AuditLogger(ABC):
 
         Raises:
             Exception: If logging fails critically
+
+        记录单个审计事件（子类实现实际写入）。
         """
         pass
 
@@ -77,6 +87,8 @@ class AuditLogger(ABC):
             required_groups: Groups required to access the tool
             context: Tool execution context
             reason: Optional reason for denial
+
+        记录一次工具访问权限判定。
         """
         event = ToolAccessCheckEvent(
             user_id=user.id,
@@ -108,6 +120,8 @@ class AuditLogger(ABC):
             ui_features: List of UI features available to the user
             context: Tool execution context
             sanitize_parameters: Whether to sanitize sensitive parameters
+
+        记录一次工具调用（默认对参数做敏感信息脱敏）。
         """
         parameters = tool_call.arguments.copy()
         sanitized = False
@@ -144,6 +158,8 @@ class AuditLogger(ABC):
             tool_call: Tool call information
             result: Tool execution result
             context: Tool execution context
+
+        记录一次工具执行结果（成败、耗时、结果大小，不存完整结果内容）。
         """
         event = ToolResultEvent(
             user_id=user.id,
@@ -186,6 +202,8 @@ class AuditLogger(ABC):
             required_groups: Groups required to access the feature
             conversation_id: Conversation identifier
             request_id: Request identifier
+
+        记录一次 UI 功能访问判定（如用户是否被允许查看 SQL 参数）。
         """
         event = UiFeatureAccessCheckEvent(
             user_id=user.id,
@@ -220,6 +238,9 @@ class AuditLogger(ABC):
             tool_calls: List of tool calls in the response
             model_info: Optional model configuration info
             include_full_text: Whether to include full response text
+
+        记录一次 AI 回复：默认只存长度与 SHA256 哈希（隐私考量），include_full_text
+        为 True 时才保存全文。
         """
         response_hash = hashlib.sha256(response_text.encode("utf-8")).hexdigest()
 
@@ -260,6 +281,8 @@ class AuditLogger(ABC):
 
         Raises:
             NotImplementedError: If query not supported by implementation
+
+        查询历史审计事件（可选能力）；不支持的实现可抛 NotImplementedError。
         """
         raise NotImplementedError("Query not supported by this implementation")
 
@@ -273,11 +296,15 @@ class AuditLogger(ABC):
 
         Returns:
             Tuple of (sanitized_parameters, was_sanitized)
+
+        对参数做敏感信息脱敏：按字段名匹配（password/token/api_key 等）替换为
+        "[REDACTED]"，并返回是否发生过脱敏。
         """
         sanitized = parameters.copy()
         was_sanitized = False
 
         # Common sensitive field patterns
+        # 常见敏感字段名模式（按子串匹配）
         sensitive_patterns = [
             "password",
             "secret",

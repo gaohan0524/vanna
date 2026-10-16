@@ -3,6 +3,10 @@ Base error recovery strategy interface.
 
 Recovery strategies allow you to customize how the agent handles errors
 during tool execution and LLM communication.
+
+本模块定义错误恢复策略接口，用于自定义工具执行与 LLM 通信出错时的重试/降级行为。
+注意：该扩展点在 agent.py 中目前仅被接收（self.error_recovery_strategy）而从未被
+调用，实际错误仍由 ToolRegistry 转成 ToolResult(success=False) 回喂 LLM 处理。  【待确认设计】
 """
 
 from abc import ABC
@@ -45,6 +49,9 @@ class ErrorRecoveryStrategy(ABC):
             llm_service=...,
             error_recovery_strategy=ExponentialBackoffStrategy()
         )
+
+    错误恢复策略的抽象基类。两个方法均默认返回「立即失败」，子类可返回 RETRY /
+    FALLBACK 等动作实现退避重试或降级。当前框架未接线，属预留能力。
     """
 
     async def handle_tool_error(
@@ -59,8 +66,11 @@ class ErrorRecoveryStrategy(ABC):
 
         Returns:
             RecoveryAction indicating how to proceed
+
+        处理工具执行错误；attempt 为当前第几次尝试（从 1 起），可据此实现退避。
         """
         # Default: fail immediately
+        # 默认：立即失败（不重试）
         return RecoveryAction(
             action=RecoveryActionType.FAIL, message=f"Tool error: {str(error)}"
         )
@@ -77,8 +87,11 @@ class ErrorRecoveryStrategy(ABC):
 
         Returns:
             RecoveryAction indicating how to proceed
+
+        处理 LLM 通信错误（超时/限流/鉴权失败等），返回恢复动作。
         """
         # Default: fail immediately
+        # 默认：立即失败（不重试）
         return RecoveryAction(
             action=RecoveryActionType.FAIL, message=f"LLM error: {str(error)}"
         )

@@ -3,6 +3,10 @@ LLM context enhancer interface.
 
 LLM context enhancers allow you to add additional context to the system prompt
 and user messages before LLM calls.
+
+本模块定义 LLM 上下文增强器接口，是框架的 RAG（检索增强）扩展点：在 LLM 调用前，
+向系统提示词或用户消息注入检索到的领域知识、历史样例、文档片段等，让模型获得
+「超出对话历史」的上下文。
 """
 
 from abc import ABC
@@ -49,6 +53,10 @@ class LlmContextEnhancer(ABC):
             llm_service=...,
             llm_context_enhancer=MemoryBasedEnhancer(agent_memory)
         )
+
+    LLM 上下文增强器的抽象基类。两个方法均采用「返回式」语义（返回原对象即不
+    干预）。enhance_system_prompt 在每次对话回合开始时调用一次，enhance_user_messages
+    在每次 LLM 请求前（含工具调用后的重建）调用。
     """
 
     async def enhance_system_prompt(
@@ -69,6 +77,8 @@ class LlmContextEnhancer(ABC):
 
         Note:
             This is called once per conversation turn, before any tool calls.
+
+        基于用户首条消息向系统提示词追加相关上下文（如检索到的样例/领域知识）。
         """
         return system_prompt
 
@@ -90,5 +100,8 @@ class LlmContextEnhancer(ABC):
         Note:
             This is called before each LLM request, including after tool calls.
             Be careful not to add context repeatedly on each iteration.
+
+        改写/补充用户消息。注意：工具循环的每一轮都会调用，实现时应避免重复注入
+        相同上下文。
         """
         return messages

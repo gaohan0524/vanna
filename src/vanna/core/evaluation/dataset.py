@@ -3,6 +3,9 @@ Dataset loaders for evaluation test cases.
 
 This module provides utilities for loading test case datasets from
 YAML and JSON files.
+
+本模块提供评测数据集的加载/保存工具：从 YAML 或 JSON 文件读取测试用例集合，
+并支持按 metadata 过滤。数据集是评测的「输入」，定义一组（用户 + 问题 + 期望）。
 """
 
 import json
@@ -28,6 +31,9 @@ class EvaluationDataset:
               expected_outcome:
                 tools_called: ["generate_sql", "execute_query"]
                 final_answer_contains: ["SELECT", "GROUP BY", "region"]
+
+    测试用例集合：持有一组 TestCase 与元数据，支持从 YAML/JSON 加载、保存与
+    按 metadata 过滤。它是评测的标准数据载体。
     """
 
     def __init__(self, name: str, test_cases: List[TestCase], description: str = ""):
@@ -51,6 +57,8 @@ class EvaluationDataset:
 
         Returns:
             EvaluationDataset instance
+
+        从 YAML 文件加载数据集（yaml.safe_load 安全解析）。
         """
         with open(path, "r") as f:
             data = yaml.safe_load(f)
@@ -66,6 +74,8 @@ class EvaluationDataset:
 
         Returns:
             EvaluationDataset instance
+
+        从 JSON 文件加载数据集。
         """
         with open(path, "r") as f:
             data = json.load(f)
@@ -81,6 +91,8 @@ class EvaluationDataset:
 
         Returns:
             EvaluationDataset instance
+
+        从字典构造数据集：兼容顶层直接是 dataset 或包了一层 dataset 两种格式。
         """
         dataset_config = data.get("dataset", data)
         name = dataset_config.get("name", "Unnamed Dataset")
@@ -102,6 +114,9 @@ class EvaluationDataset:
 
         Returns:
             TestCase instance
+
+        从字典解析单个测试用例：构造 User（含分组）、可选 expected_outcome，缺省字段
+        用合理默认值（如 email 由 user_id 推导）。
         """
         # Create user
         user_id = data.get("user_id", "test_user")
@@ -178,6 +193,8 @@ class EvaluationDataset:
 
         Returns:
             Dictionary representation
+
+        将测试用例序列化为字典（仅写出非空字段，避免冗余）。
         """
         data: Dict[str, Any] = {
             "id": test_case.id,
@@ -230,6 +247,8 @@ class EvaluationDataset:
 
         Returns:
             New EvaluationDataset with filtered test cases
+
+        按 metadata 字段精确匹配过滤测试用例，返回新的数据集（不修改原数据集）。
         """
         filtered = [
             tc

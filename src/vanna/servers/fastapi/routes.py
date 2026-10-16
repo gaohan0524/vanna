@@ -1,5 +1,10 @@
 """
 FastAPI route implementations for Vanna Agents.
+
+本模块是 HTTP 层与 Agent 之间的接线层，承载整条 Text2SQL 链路的入口：
+它把 FastAPI 的原始请求对象转换为框架中立的数据结构（RequestContext / ChatRequest），
+再委托 ChatHandler 驱动 Agent 产出 UiComponent，最终编码成 SSE / WebSocket / 轮询
+三种传输格式返回给前端。核心端点 chat_sse 是生产环境最常用的流式通道。
 """
 
 import json
@@ -23,12 +28,20 @@ def register_chat_routes(
         app: FastAPI application
         chat_handler: Chat handler instance
         config: Server configuration
+
+    在 FastAPI 应用上注册首页、SSE、WebSocket、轮询四类路由。所有端点共享同一个
+    chat_handler，而 chat_handler 内部又共享同一个 Agent 实例，因此整条链路的
+    状态（会话、记忆、工具注册）是天然单例的。
     """
     config = config or {}
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
-        """Serve the main chat interface."""
+        """Serve the main chat interface.
+
+        返回聊天首页 HTML。dev_mode 下从本地静态目录加载前端组件，否则从 CDN 加载
+        （默认 https://img.vanna.ai/vanna-components.js）。
+        """
         dev_mode = config.get("dev_mode", False)
         cdn_url = config.get("cdn_url", "https://img.vanna.ai/vanna-components.js")
         api_base_url = config.get("api_base_url", "")
@@ -41,8 +54,16 @@ def register_chat_routes(
     async def chat_sse(
         chat_request: ChatRequest, http_request: Request
     ) -> StreamingResponse:
-        """Server-Sent Events endpoint for streaming chat."""
+        """Server-Sent Events endpoint for streaming chat.
+
+        流式聊天的核心端点（POST + SSE）。流程：从 FastAPI 原始请求中抽取 cookie /
+        header / IP / query 组成 RequestContext（供 UserResolver 解析身份）→ 交给
+        ChatHandler.handle_stream → Agent 产出 UiComponent → 逐块编码为
+        `data: {json}\n\n`，最后以 `data: [DONE]\n\n` 结束。
+        """
         # Extract request context for user resolution
+        # 关键：把 FastAPI 的原始请求信息规范化成框架中立的 RequestContext。
+        # UserResolver 只认识这个结构，从而与具体 Web 框架解耦。
         chat_request.request_context = RequestContext(
             cookies=dict(http_request.cookies),
             headers=dict(http_request.headers),
@@ -52,7 +73,11 @@ def register_chat_routes(
         )
 
         async def generate() -> AsyncGenerator[str, None]:
-            """Generate SSE stream."""
+            """Generate SSE stream.
+
+            SSE 生成器：每收到一个 ChatStreamChunk 就编码一行 `data: {json}`；
+            正常结束补发 `data: [DONE]`；异常则回传 error 数据，避免连接静默断开。
+            """
             try:
                 async for chunk in chat_handler.handle_stream(chat_request):
                     chunk_json = chunk.model_dump_json()
@@ -61,6 +86,7 @@ def register_chat_routes(
             except Exception as e:
                 traceback.print_stack()
                 traceback.print_exc()
+                # 错误以带 type=error 的数据帧回传，前端据此提示而非无响应
                 error_data = {
                     "type": "error",
                     "data": {"message": str(e)},
@@ -73,15 +99,19 @@ def register_chat_routes(
             generate(),
             media_type="text/event-stream",
             headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "X-Accel-Buffering": "no",  # Disable nginx buffering
+                "Cache-Control": "no-cache",   # SSE 必须禁用缓存，否则会被代理/浏览器缓存
+                "Connection": "keep-alive",     # 保持长连接持续推送
+                "X-Accel-Buffering": "no",  # Disable nginx buffering —— 禁用 nginx 缓冲，保证实时性
             },
         )
 
     @app.websocket("/api/vanna/v2/chat_websocket")
     async def chat_websocket(websocket: WebSocket) -> None:
-        """WebSocket endpoint for real-time chat."""
+        """WebSocket endpoint for real-time chat.
+
+        双向实时通道：与 chat_sse 逻辑等价，只是用 WebSocket 消息承载分片。
+        （注意：flask 版本不支持，仅 fastapi 提供。）
+        """
         await websocket.accept()
 
         try:
@@ -164,7 +194,11 @@ def register_chat_routes(
     async def chat_poll(
         chat_request: ChatRequest, http_request: Request
     ) -> ChatResponse:
-        """Polling endpoint for chat."""
+        """Polling endpoint for chat.
+
+        轮询端点：一次性跑完整个流并聚合成完整 ChatResponse 返回，适合不支持 SSE
+        的客户端。逻辑上等价于 handle_stream 的同步聚合。
+        """
         # Extract request context for user resolution
         chat_request.request_context = RequestContext(
             cookies=dict(http_request.cookies),
