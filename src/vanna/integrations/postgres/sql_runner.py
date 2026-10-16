@@ -18,6 +18,7 @@ class PostgresRunner(SqlRunner):
         database: Optional[str] = None,
         user: Optional[str] = None,
         password: Optional[str] = None,
+        timeout_seconds: Optional[float] = None,
         **kwargs,
     ):
         """Initialize with PostgreSQL connection parameters.
@@ -32,6 +33,7 @@ class PostgresRunner(SqlRunner):
             database: Database name
             user: Database user
             password: Database password
+            timeout_seconds: 查询超时秒数（None 表示不限），通过 SET statement_timeout 实现
             **kwargs: Additional psycopg2 connection parameters (sslmode, connect_timeout, etc.)
         """
         try:
@@ -62,6 +64,8 @@ class PostgresRunner(SqlRunner):
                 "Either provide connection_string OR (host, database, and user) parameters"
             )
 
+        self.timeout_seconds = timeout_seconds
+
     async def run_sql(self, args: RunSqlToolArgs, context: ToolContext) -> pd.DataFrame:
         """Execute SQL query against PostgreSQL database and return results as DataFrame.
 
@@ -84,6 +88,12 @@ class PostgresRunner(SqlRunner):
         cursor = conn.cursor(cursor_factory=self.psycopg2.extras.RealDictCursor)
 
         try:
+            # 原生查询超时（statement_timeout 单位毫秒）
+            if self.timeout_seconds is not None:
+                cursor.execute(
+                    f"SET statement_timeout = {int(self.timeout_seconds * 1000)}"
+                )
+
             # Execute the query
             cursor.execute(args.sql)
 
@@ -107,6 +117,11 @@ class PostgresRunner(SqlRunner):
                 # Return a DataFrame indicating rows affected
                 return pd.DataFrame({"rows_affected": [rows_affected]})
 
+        except self.psycopg2.errors.QueryCanceled as e:
+            # statement_timeout 触发的取消，统一转 TimeoutError 供上层识别
+            raise TimeoutError(
+                f"Query timed out after {self.timeout_seconds} seconds"
+            ) from e
         finally:
             cursor.close()
             conn.close()
