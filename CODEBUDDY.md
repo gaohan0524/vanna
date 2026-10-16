@@ -135,7 +135,7 @@ HTTP POST /api/vanna/v2/chat_sse
 
 `base/` 是与框架无关的部分（`ChatHandler`、`ChatRequest/ChatStreamChunk/ChatResponse`，以及 `templates.py` 提供的 Tailwind 风格首页，用于挂载 Web 组件包）。`fastapi/` 是默认实现并提供真正的 WebSocket 端点；`flask/` 与之对应，但 WebSocket 返回 501。两者都暴露 `GET /`、`POST /api/vanna/v2/chat_sse`、`POST /api/vanna/v2/chat_poll` 与 `/health`。dev 模式托管 `frontends/webcomponent/static`，否则组件包从 CDN 加载（`https://img.vanna.ai/vanna-components.js`）。
 
-注意：`servers/base/rich_chat_handler.py` 与 `ComponentManager` 的树差异更新协议目前是已注释的死代码。
+组件增量渲染采用无状态流式推送：`Agent` 直接流式 `yield` 自带 `ComponentLifecycle`（create/update/replace/remove）字段的 `UiComponent`，前端据此自行 diff 渲染；服务端不维护组件树状态（原 `core/component_manager.py` 与注释掉的 `servers/base/rich_chat_handler.py` 已删除）。
 
 ### 评估框架（`src/vanna/core/evaluation/`）
 

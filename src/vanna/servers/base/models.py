@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field
 
 from ...components import UiComponent, RichComponent
-from ...core.component_manager import ComponentUpdate
 from ...core.user.request_context import RequestContext
 
 
@@ -104,24 +103,6 @@ class ChatStreamChunk(BaseModel):
             conversation_id=conversation_id,
             request_id=request_id,
         )
-
-    @classmethod
-    def from_component_update(
-        cls, update: ComponentUpdate, conversation_id: str, request_id: str
-    ) -> "ChatStreamChunk":
-        """Create chunk from component update.
-
-        由 ComponentUpdate（组件增量更新）构造分片；增量更新没有简化表示，simple 置空。
-        注意：当前运行时主链路不经过 ComponentManager，此方法主要用于预留的增量协议。
-        """
-        update_payload = update.serialize_for_frontend()
-        return cls(
-            rich=update_payload,
-            simple=None,  # Component updates don't have simple representations
-            conversation_id=conversation_id,
-            request_id=request_id,
-        )
-
 
 class ChatResponse(BaseModel):
     """Complete chat response for polling endpoints.
