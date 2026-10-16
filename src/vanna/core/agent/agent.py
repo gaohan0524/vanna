@@ -11,9 +11,10 @@ between LLM services, tools, and conversation storage.
 ConversationStore 等）编程，不依赖任何具体供应商实现。
 """
 
+import asyncio
 import traceback
 import uuid
-from typing import TYPE_CHECKING, AsyncGenerator, List, Optional
+from typing import TYPE_CHECKING, AsyncGenerator, Awaitable, Callable, List, Optional
 
 from vanna.components import (
     UiComponent,
@@ -55,6 +56,10 @@ logger = logging.getLogger(__name__)
 
 logger.info("Loaded vanna.core.agent.agent module")
 
+# LLM 恢复重试的防御性上限：正常情况下由 ErrorRecoveryStrategy 根据 attempt 自行
+# 决定何时放弃（返回 FAIL），此上限仅用于兜底，防止错误的 strategy 导致无限重试。
+MAX_LLM_RECOVERY_ATTEMPTS = 10
+
 if TYPE_CHECKING:
     pass
 
@@ -87,8 +92,10 @@ class Agent:
     补充说明（Text2SQL 链路视角）：
     Agent 是唯一编排者，对外只暴露 send_message 一个入口。7 个扩展点均遵循
     "返回 None 或原对象即表示不干预"的直通语义，因此默认行为即最简链路，
-    扩展只需覆盖关心的钩子。注意 error_recovery_strategy 当前已声明但未被
-    实际调用（见 _send_message 工具循环），属于预留能力。  【待确认设计】
+    扩展只需覆盖关心的钩子。error_recovery_strategy 已接线到 LLM 调用层
+    （_invoke_llm_with_recovery）：仅对 LLM 通信错误（429/5xx/超时等瞬时故障）
+    做退避重试 / 降级；工具执行错误仍维持「转成 ToolResult(success=False) 回喂
+    LLM 自我修复」的 agentic 范式，不做程序化重试。
     """
 
     def __init__(
@@ -1326,12 +1333,71 @@ You can:
             system_prompt=system_prompt,
         )
 
+    async def _invoke_llm_with_recovery(
+        self,
+        request: LlmRequest,
+        invoke: Callable[[], Awaitable[LlmResponse]],
+    ) -> LlmResponse:
+        """Invoke a single LLM call with error recovery (retry / fallback / skip).
+
+        把一次 LLM 调用（一次性或流式聚合）包进错误恢复循环：仅在配置了
+        error_recovery_strategy 且其 handle_llm_error 返回 RETRY 时按 retry_delay_ms
+        退避重试，FALLBACK 时用 fallback_value 降级，SKIP 时返回空响应跳过本轮，
+        其余（FAIL / 未配置策略 / 动作非法）直接向上抛出，交给 send_message 兜底。
+        """
+        # 未配置恢复策略时保持原样直通，零开销
+        if not self.error_recovery_strategy:
+            return await invoke()
+
+        attempt = 1
+        while True:
+            try:
+                return await invoke()
+            except Exception as e:
+                action = await self.error_recovery_strategy.handle_llm_error(
+                    e, request, attempt
+                )
+                logger.warning(
+                    "LLM error (attempt %d): %s -> recovery action %s",
+                    attempt,
+                    e,
+                    action.action,
+                )
+
+                if action.action == RecoveryActionType.RETRY:
+                    delay = action.retry_delay_ms or 0
+                    if delay:
+                        await asyncio.sleep(delay / 1000)
+                    attempt += 1
+                    if attempt > MAX_LLM_RECOVERY_ATTEMPTS:
+                        logger.error(
+                            "LLM recovery attempt limit (%d) exceeded, giving up",
+                            MAX_LLM_RECOVERY_ATTEMPTS,
+                        )
+                        raise
+                    continue
+
+                if action.action == RecoveryActionType.FALLBACK:
+                    if isinstance(action.fallback_value, LlmResponse):
+                        return action.fallback_value
+                    logger.error(
+                        "FALLBACK action without LlmResponse fallback_value, re-raising"
+                    )
+                    raise
+
+                if action.action == RecoveryActionType.SKIP:
+                    # 跳过本轮 LLM 调用：返回空响应，agent 将视为无工具调用而结束
+                    return LlmResponse(content=None, tool_calls=None)
+
+                # FAIL 或未知动作：直接抛出
+                raise
+
     async def _send_llm_request(self, request: LlmRequest) -> LlmResponse:
         """Send LLM request with middleware and observability.
 
         非流式调用路径：before_llm_request 中间件 -> llm_service.send_request ->
         after_llm_response 中间件，全程包埋点。与 _handle_streaming_response 对称，
-        仅底层换成一次性请求。
+        仅底层换成一次性请求（send_request 经由 _invoke_llm_with_recovery 包错误恢复）。
         """
         # Apply before_llm_request middlewares with observability
         for middleware in self.llm_middlewares:
@@ -1368,8 +1434,10 @@ You can:
                 },
             )
 
-        # Send request
-        response = await self.llm_service.send_request(request)
+        # 发送请求（带错误恢复：瞬时故障退避重试 / 降级）
+        response = await self._invoke_llm_with_recovery(
+            request, lambda: self.llm_service.send_request(request)
+        )
 
         # End span and record metrics
         if self.observability_provider and llm_span:
@@ -1441,8 +1509,22 @@ You can:
                         },
                     )
 
-        accumulated_content = ""
-        accumulated_tool_calls = []
+        # 单次流式调用并聚合为完整响应（供恢复循环重试）
+        async def _stream_once() -> LlmResponse:
+            accumulated_content = ""
+            accumulated_tool_calls = []
+            async for chunk in self.llm_service.stream_request(request):
+                if chunk.content:
+                    accumulated_content += chunk.content
+                    # Could yield intermediate TextChunk here
+
+                if chunk.tool_calls:
+                    accumulated_tool_calls.extend(chunk.tool_calls)
+
+            return LlmResponse(
+                content=accumulated_content if accumulated_content else None,
+                tool_calls=accumulated_tool_calls if accumulated_tool_calls else None,
+            )
 
         # Create span for streaming
         stream_span = None
@@ -1452,28 +1534,20 @@ You can:
                 attributes={"model": getattr(self.llm_service, "model", "unknown")},
             )
 
-        async for chunk in self.llm_service.stream_request(request):
-            if chunk.content:
-                accumulated_content += chunk.content
-                # Could yield intermediate TextChunk here
-
-            if chunk.tool_calls:
-                accumulated_tool_calls.extend(chunk.tool_calls)
+        # 流式调用（带错误恢复：瞬时故障退避重试 / 降级）
+        response = await self._invoke_llm_with_recovery(request, _stream_once)
 
         # End streaming span
         if self.observability_provider and stream_span:
-            stream_span.set_attribute("content_length", len(accumulated_content))
-            stream_span.set_attribute("tool_call_count", len(accumulated_tool_calls))
+            stream_span.set_attribute("content_length", len(response.content or ""))
+            stream_span.set_attribute(
+                "tool_call_count", len(response.tool_calls or [])
+            )
             await self.observability_provider.end_span(stream_span)
             if stream_span.duration_ms():
                 await self.observability_provider.record_metric(
                     "llm.stream.duration", stream_span.duration_ms() or 0, "ms"
                 )
-
-        response = LlmResponse(
-            content=accumulated_content if accumulated_content else None,
-            tool_calls=accumulated_tool_calls if accumulated_tool_calls else None,
-        )
 
         # Apply after_llm_response middlewares with observability
         for middleware in self.llm_middlewares:
