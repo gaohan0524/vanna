@@ -18,7 +18,7 @@ from .workflow import WorkflowHandler, WorkflowResult, DefaultWorkflowHandler
 from .recovery import ErrorRecoveryStrategy, RecoveryAction, RecoveryActionType
 from .enricher import ToolContextEnricher
 from .enhancer import LlmContextEnhancer, DefaultLlmContextEnhancer
-from .filter import ConversationFilter
+from .filter import ConversationFilter, SlidingWindowFilter, SummaryBufferFilter
 from .observability import ObservabilityProvider, Span, Metric
 from .audit import (
     AuditLogger,
@@ -128,6 +128,8 @@ __all__ = [
     "LlmContextEnhancer",
     "DefaultLlmContextEnhancer",
     "ConversationFilter",
+    "SlidingWindowFilter",
+    "SummaryBufferFilter",
     "ObservabilityProvider",
     "AuditLogger",
     "T",

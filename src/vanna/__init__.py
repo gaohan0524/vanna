@@ -56,6 +56,9 @@ from .core import (
     DefaultSystemPromptBuilder,
     DefaultWorkflowHandler,
     ToolRegistry,
+    # Context window management
+    SlidingWindowFilter,
+    SummaryBufferFilter,
     # Evaluation
     Evaluator,
     TestCase,
@@ -135,6 +138,8 @@ __all__ = [
     "ToolRegistry",
     "DefaultSystemPromptBuilder",
     "DefaultWorkflowHandler",
+    "SlidingWindowFilter",
+    "SummaryBufferFilter",
     # Evaluation
     "Evaluator",
     "TestCase",
