@@ -793,11 +793,15 @@ class Agent:
 
                 # Collect all tool results first
                 tool_results = []
+
+                # 阶段 1：串行产出「执行中」UI（任务卡片 + 运行状态卡），并收集执行计划。
+                # 阶段 2：用 asyncio.gather 并行执行所有工具，降低多工具调用的延迟。
+                exec_plan = []
                 for i, tool_call in enumerate(response.tool_calls or []):
                     # Add task for this tool execution
                     tool_task = Task(
                         title=f"Execute {tool_call.name}",
-                        description=f"Running tool with provided arguments",
+                        description="Running tool with provided arguments",
                         status="in_progress",
                     )
 
@@ -873,105 +877,20 @@ class Agent:
                             ),
                         )
 
-                    # Run before_tool hooks with observability
-                    tool = await self.tool_registry.get_tool(tool_call.name)
-                    if tool:
-                        for hook in self.lifecycle_hooks:
-                            hook_span = None
-                            if self.observability_provider:
-                                hook_span = (
-                                    await self.observability_provider.create_span(
-                                        "agent.hook.before_tool",
-                                        attributes={
-                                            "hook": hook.__class__.__name__,
-                                            "tool": tool_call.name,
-                                        },
-                                    )
-                                )
+                    exec_plan.append((tool_call, tool_task, tool_status_card))
 
-                            await hook.before_tool(tool, context)
+                # 阶段 2：并行执行所有工具（执行逻辑见 _execute_tool_call）
+                executed = await asyncio.gather(
+                    *(
+                        self._execute_tool_call(tool_call, context)
+                        for tool_call, _, _ in exec_plan
+                    )
+                )
 
-                            if self.observability_provider and hook_span:
-                                await self.observability_provider.end_span(hook_span)
-                                if hook_span.duration_ms():
-                                    await self.observability_provider.record_metric(
-                                        "agent.hook.duration",
-                                        hook_span.duration_ms() or 0,
-                                        "ms",
-                                        tags={
-                                            "hook": hook.__class__.__name__,
-                                            "phase": "before_tool",
-                                            "tool": tool_call.name,
-                                        },
-                                    )
-
-                    # Execute tool with observability
-                    # 真正执行工具（SQL 在这里跑）：由 ToolRegistry.execute 完成权限
-                    # 第二道闸门、参数校验、transform_args（行级安全）与审计。执行结果
-                    # 无论成败都会被统一封装为 ToolResult，供后续回喂 LLM。
-                    tool_exec_span = None
-                    if self.observability_provider:
-                        tool_exec_span = await self.observability_provider.create_span(
-                            "agent.tool.execute",
-                            attributes={
-                                "tool": tool_call.name,
-                                "arg_count": len(tool_call.arguments),
-                            },
-                        )
-
-                    result = await self.tool_registry.execute(tool_call, context)
-
-                    if self.observability_provider and tool_exec_span:
-                        tool_exec_span.set_attribute("success", result.success)
-                        if not result.success:
-                            tool_exec_span.set_attribute(
-                                "error", result.error or "unknown"
-                            )
-                        await self.observability_provider.end_span(tool_exec_span)
-                        if tool_exec_span.duration_ms():
-                            await self.observability_provider.record_metric(
-                                "agent.tool.duration",
-                                tool_exec_span.duration_ms() or 0,
-                                "ms",
-                                tags={
-                                    "tool": tool_call.name,
-                                    "success": str(result.success),
-                                },
-                            )
-
-                    # Run after_tool hooks with observability
-                    for hook in self.lifecycle_hooks:
-                        hook_span = None
-                        if self.observability_provider:
-                            hook_span = await self.observability_provider.create_span(
-                                "agent.hook.after_tool",
-                                attributes={
-                                    "hook": hook.__class__.__name__,
-                                    "tool": tool_call.name,
-                                },
-                            )
-
-                        modified_result = await hook.after_tool(result)
-                        if modified_result is not None:
-                            result = modified_result
-
-                        if self.observability_provider and hook_span:
-                            hook_span.set_attribute(
-                                "modified_result", modified_result is not None
-                            )
-                            await self.observability_provider.end_span(hook_span)
-                            if hook_span.duration_ms():
-                                await self.observability_provider.record_metric(
-                                    "agent.hook.duration",
-                                    hook_span.duration_ms() or 0,
-                                    "ms",
-                                    tags={
-                                        "hook": hook.__class__.__name__,
-                                        "phase": "after_tool",
-                                        "tool": tool_call.name,
-                                    },
-                                )
-
+                # 阶段 3：串行产出「完成」UI 与结果（保持 tool_calls 原始顺序）
+                for (tool_call, tool_task, tool_status_card), result in zip(
+                    exec_plan, executed
+                ):
                     # Update status card to show completion
                     final_status = "success" if result.success else "error"
                     final_description = (
@@ -1358,6 +1277,110 @@ You can:
             stream=self.config.stream_responses,
             system_prompt=system_prompt,
         )
+
+    async def _execute_tool_call(
+        self, tool_call: ToolCall, context: ToolContext
+    ) -> ToolResult:
+        """Execute one tool call with lifecycle hooks and observability.
+
+        并行工具执行的执行单元：获取工具 -> before_tool 钩子 -> 执行（含埋点）->
+        after_tool 钩子。不产出任何 UI 组件，仅返回结果，便于 asyncio.gather 并发
+        调用多个工具（LLM 一次返回多个 tool_calls 时并行执行以降低延迟）。
+        """
+        tool = await self.tool_registry.get_tool(tool_call.name)
+
+        # Run before_tool hooks with observability
+        if tool:
+            for hook in self.lifecycle_hooks:
+                hook_span = None
+                if self.observability_provider:
+                    hook_span = await self.observability_provider.create_span(
+                        "agent.hook.before_tool",
+                        attributes={
+                            "hook": hook.__class__.__name__,
+                            "tool": tool_call.name,
+                        },
+                    )
+
+                await hook.before_tool(tool, context)
+
+                if self.observability_provider and hook_span:
+                    await self.observability_provider.end_span(hook_span)
+                    if hook_span.duration_ms():
+                        await self.observability_provider.record_metric(
+                            "agent.hook.duration",
+                            hook_span.duration_ms() or 0,
+                            "ms",
+                            tags={
+                                "hook": hook.__class__.__name__,
+                                "phase": "before_tool",
+                                "tool": tool_call.name,
+                            },
+                        )
+
+        # Execute tool with observability
+        tool_exec_span = None
+        if self.observability_provider:
+            tool_exec_span = await self.observability_provider.create_span(
+                "agent.tool.execute",
+                attributes={
+                    "tool": tool_call.name,
+                    "arg_count": len(tool_call.arguments),
+                },
+            )
+
+        result = await self.tool_registry.execute(tool_call, context)
+
+        if self.observability_provider and tool_exec_span:
+            tool_exec_span.set_attribute("success", result.success)
+            if not result.success:
+                tool_exec_span.set_attribute("error", result.error or "unknown")
+            await self.observability_provider.end_span(tool_exec_span)
+            if tool_exec_span.duration_ms():
+                await self.observability_provider.record_metric(
+                    "agent.tool.duration",
+                    tool_exec_span.duration_ms() or 0,
+                    "ms",
+                    tags={
+                        "tool": tool_call.name,
+                        "success": str(result.success),
+                    },
+                )
+
+        # Run after_tool hooks with observability
+        for hook in self.lifecycle_hooks:
+            hook_span = None
+            if self.observability_provider:
+                hook_span = await self.observability_provider.create_span(
+                    "agent.hook.after_tool",
+                    attributes={
+                        "hook": hook.__class__.__name__,
+                        "tool": tool_call.name,
+                    },
+                )
+
+            modified_result = await hook.after_tool(result)
+            if modified_result is not None:
+                result = modified_result
+
+            if self.observability_provider and hook_span:
+                hook_span.set_attribute(
+                    "modified_result", modified_result is not None
+                )
+                await self.observability_provider.end_span(hook_span)
+                if hook_span.duration_ms():
+                    await self.observability_provider.record_metric(
+                        "agent.hook.duration",
+                        hook_span.duration_ms() or 0,
+                        "ms",
+                        tags={
+                            "hook": hook.__class__.__name__,
+                            "phase": "after_tool",
+                            "tool": tool_call.name,
+                        },
+                    )
+
+        return result
 
     async def _invoke_llm_with_recovery(
         self,

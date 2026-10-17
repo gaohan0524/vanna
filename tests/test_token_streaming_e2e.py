@@ -5,6 +5,9 @@ End-to-end test: token-level streaming must not break the tool loop.
 验证 token 级流式输出与工具循环协同正确。
 """
 
+import asyncio
+import time
+
 import pytest
 from pydantic import BaseModel
 
@@ -157,3 +160,69 @@ async def test_non_streaming_tool_loop_still_works():
     ]
     assert text_components
     assert text_components[-1].content == "答案是 42。"
+
+
+class _SlowTool(Tool):
+    """记录执行时间戳的慢工具，用于验证多工具并行执行。"""
+
+    def __init__(self, name: str, delay: float = 0.1):
+        self._name = name
+        self.delay = delay
+        self.start = None
+        self.end = None
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def description(self) -> str:
+        return "slow tool for parallelism test"
+
+    def get_args_schema(self) -> type:
+        class _Args(BaseModel):
+            pass
+
+        return _Args
+
+    async def execute(self, context, args) -> ToolResult:
+        self.start = time.monotonic()
+        await asyncio.sleep(self.delay)
+        self.end = time.monotonic()
+        return ToolResult(success=True, result_for_llm=f"done {self._name}")
+
+
+async def test_multiple_tools_execute_in_parallel():
+    """LLM 一次返回多个 tool_calls 时应并行执行，而非串行逐个 await。"""
+    tool_a = _SlowTool("slow_a")
+    tool_b = _SlowTool("slow_b")
+    registry = ToolRegistry()
+    registry.register_local_tool(tool_a, access_groups=[])
+    registry.register_local_tool(tool_b, access_groups=[])
+
+    script = [
+        [
+            LlmStreamChunk(
+                tool_calls=[
+                    ToolCall(id="t1", name="slow_a", arguments={}),
+                    ToolCall(id="t2", name="slow_b", arguments={}),
+                ],
+                finish_reason="tool_calls",
+            ),
+        ],
+        [LlmStreamChunk(content="done", finish_reason="stop")],
+    ]
+    llm = _ScriptedLlm(script)
+    agent = Agent(
+        llm_service=llm,
+        tool_registry=registry,
+        user_resolver=_TestResolver(),
+        agent_memory=DemoAgentMemory(max_items=100),
+    )
+
+    async for _ in agent.send_message(RequestContext(cookies={}, headers={}), "go"):
+        pass
+
+    # 两个工具的执行时间窗口有重叠 => 并行执行（串行时 overlap 为负）
+    overlap = min(tool_a.end, tool_b.end) - max(tool_a.start, tool_b.start)
+    assert overlap > 0, "tools should execute in parallel (overlapping time windows)"
