@@ -7,8 +7,9 @@ UiComponent 逐个包装成 ChatStreamChunk，供上层（FastAPI/Flask）编码
 它是整条 Text2SQL 链路中「Agent 唯一入口」的实际调用点。
 """
 
+import asyncio
 import uuid
-from typing import AsyncGenerator, List
+from typing import AsyncGenerator, List, Optional
 
 from ...core import Agent
 from .models import ChatRequest, ChatResponse, ChatStreamChunk
@@ -33,18 +34,26 @@ class ChatHandler:
         self.agent = agent
 
     async def handle_stream(
-        self, request: ChatRequest
+        self,
+        request: ChatRequest,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> AsyncGenerator[ChatStreamChunk, None]:
         """Stream chat responses.
 
         Args:
             request: Chat request
+            cancel_event: Optional asyncio.Event; when set, aborts the in-flight LLM
+                stream and stops producing chunks (cooperative cancellation). The caller
+                (transport layer) detects client disconnect or an explicit cancel request,
+                sets this event, and handles the resulting asyncio.CancelledError.
 
         Yields:
             Chat stream chunks
 
         Agent 的唯一入口（流式版）：生成 conversation_id / request_id 后，逐块消费
         Agent.send_message 产出的 UiComponent，并转成 ChatStreamChunk 向上传递。
+        cancel_event 原样透传给 Agent；Agent 在 token 级流式循环里监听它，一旦置位即
+        中止底层 LLM 调用并向这里抛出 asyncio.CancelledError。
         """
         conversation_id = request.conversation_id or self._generate_conversation_id()
         # Use request_id from client for tracking, or use the one generated internally
@@ -55,6 +64,7 @@ class ChatHandler:
             request_context=request.request_context,
             message=request.message,
             conversation_id=conversation_id,
+            cancel_event=cancel_event,
         ):
             yield ChatStreamChunk.from_component(component, conversation_id, request_id)
 

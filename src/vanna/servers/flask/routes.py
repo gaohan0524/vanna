@@ -60,9 +60,16 @@ def register_chat_routes(
             return jsonify({"error": f"Invalid request: {str(e)}"}), 400
 
         def generate() -> Generator[str, None, None]:
-            """Generate SSE stream."""
+            """Generate SSE stream.
+
+            同步 WSGI 下无法主动探测客户端断开（无 is_disconnected 等价物），取消只能
+            依赖「写下一个分片时抛错 / 生成器被关闭」这一信号：finally 里显式 aclose 异步
+            生成器，沿 async for 链触发 Agent 内部 _stream_response_components 的 finally，
+            取消在途 LLM 流式任务，停止 token 计费（尽力而为）。
+            """
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
+            gen: Optional[AsyncGenerator[str, None]] = None
 
             try:
 
@@ -72,13 +79,18 @@ def register_chat_routes(
                         yield f"data: {chunk_json}\n\n"
 
                 gen = async_generate()
-                try:
-                    while True:
-                        chunk = loop.run_until_complete(gen.__anext__())
-                        yield chunk
-                except StopAsyncIteration:
-                    yield "data: [DONE]\n\n"
+                while True:
+                    chunk = loop.run_until_complete(gen.__anext__())
+                    yield chunk
+            except StopAsyncIteration:
+                yield "data: [DONE]\n\n"
             finally:
+                # 客户端断开或正常结束时，显式关闭异步生成器以取消底层 LLM 调用。
+                if gen is not None:
+                    try:
+                        loop.run_until_complete(gen.aclose())
+                    except Exception:
+                        pass
                 loop.close()
 
         return Response(

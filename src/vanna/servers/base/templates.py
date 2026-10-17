@@ -28,13 +28,13 @@ def get_vanna_component_script(
         return f'<script type="module" src="{cdn_url}"></script>'
 
 
-def get_index_html(
+def get_rich_index_html(
     dev_mode: bool = False,
     static_path: str = "/static",
     cdn_url: str = "https://img.vanna.ai/vanna-components.js",
     api_base_url: str = "",
 ) -> str:
-    """Generate index HTML with configurable component loading.
+    """Generate the rich (Tailwind + <vanna-chat> web component) index HTML.
 
     Args:
         dev_mode: If True, load components from local static files
@@ -44,6 +44,9 @@ def get_index_html(
 
     Returns:
         Complete HTML page as string
+
+    注意：该「富前端」默认已不再使用，默认首页改为 get_simple_chat_html 提供的极简
+    对话框。保留本函数供仍想使用 Web Component（<vanna-chat>）的场景显式调用。
     """
     component_script = get_vanna_component_script(dev_mode, static_path, cdn_url)
 
@@ -325,6 +328,303 @@ def get_index_html(
     </script>
 </body>
 </html>"""
+
+
+def get_simple_chat_html(api_base_url: str = "") -> str:
+    """Generate the default, dependency-free chat page with a stop/cancel button.
+
+    这是所有 *.py 示例共用的默认前端：不依赖 Tailwind / Web Component / CDN，只做三件
+    事——显示消息、渲染 SQL 结果表格、提交问题。直接 POST 到 chat_sse 端点并用
+    fetch + ReadableStream 解析 SSE（EventSource 只支持 GET，故手动解析）。
+
+    内置「停止」按钮：点击后通过 AbortController 中断 fetch，浏览器随之关闭 TCP 连接，
+    服务端 chat_sse 的 disconnect watcher 检测到断开后取消在途的 LLM 调用（token 级中断）。
+    """
+    sse_endpoint = (api_base_url or "") + "/api/vanna/v2/chat_sse"
+
+    html = r"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>智能体 测试台</title>
+</head>
+<body>
+
+<h3>智能体 测试台</h3>
+
+<div>
+  <label>身份邮箱：
+    <input id="email" type="text" value="guest@example.com" size="32">
+  </label>
+</div>
+
+<hr>
+
+<div id="messages"></div>
+
+<hr>
+
+<form id="form">
+  <input id="input" type="text" size="70" autocomplete="off" placeholder="输入问题，回车发送">
+  <button type="submit">发送</button>
+  <button id="stop" type="button" disabled>停止</button>
+</form>
+
+<script>
+(function () {
+  var messagesEl = document.getElementById('messages');
+  var formEl = document.getElementById('form');
+  var inputEl = document.getElementById('input');
+  var emailEl = document.getElementById('email');
+  var stopBtn = document.getElementById('stop');
+
+  var conversationId = null;
+  var busy = false;
+  var abortController = null;
+  var currentAiTextId = null;
+  var currentAiTextEl = null;
+
+  // 追加一行文本，prefix 为角色前缀（如 "AI: "）
+  function appendLine(prefix, text) {
+    var div = document.createElement('div');
+    if (prefix) {
+      var strong = document.createElement('strong');
+      strong.textContent = prefix;
+      div.appendChild(strong);
+    }
+    var lines = String(text).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (i > 0) {
+        div.appendChild(document.createElement('br'));
+      }
+      div.appendChild(document.createTextNode(lines[i]));
+    }
+    messagesEl.appendChild(div);
+    return div;
+  }
+
+  // 更新某个 AI 文本行（打字机效果：用累积文本覆盖，而非新增一行）
+  function setAiText(el, text) {
+    el.textContent = '';
+    var strong = document.createElement('strong');
+    strong.textContent = 'AI: ';
+    el.appendChild(strong);
+    var lines = String(text).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      if (i > 0) {
+        el.appendChild(document.createElement('br'));
+      }
+      el.appendChild(document.createTextNode(lines[i]));
+    }
+  }
+
+  // 渲染 SQL 结果集：rows 为对象数组，columns 为列名数组
+  function appendTable(rows, columns) {
+    if (!rows || rows.length === 0) {
+      appendLine('[数据] ', '(空结果)');
+      return;
+    }
+    var cols = (columns && columns.length) ? columns : Object.keys(rows[0]);
+    var table = document.createElement('table');
+    table.setAttribute('border', '1');
+
+    var thead = document.createElement('thead');
+    var headRow = document.createElement('tr');
+    for (var c = 0; c < cols.length; c++) {
+      var th = document.createElement('th');
+      th.textContent = cols[c];
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    for (var r = 0; r < rows.length; r++) {
+      var tr = document.createElement('tr');
+      for (var k = 0; k < cols.length; k++) {
+        var td = document.createElement('td');
+        var value = rows[r][cols[k]];
+        td.textContent = (value === null || value === undefined) ? '' : String(value);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+
+    messagesEl.appendChild(table);
+  }
+
+  // 处理单个流式分片。分片结构为 {rich, simple, conversation_id, request_id, timestamp}，
+  // 其中 rich 是组件序列化结果：顶层是 id/type/lifecycle 等，组件字段统一放在 rich.data 下。
+  function handleChunk(chunk) {
+    if (!chunk) return;
+    if (chunk.conversation_id) {
+      conversationId = chunk.conversation_id;
+    }
+
+    var rich = chunk.rich || {};
+    var data = rich.data || {};
+
+    switch (rich.type) {
+      case 'text':
+        // token 级流式：create 新建一行，update 用同 id 更新同一行（打字机效果）
+        if (rich.lifecycle === 'create' || currentAiTextId !== rich.id) {
+          currentAiTextId = rich.id;
+          currentAiTextEl = appendLine('AI: ', data.content || '');
+        } else if (rich.lifecycle === 'update' && currentAiTextEl) {
+          setAiText(currentAiTextEl, data.content || '');
+        }
+        break;
+      case 'dataframe':
+        appendTable(data.data || [], data.columns || []);
+        break;
+      case 'chart':
+        // 无样式页面不引入 Plotly，仅提示图表已生成
+        appendLine('[图表] ', data.chart_type || 'chart');
+        break;
+      case 'status_bar_update':
+        if (data.message) {
+          appendLine('[状态] ', data.message);
+        }
+        break;
+      case 'status_card':
+        appendLine('[工具] ', (data.title || '') + (data.description ? ' - ' + data.description : ''));
+        // 工具调用参数（Text2SQL 中即 SQL 语句）默认仅 admin 组可见，
+        // 普通用户根本收不到带 metadata 的这张卡片，因此这里直接展示即可。
+        if (data.metadata && Object.keys(data.metadata).length > 0) {
+          appendLine('[参数] ', JSON.stringify(data.metadata));
+        }
+        break;
+      case 'notification':
+        appendLine('[提示] ', data.message || data.title || '');
+        break;
+      default:
+        // 任务追踪、输入框状态等组件在极简页面中忽略
+        break;
+    }
+  }
+
+  function setBusy(b) {
+    busy = b;
+    inputEl.disabled = b;
+    stopBtn.disabled = !b;
+  }
+
+  async function send(message) {
+    if (busy) return;
+    setBusy(true);
+
+    // 把身份写入 cookie，SimpleUserResolver 会读取它
+    document.cookie = 'vanna_email=' + encodeURIComponent(emailEl.value || 'guest@example.com') + ';path=/';
+
+    appendLine('我: ', message);
+
+    var payload = { message: message };
+    if (conversationId) {
+      payload.conversation_id = conversationId;
+    }
+
+    abortController = new AbortController();
+
+    try {
+      var resp = await fetch('__SSE_ENDPOINT__', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: abortController.signal
+      });
+
+      if (!resp.ok || !resp.body) {
+        appendLine('[错误] ', 'HTTP ' + resp.status);
+        return;
+      }
+
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+
+      while (true) {
+        var result = await reader.read();
+        if (result.done) break;
+
+        buffer += decoder.decode(result.value, { stream: true });
+
+        // SSE 以空行分隔事件，逐个取出已完整的 "data: ..." 行
+        var parts = buffer.split('\n\n');
+        buffer = parts.pop();
+
+        for (var i = 0; i < parts.length; i++) {
+          var line = parts[i].trim();
+          if (line.indexOf('data:') !== 0) continue;
+          var raw = line.slice(5).trim();
+          if (raw === '[DONE]') continue;
+          try {
+            handleChunk(JSON.parse(raw));
+          } catch (e) {
+            // 忽略无法解析的片段
+          }
+        }
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        appendLine('[已停止] ', '生成已停止');
+      } else {
+        appendLine('[错误] ', String(err));
+      }
+    } finally {
+      abortController = null;
+      setBusy(false);
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = '';
+    send(text);
+  });
+
+  stopBtn.addEventListener('click', function () {
+    if (abortController) {
+      abortController.abort();
+    }
+  });
+
+  inputEl.focus();
+})();
+</script>
+
+</body>
+</html>
+"""
+    return html.replace("__SSE_ENDPOINT__", sse_endpoint)
+
+
+def get_index_html(
+    dev_mode: bool = False,
+    static_path: str = "/static",
+    cdn_url: str = "https://img.vanna.ai/vanna-components.js",
+    api_base_url: str = "",
+) -> str:
+    """Generate the default index HTML (minimal chat page with stop button).
+
+    Args:
+        dev_mode: Unused in the minimal page (kept for backward compatibility).
+        static_path: Unused in the minimal page (kept for backward compatibility).
+        cdn_url: Unused in the minimal page (kept for backward compatibility).
+        api_base_url: Base URL for the chat_sse endpoint.
+
+    Returns:
+        Complete HTML page as string
+
+    所有 *.py 示例通过 register_chat_routes 注册的 "/" 路由都会调用本函数，因此默认
+    使用同一个极简前端。若想用回富前端（<vanna-chat> Web Component），显式调用
+    get_rich_index_html 即可。
+    """
+    return get_simple_chat_html(api_base_url=api_base_url)
 
 
 # Backward compatibility - default production HTML

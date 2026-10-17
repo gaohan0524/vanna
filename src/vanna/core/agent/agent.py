@@ -182,6 +182,7 @@ class Agent:
         message: str,
         *,
         conversation_id: Optional[str] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> AsyncGenerator[UiComponent, None]:
         """
         Process a user message and yield UI components with error handling.
@@ -190,6 +191,9 @@ class Agent:
             request_context: Request context for user resolution (includes metadata)
             message: User's message content
             conversation_id: Optional conversation ID; if None, creates new conversation
+            cancel_event: Optional asyncio.Event; when set, aborts token streaming and
+                the in-flight LLM call (cooperative cancellation). The caller propagates
+                the resulting asyncio.CancelledError up to the transport layer.
 
         Yields:
             UiComponent instances for UI updates
@@ -197,12 +201,17 @@ class Agent:
         Agent 对外的唯一入口，也是健壮性边界：它用 try/except 包住整个 _send_message，
         任何未捕获异常都会被兜底为「错误卡片 + 状态栏复位 + 重新启用输入框」三连，
         确保前端不会因内部异常而永久卡在 working 状态。Text2SQL 链路上游（HTTP 层）
-        只调用本方法，不直接触碰 _send_message。
+        只调用本方法，不直接触碰 _send_message。cancel_event 触发的是 asyncio.CancelledError
+        （BaseException），不会被下面的 except Exception 吞掉，而是原样向上传播给传输层，
+        由传输层决定如何收尾（如 WebSocket 回发 cancelled 帧）。
         """
         try:
             # Delegate to internal method
             async for component in self._send_message(
-                request_context, message, conversation_id=conversation_id
+                request_context,
+                message,
+                conversation_id=conversation_id,
+                cancel_event=cancel_event,
             ):
                 yield component
         except Exception as e:
@@ -276,6 +285,7 @@ class Agent:
         message: str,
         *,
         conversation_id: Optional[str] = None,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> AsyncGenerator[UiComponent, None]:
         """
         Internal method to process a user message and yield UI components.
@@ -284,6 +294,8 @@ class Agent:
             request_context: Request context for user resolution (includes metadata)
             message: User's message content
             conversation_id: Optional conversation ID; if None, creates new conversation
+            cancel_event: Optional asyncio.Event; when set, aborts token streaming and
+                the in-flight LLM call (cooperative cancellation).
 
         Yields:
             UiComponent instances for UI updates
@@ -720,6 +732,9 @@ class Agent:
         tool_iterations = 0
 
         while tool_iterations < self.config.max_tool_iterations:
+            # 每轮工具循环开始前检查取消信号：用户中途停止时尽快退出，不再发起新的 LLM 调用。
+            self._raise_if_cancelled(cancel_event)
+
             if self.config.include_thinking_indicators and tool_iterations == 0:
                 # TODO: Yield thinking indicator
                 pass
@@ -731,7 +746,7 @@ class Agent:
             if self.config.stream_responses:
                 response_holder: Dict[str, LlmResponse] = {}
                 async for component in self._stream_response_components(
-                    request, response_holder
+                    request, response_holder, cancel_event=cancel_event
                 ):
                     yield component
                     streamed_text = True
@@ -886,6 +901,9 @@ class Agent:
                         for tool_call, _, _ in exec_plan
                     )
                 )
+
+                # 工具并行执行期间用户可能已取消：立即退出，不再产出结果 UI 或回喂 LLM。
+                self._raise_if_cancelled(cancel_event)
 
                 # 阶段 3：串行产出「完成」UI 与结果（保持 tool_calls 原始顺序）
                 for (tool_call, tool_task, tool_status_card), result in zip(
@@ -1188,6 +1206,17 @@ You can:
         （如前端、评测脚本）了解当前用户的能力边界。
         """
         return await self.tool_registry.get_schemas(user)
+
+    @staticmethod
+    def _raise_if_cancelled(cancel_event: Optional[asyncio.Event]) -> None:
+        """Raise CancelledError if the cancellation event is set.
+
+        协作式取消的检查点：在工具循环每轮开始、工具并行执行结束后调用。cancel_event
+        为 None 时零开销直通。抛出 asyncio.CancelledError（BaseException），不会被
+        send_message 的 except Exception 兜底成错误卡片，而是原样传播给传输层。
+        """
+        if cancel_event is not None and cancel_event.is_set():
+            raise asyncio.CancelledError()
 
     async def _build_llm_request(
         self,
@@ -1644,7 +1673,11 @@ You can:
         return response
 
     async def _stream_response_components(
-        self, request: LlmRequest, response_holder: Dict[str, LlmResponse]
+        self,
+        request: LlmRequest,
+        response_holder: Dict[str, LlmResponse],
+        *,
+        cancel_event: Optional[asyncio.Event] = None,
     ) -> AsyncGenerator[UiComponent, None]:
         """Stream LLM response as token-level text components.
 
@@ -1652,6 +1685,13 @@ You can:
         埋点），本生成器负责把每个文本增量实时转成（create/update）文本组件 yield
         出去，实现打字机效果；聚合完成后把 LlmResponse 写入 response_holder，供主
         循环继续工具循环逻辑。
+
+        取消语义：若提供 cancel_event，则启动 watcher 监听它。取消一旦触发，watcher
+        会 cancel 掉 worker task（从而中止在途的 LLM HTTP 流式请求、停止计费），并向
+        token_queue 塞入哨兵唤醒可能阻塞在 get() 上的主循环，最终抛出 asyncio.CancelledError
+        向上传播。之所以用哨兵而非单纯 GeneratorExit，是因为主循环可能正阻塞在
+        await token_queue.get() 上（并非挂起在 yield 点），此时 aclose() 会因「生成器
+        正在运行」而失效，必须用队列哨兵主动唤醒。
 
         注意：若错误恢复触发重试，token 会重新推送（见 _handle_streaming_response
         的 on_content 回调），前端应能容忍同 id 文本被重写。
@@ -1675,9 +1715,25 @@ You can:
 
         task = asyncio.create_task(_worker())
 
+        async def _watch_cancel() -> None:
+            await cancel_event.wait()
+            # 中止在途的 LLM 流式调用（关闭底层 HTTP 连接、停止 token 计费）
+            if not task.done():
+                task.cancel()
+            # 哨兵唤醒主循环，使其即便阻塞在 get() 上也能及时退出
+            await token_queue.put(("cancelled", None))
+
+        watcher = asyncio.create_task(_watch_cancel()) if cancel_event is not None else None
+
         try:
             while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    # 双保险：即便哨兵尚未到达，一旦发现取消信号立即退出
+                    raise asyncio.CancelledError()
+
                 kind, payload = await token_queue.get()
+                if kind == "cancelled":
+                    raise asyncio.CancelledError()
                 if kind == "content":
                     accumulated += payload
                     lifecycle = (
@@ -1705,5 +1761,7 @@ You can:
 
             await task
         finally:
+            if watcher is not None:
+                watcher.cancel()
             if not task.done():
                 task.cancel()
