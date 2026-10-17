@@ -15,6 +15,7 @@ from vanna.core.recovery import (
     RecoveryAction,
     RecoveryActionType,
 )
+from vanna.core.rich_component import ComponentLifecycle
 from vanna.core.registry import ToolRegistry
 from vanna.core.user import User
 from vanna.core.user.request_context import RequestContext
@@ -187,3 +188,58 @@ class TestStreamingAggregation:
             "completion_tokens": 5,
             "total_tokens": 15,
         }
+
+
+class TestTokenStreaming:
+    """测试 _stream_response_components 的 token 级打字机输出。"""
+
+    async def test_streams_token_level_components(self):
+        agent = make_agent()
+
+        async def fake_stream(request):
+            yield LlmStreamChunk(content="Hello")
+            yield LlmStreamChunk(content=" ")
+            yield LlmStreamChunk(content="world")
+            yield LlmStreamChunk(finish_reason="stop")
+
+        agent.llm_service.stream_request = fake_stream
+
+        holder = {}
+        components = []
+        async for comp in agent._stream_response_components(make_request(), holder):
+            components.append(comp)
+
+        # 3 个文本片段 → 1 个 create + 2 个 update
+        assert len(components) == 3
+        assert components[0].rich_component.lifecycle == ComponentLifecycle.CREATE
+        assert components[1].rich_component.lifecycle == ComponentLifecycle.UPDATE
+        assert components[2].rich_component.lifecycle == ComponentLifecycle.UPDATE
+
+        # 同一 id（前端据此增量更新同一节点）
+        first_id = components[0].rich_component.id
+        assert components[1].rich_component.id == first_id
+        assert components[2].rich_component.id == first_id
+
+        # 文本逐步累积
+        assert components[0].rich_component.content == "Hello"
+        assert components[2].rich_component.content == "Hello world"
+
+        # 聚合结果正确写入 holder
+        assert holder["response"].content == "Hello world"
+
+    async def test_no_content_yields_no_components(self):
+        """纯工具调用（无文本）时不应产出任何文本组件。"""
+        agent = make_agent()
+
+        async def fake_stream(request):
+            yield LlmStreamChunk(finish_reason="tool_calls")
+
+        agent.llm_service.stream_request = fake_stream
+
+        holder = {}
+        components = []
+        async for comp in agent._stream_response_components(make_request(), holder):
+            components.append(comp)
+
+        assert components == []
+        assert holder["response"].content is None

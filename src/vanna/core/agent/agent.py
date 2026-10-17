@@ -14,7 +14,15 @@ ConversationStore 等）编程，不依赖任何具体供应商实现。
 import asyncio
 import traceback
 import uuid
-from typing import TYPE_CHECKING, AsyncGenerator, Awaitable, Callable, List, Optional
+from typing import (
+    TYPE_CHECKING,
+    AsyncGenerator,
+    Awaitable,
+    Callable,
+    Dict,
+    List,
+    Optional,
+)
 
 from vanna.components import (
     UiComponent,
@@ -26,6 +34,7 @@ from vanna.components import (
     StatusCardComponent,
     Task,
 )
+from vanna.core.rich_component import ComponentLifecycle
 from .config import AgentConfig
 from vanna.core.storage import ConversationStore
 from vanna.core.llm import LlmService
@@ -716,8 +725,17 @@ class Agent:
                 pass
 
             # Get LLM response
+            # 流式时逐 token 产出文本组件（打字机效果）；streamed_text 标记本轮流式
+            # 是否已输出过文本，避免后续分支重复 yield 完整文本。
+            streamed_text = False
             if self.config.stream_responses:
-                response = await self._handle_streaming_response(request)
+                response_holder: Dict[str, LlmResponse] = {}
+                async for component in self._stream_response_components(
+                    request, response_holder
+                ):
+                    yield component
+                    streamed_text = True
+                response = response_holder["response"]
             else:
                 response = await self._send_llm_request(request)
 
@@ -746,12 +764,16 @@ class Agent:
                         )
                     )
                     if has_tool_invocation_message_in_chat:
-                        yield UiComponent(
-                            rich_component=RichTextComponent(
-                                content=response.content, markdown=True
-                            ),
-                            simple_component=SimpleTextComponent(text=response.content),
-                        )
+                        # 流式路径已逐 token 输出文本，这里不再重复 yield 完整文本
+                        if not streamed_text:
+                            yield UiComponent(
+                                rich_component=RichTextComponent(
+                                    content=response.content, markdown=True
+                                ),
+                                simple_component=SimpleTextComponent(
+                                    text=response.content
+                                ),
+                            )
 
                         # Update status to executing tools
                         yield UiComponent(  # type: ignore
@@ -1114,12 +1136,16 @@ class Agent:
                     conversation.add_message(
                         Message(role="assistant", content=response.content)
                     )
-                    yield UiComponent(
-                        rich_component=RichTextComponent(
-                            content=response.content, markdown=True
-                        ),
-                        simple_component=SimpleTextComponent(text=response.content),
-                    )
+                    # 流式路径已逐 token 输出文本，这里不再重复 yield 完整文本
+                    if not streamed_text:
+                        yield UiComponent(
+                            rich_component=RichTextComponent(
+                                content=response.content, markdown=True
+                            ),
+                            simple_component=SimpleTextComponent(
+                                text=response.content
+                            ),
+                        )
                 break
 
         # Check if we hit the tool iteration limit
@@ -1473,13 +1499,16 @@ You can:
 
         return response
 
-    async def _handle_streaming_response(self, request: LlmRequest) -> LlmResponse:
+    async def _handle_streaming_response(
+        self,
+        request: LlmRequest,
+        on_content: Optional[Callable[[str], Awaitable[None]]] = None,
+    ) -> LlmResponse:
         """Handle streaming response from LLM.
 
         流式调用路径：把 stream_request 产出的全部 LlmStreamChunk 聚合为一个完整
-        LlmResponse 再返回。注意当前实现是「组件级流式」而非「token 级」——中间 token
-        并不实时推给前端（见循环内 "Could yield intermediate TextChunk here" 的 TODO），
-        因此真正的打字机效果尚未实现，前端看到的是每个组件到达后的增量渲染。
+        LlmResponse 再返回。若提供了 on_content 回调，则每个文本增量（token/片段）
+        都会实时调用它，由调用方据此实现 token 级打字机效果。
         """
         # Apply before_llm_request middlewares with observability
         for middleware in self.llm_middlewares:
@@ -1518,7 +1547,9 @@ You can:
             async for chunk in self.llm_service.stream_request(request):
                 if chunk.content:
                     accumulated_content += chunk.content
-                    # Could yield intermediate TextChunk here
+                    # 实时推送文本增量，实现 token 级打字机效果
+                    if on_content is not None:
+                        await on_content(chunk.content)
 
                 if chunk.tool_calls:
                     accumulated_tool_calls.extend(chunk.tool_calls)
@@ -1588,3 +1619,68 @@ You can:
                     )
 
         return response
+
+    async def _stream_response_components(
+        self, request: LlmRequest, response_holder: Dict[str, LlmResponse]
+    ) -> AsyncGenerator[UiComponent, None]:
+        """Stream LLM response as token-level text components.
+
+        用 asyncio.Queue + task 并发：worker 负责跑 LLM 流式（含错误恢复/中间件/
+        埋点），本生成器负责把每个文本增量实时转成（create/update）文本组件 yield
+        出去，实现打字机效果；聚合完成后把 LlmResponse 写入 response_holder，供主
+        循环继续工具循环逻辑。
+
+        注意：若错误恢复触发重试，token 会重新推送（见 _handle_streaming_response
+        的 on_content 回调），前端应能容忍同 id 文本被重写。
+        """
+        token_queue: "asyncio.Queue" = asyncio.Queue()
+        text_id = str(uuid.uuid4())
+        accumulated = ""
+        first_chunk = True
+
+        async def _on_content(text: str) -> None:
+            await token_queue.put(("content", text))
+
+        async def _worker() -> None:
+            try:
+                response = await self._handle_streaming_response(
+                    request, on_content=_on_content
+                )
+                await token_queue.put(("done", response))
+            except Exception as e:
+                await token_queue.put(("error", e))
+
+        task = asyncio.create_task(_worker())
+
+        try:
+            while True:
+                kind, payload = await token_queue.get()
+                if kind == "content":
+                    accumulated += payload
+                    lifecycle = (
+                        ComponentLifecycle.CREATE
+                        if first_chunk
+                        else ComponentLifecycle.UPDATE
+                    )
+                    first_chunk = False
+                    rich = RichTextComponent(
+                        id=text_id,
+                        content=accumulated,
+                        markdown=True,
+                        lifecycle=lifecycle,
+                    )
+                    yield UiComponent(
+                        rich_component=rich,
+                        simple_component=SimpleTextComponent(text=accumulated),
+                    )
+                elif kind == "done":
+                    response_holder["response"] = payload
+                    break
+                else:
+                    # error：把 worker 捕获的异常在本生成器里重新抛出
+                    raise payload
+
+            await task
+        finally:
+            if not task.done():
+                task.cancel()

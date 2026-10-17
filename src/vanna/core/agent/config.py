@@ -166,7 +166,7 @@ class AgentConfig(BaseModel):
 
     # 单个用户回合内工具调用的最大次数（LLM 生成/修复 SQL 的重试上限）
     max_tool_iterations: int = Field(default=10, gt=0)
-    # 是否启用 LLM 流式响应（注意：当前实现是组件级流式，非 token 级打字机）
+    # 是否启用 LLM 流式响应（token 级打字机：逐 token 实时推送文本组件）
     stream_responses: bool = Field(default=True)
     # 是否在处理结束后自动持久化会话
     auto_save_conversations: bool = Field(default=True)

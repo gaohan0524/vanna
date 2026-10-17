@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any, AsyncGenerator, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, Iterator, List, Optional, Set, Tuple
 
 from vanna.core.llm import (
     LlmService,
@@ -19,6 +19,45 @@ from vanna.core.llm import (
     LlmStreamChunk,
 )
 from vanna.core.tool import ToolCall, ToolSchema
+
+
+def _iter_json_objects(text: str) -> Iterator[Tuple[int, int, Any]]:
+    """扫描文本中所有平衡的 JSON 对象，产出 (start, end, obj) 位置区间。"""
+    decoder = json.JSONDecoder()
+    pos = 0
+    while True:
+        start = text.find("{", pos)
+        if start == -1:
+            return
+        try:
+            obj, end = decoder.raw_decode(text, start)
+            yield start, end, obj
+            pos = end
+        except Exception:
+            pos = start + 1
+
+
+def _normalize_tool_obj(obj: Any) -> Tuple[Optional[str], Any]:
+    """归一化两种常见的文本 tool call 形态：
+
+    {"name": ..., "arguments": {...}} 或 {"function": {"name": ..., "arguments": ...}}
+    返回 (工具名, 参数)；不匹配时返回 (None, None)。
+    """
+    if not isinstance(obj, dict):
+        return None, None
+    fn = obj.get("function") if isinstance(obj.get("function"), dict) else obj
+    name = fn.get("name")
+    if not isinstance(name, str) or not name:
+        return None, None
+    args = fn.get("arguments", {})
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {"_raw": args}
+    if not isinstance(args, dict):
+        args = {"args": args}
+    return name, args
 
 
 class OllamaLlmService(LlmService):
@@ -77,6 +116,15 @@ class OllamaLlmService(LlmService):
         content = message.get("content")
         tool_calls = self._extract_tool_calls_from_message(message)
 
+        # 文本形式工具调用兜底：小模型可能把 tool call JSON 直接打进正文
+        if not tool_calls and content:
+            cleaned, textual_calls = self._parse_textual_tool_calls(
+                content, self._tool_names_from_request(request)
+            )
+            if textual_calls:
+                tool_calls = textual_calls
+                content = cleaned or None
+
         # Extract usage information if available
         usage: Dict[str, int] = {}
         if "prompt_eval_count" in resp or "eval_count" in resp:
@@ -113,6 +161,7 @@ class OllamaLlmService(LlmService):
 
         # Accumulate tool calls if present
         accumulated_tool_calls: List[ToolCall] = []
+        content_text = ""  # 累积正文，用于流结束后的文本形式工具调用兜底
         last_finish: Optional[str] = None
         usage: Optional[Dict[str, int]] = None
 
@@ -122,6 +171,7 @@ class OllamaLlmService(LlmService):
             # Yield text content
             content = message.get("content")
             if content:
+                content_text += content
                 yield LlmStreamChunk(content=content)
 
             # Accumulate tool calls
@@ -138,6 +188,16 @@ class OllamaLlmService(LlmService):
                     "total_tokens": chunk.get("prompt_eval_count", 0)
                     + chunk.get("eval_count", 0),
                 }
+
+        # 文本形式工具调用兜底：小模型常把 tool call JSON 直接打进正文。
+        # 注意：此时 JSON 已作为 token 流出（无法追溯），但解析出的工具调用
+        # 会让工具循环正确继续执行，而不是把 JSON 当最终答案提前结束。
+        if not accumulated_tool_calls and content_text:
+            _, textual_calls = self._parse_textual_tool_calls(
+                content_text, self._tool_names_from_request(request)
+            )
+            if textual_calls:
+                accumulated_tool_calls.extend(textual_calls)
 
         # Emit final chunk with tool calls if any
         if accumulated_tool_calls:
@@ -259,3 +319,50 @@ class OllamaLlmService(LlmService):
             )
 
         return tool_calls
+
+    def _parse_textual_tool_calls(
+        self, content: str, tool_names: Set[str]
+    ) -> Tuple[str, List[ToolCall]]:
+        """从模型正文里解析以 JSON 文本形式输出的工具调用（小模型兜底）。
+
+        qwen 等模型有时不走 tool_calls 通道，而是把 {"name": ..., "arguments": ...}
+        直接打进 content（ollama 解析 <tool_call> 失败时会原样保留在正文里）。
+        仅当 JSON 的 name 与本次请求注册的工具名匹配时才认领，避免把普通 JSON
+        输出误判为工具调用。返回 (剥离工具调用 JSON 后的剩余文本, 工具调用列表)。
+        """
+        if not content or not tool_names:
+            return content, []
+
+        spans: List[Tuple[int, int]] = []
+        calls: List[ToolCall] = []
+        for start, end, obj in _iter_json_objects(content):
+            name, args = _normalize_tool_obj(obj)
+            if name in tool_names:
+                spans.append((start, end))
+                calls.append(
+                    ToolCall(
+                        id=f"textual_{len(calls)}", name=name, arguments=args or {}
+                    )
+                )
+
+        if not calls:
+            return content, []
+
+        # 剥离已认领的 JSON 区间，保留其余说明文字
+        pieces: List[str] = []
+        last = 0
+        for start, end in spans:
+            pieces.append(content[last:start])
+            last = end
+        pieces.append(content[last:])
+        cleaned = "".join(pieces).strip()
+        return cleaned, calls
+
+    @staticmethod
+    def _tool_names_from_request(request: LlmRequest) -> Set[str]:
+        """提取本次请求注册的工具名集合（用于文本形式 tool call 校验）。"""
+        return {
+            t.name
+            for t in (request.tools or [])
+            if getattr(t, "name", None)
+        }
