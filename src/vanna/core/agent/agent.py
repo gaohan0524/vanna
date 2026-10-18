@@ -114,19 +114,18 @@ class Agent:
         user_resolver: UserResolver,
         agent_memory: AgentMemory,
         conversation_store: Optional[ConversationStore] = None,
-        # 注意：config / system_prompt_builder 的默认实例在「函数定义时」只求值一次，
-        # 所有未显式传参的 Agent 会共享同一实例；lifecycle_hooks 等空列表也是 Python
-        # 可变默认参数。当前代码对它们只读不写，暂无危害；若未来需要 mutate，应改为
-        # default_factory 模式，否则会出现跨实例的状态串扰。  【待确认设计】
-        config: AgentConfig = AgentConfig(),
-        system_prompt_builder: SystemPromptBuilder = DefaultSystemPromptBuilder(),
-        lifecycle_hooks: List[LifecycleHook] = [],
-        llm_middlewares: List[LlmMiddleware] = [],
+        # 注意：所有可变默认参数一律用 None 占位，在函数体内按实例初始化。
+        # Python 的默认参数只在「函数定义时」求值一次，若直接写 AgentConfig() / []，
+        # 所有未显式传参的 Agent 会共享同一份可变状态，导致跨实例串扰。
+        config: Optional[AgentConfig] = None,
+        system_prompt_builder: Optional[SystemPromptBuilder] = None,
+        lifecycle_hooks: Optional[List[LifecycleHook]] = None,
+        llm_middlewares: Optional[List[LlmMiddleware]] = None,
         workflow_handler: Optional[WorkflowHandler] = None,
         error_recovery_strategy: Optional[ErrorRecoveryStrategy] = None,
-        context_enrichers: List[ToolContextEnricher] = [],
+        context_enrichers: Optional[List[ToolContextEnricher]] = None,
         llm_context_enhancer: Optional[LlmContextEnhancer] = None,
-        conversation_filters: List[ConversationFilter] = [],
+        conversation_filters: Optional[List[ConversationFilter]] = None,
         observability_provider: Optional[ObservabilityProvider] = None,
         audit_logger: Optional[AuditLogger] = None,
     ):
@@ -144,10 +143,16 @@ class Agent:
             conversation_store = MemoryConversationStore()
 
         self.conversation_store = conversation_store
-        self.config = config
-        self.system_prompt_builder = system_prompt_builder
-        self.lifecycle_hooks = lifecycle_hooks
-        self.llm_middlewares = llm_middlewares
+        # 每个 Agent 实例独立初始化，避免共享默认实例
+        self.config = config if config is not None else AgentConfig()
+        self.system_prompt_builder = (
+            system_prompt_builder
+            if system_prompt_builder is not None
+            else DefaultSystemPromptBuilder()
+        )
+        # 防御性拷贝：即使外部把同一个 list 传给多个 Agent，也各自持有独立副本
+        self.lifecycle_hooks = list(lifecycle_hooks or [])
+        self.llm_middlewares = list(llm_middlewares or [])
 
         # Use DefaultWorkflowHandler if none provided
         if workflow_handler is None:
@@ -155,14 +160,14 @@ class Agent:
         self.workflow_handler = workflow_handler
 
         self.error_recovery_strategy = error_recovery_strategy
-        self.context_enrichers = context_enrichers
+        self.context_enrichers = list(context_enrichers or [])
 
         # Use DefaultLlmContextEnhancer if none provided
         if llm_context_enhancer is None:
             llm_context_enhancer = DefaultLlmContextEnhancer(agent_memory)
         self.llm_context_enhancer = llm_context_enhancer
 
-        self.conversation_filters = conversation_filters
+        self.conversation_filters = list(conversation_filters or [])
         self.observability_provider = observability_provider
         self.audit_logger = audit_logger
 
