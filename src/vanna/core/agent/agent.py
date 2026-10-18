@@ -69,6 +69,9 @@ logger.info("Loaded vanna.core.agent.agent module")
 # 决定何时放弃（返回 FAIL），此上限仅用于兜底，防止错误的 strategy 导致无限重试。
 MAX_LLM_RECOVERY_ATTEMPTS = 10
 
+# 工具执行恢复的防御性上限：仅对「未捕获异常」触发的失败做重试，最多 3 次。
+MAX_TOOL_RECOVERY_ATTEMPTS = 3
+
 # 工具循环触顶后的收尾总结提示词：要求模型禁用工具、基于已收集结果给出最佳回答。
 TOOL_LIMIT_SUMMARY_PROMPT = (
     "You have reached the maximum number of tool calls allowed for this turn. "
@@ -1385,6 +1388,69 @@ You can:
             response_format=self.config.response_format,
         )
 
+    async def _recover_tool_result(
+        self, tool_call: ToolCall, context: ToolContext, result: ToolResult
+    ) -> ToolResult:
+        """Apply ErrorRecoveryStrategy to unexpected tool failures.
+
+        仅处理「未捕获异常」导致的失败（ToolResult.metadata 带 ``exception_type``）：
+          - RETRY：按 retry_delay_ms 退避后重新执行，最多 MAX_TOOL_RECOVERY_ATTEMPTS 次；
+          - FALLBACK：若 fallback_value 是 ToolResult，直接采用；
+          - SKIP：返回一条可回喂 LLM 的失败结果；
+          - FAIL / 未知：保留原结果，继续走「回喂 LLM 自我修复」。
+
+        业务错误（SQL 语法错误、权限拒绝、参数校验失败等）不带 exception_type，
+        因此不会在这里重试，避免与 LLM 的自修复形成双重循环。
+        """
+        if result.success or not self.error_recovery_strategy:
+            return result
+
+        if not (result.metadata or {}).get("exception_type"):
+            return result
+
+        attempt = 1
+        while attempt <= MAX_TOOL_RECOVERY_ATTEMPTS:
+            error = RuntimeError(
+                result.error or result.result_for_llm or "Tool execution failed"
+            )
+            action = await self.error_recovery_strategy.handle_tool_error(
+                error, context, attempt
+            )
+
+            if action.action == RecoveryActionType.RETRY:
+                delay = action.retry_delay_ms or 0
+                if delay:
+                    await asyncio.sleep(delay / 1000)
+                attempt += 1
+                result = await self.tool_registry.execute(tool_call, context)
+                if result.success:
+                    return result
+                if not (result.metadata or {}).get("exception_type"):
+                    return result
+                continue
+
+            if action.action == RecoveryActionType.FALLBACK:
+                if isinstance(action.fallback_value, ToolResult):
+                    return action.fallback_value
+                return result
+
+            if action.action == RecoveryActionType.SKIP:
+                message = (
+                    action.message or "Tool execution skipped by recovery strategy."
+                )
+                return ToolResult(
+                    success=False,
+                    result_for_llm=message,
+                    ui_component=None,
+                    error=message,
+                    metadata={"error_type": "tool_skipped"},
+                )
+
+            # FAIL 或未知动作：保留原结果，交给 LLM 自我修复
+            return result
+
+        return result
+
     async def _execute_tool_call(
         self, tool_call: ToolCall, context: ToolContext
     ) -> ToolResult:
@@ -1437,6 +1503,8 @@ You can:
             )
 
         result = await self.tool_registry.execute(tool_call, context)
+        # 仅对「未捕获异常」应用 ErrorRecoveryStrategy；业务错误继续回喂 LLM 自修复
+        result = await self._recover_tool_result(tool_call, context, result)
 
         if self.observability_provider and tool_exec_span:
             tool_exec_span.set_attribute("success", result.success)

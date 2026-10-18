@@ -3,7 +3,8 @@ Recovery action models for error handling.
 
 本模块定义错误恢复相关的数据模型：恢复动作类型枚举与恢复动作。接线情况：
 handle_llm_error 已在 agent.py 的 LLM 调用层被消费（RETRY 退避重试、FALLBACK 降级、
-SKIP 跳过），handle_tool_error 保持未调用、工具错误回喂 LLM。
+SKIP 跳过）；handle_tool_error 也在工具执行层接线，但仅对未捕获异常生效（业务错误
+仍回喂 LLM 自我修复）。
 """
 
 from enum import Enum

@@ -69,7 +69,11 @@ class CachingMiddleware(LlmMiddleware):
 
 # 2. ErrorRecoveryStrategy Example: Exponential Backoff
 class ExponentialBackoffStrategy(ErrorRecoveryStrategy):
-    """Retry failed operations with exponential backoff."""
+    """Retry failed operations with exponential backoff.
+
+    注意：handle_tool_error 仅对「未捕获异常」触发的工具失败生效；SQL 语法错误等
+    业务错误仍由 ToolResult(success=False) 回喂 LLM 自我修复，不会走这里重试。
+    """
 
     def __init__(self, max_retries: int = 3) -> None:
         self.max_retries = max_retries

@@ -5,9 +5,12 @@ Recovery strategies allow you to customize how the agent handles errors
 during tool execution and LLM communication.
 
 本模块定义错误恢复策略接口，用于自定义工具执行与 LLM 通信出错时的重试/降级行为。
-接线情况：handle_llm_error 已在 agent.py 的 LLM 调用层（_invoke_llm_with_recovery）
-被调用，对瞬时故障（429/5xx/超时等）做退避重试/降级；handle_tool_error 保持未调用，
-工具错误仍按 agentic 范式转成 ToolResult(success=False) 回喂 LLM 自我修复。
+接线情况：
+- handle_llm_error 已在 agent.py 的 LLM 调用层（_invoke_llm_with_recovery）被调用，
+  对瞬时故障（429/5xx/超时等）做退避重试/降级；
+- handle_tool_error 已在 agent.py 的 _recover_tool_result 接线，但**仅对未捕获异常**
+  生效（ToolResult.metadata 带 exception_type）。SQL 语法错误等业务错误仍按 agentic
+  范式转成 ToolResult(success=False) 回喂 LLM 自我修复，避免与 LLM 重试叠加。
 """
 
 from abc import ABC
@@ -52,8 +55,9 @@ class ErrorRecoveryStrategy(ABC):
         )
 
     错误恢复策略的抽象基类。两个方法均默认返回「立即失败」，子类可返回 RETRY /
-    FALLBACK 等动作实现退避重试或降级。其中 handle_llm_error 已在 agent.py 的 LLM
-    调用层接线，handle_tool_error 保留为可选扩展（默认不回喂式重试）。
+    FALLBACK 等动作实现退避重试或降级。其中 handle_llm_error 在 LLM 调用层接线；
+    handle_tool_error 在工具执行层接线，但仅对「未捕获异常」生效（业务错误仍回喂
+    LLM 自我修复）。
     """
 
     async def handle_tool_error(

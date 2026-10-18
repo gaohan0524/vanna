@@ -320,11 +320,14 @@ class ToolRegistry:
 
             return result
         except Exception as e:
-            # 执行异常兜底：转失败结果（含错误文本），供 LLM 读取后自我修复 SQL
+            # 执行异常兜底：转失败结果（含错误文本），供 LLM 读取后自我修复 SQL。
+            # exception_type 标记「未捕获异常」来源，供 ErrorRecoveryStrategy 判断是否
+            # 走基础设施级重试；业务错误（如 SQL 语法错误）不会带此标记。
             msg = f"Execution failed: {str(e)}"
             return ToolResult(
                 success=False,
                 result_for_llm=msg,
                 ui_component=None,
                 error=msg,
+                metadata={"exception_type": type(e).__name__},
             )
