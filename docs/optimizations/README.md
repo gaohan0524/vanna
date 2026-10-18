@@ -1,0 +1,38 @@
+# Vanna 优化记录（P0 / P1）
+
+本目录按「一个问题一份文档」记录本轮 P0/P1 优化：问题背景、主流方案参考、设计决策、代码变动、使用方式与验证结果。
+
+## 索引
+
+| 文档 | 对应问题 | 提交 | 优先级 | 状态 |
+|---|---|---|---|---|
+| [P0-01-async-llm-sdk.md](./P0-01-async-llm-sdk.md) | #1 LLM 集成用同步阻塞 SDK | `23234c7` | P0 | ✅ |
+| [P0-02-stream-finish-reason-usage.md](./P0-02-stream-finish-reason-usage.md) | #2 流式丢失 finish_reason/usage | `23234c7` | P0 | ✅ |
+| [P1-03-parallel-tool-execution.md](./P1-03-parallel-tool-execution.md) | #3 工具串行执行 | `32a1f23` | P1 | ✅ |
+| [P1-04-token-level-streaming.md](./P1-04-token-level-streaming.md) | #4 token 级流式未实现 | `fca7ceb` | P1 | ✅ |
+| [P1-05-persistence-multi-tenant.md](./P1-05-persistence-multi-tenant.md) | #5 会话/记忆默认内存态 | `c13633d` | P1 | ✅ |
+| [P1-06-sql-execution-guardrails.md](./P1-06-sql-execution-guardrails.md) | #6 SQL 执行缺少护栏 | `56628d3` | P1 | ✅ |
+| [P1-07-token-cancellation.md](./P1-07-token-cancellation.md) | #7 无 token 级中断/取消 | `6d4650f` | P1 | ✅ |
+| [P1-08-context-window-management.md](./P1-08-context-window-management.md) | #8 无内置上下文窗口管理 | `23b5432` | P1 | ✅ |
+| [P1-10-structured-output-sql-validation.md](./P1-10-structured-output-sql-validation.md) | #10 无结构化输出约束 | `c0a269a` | P1 | ✅ |
+| [P1-11-observability-standards.md](./P1-11-observability-standards.md) | #11 observability 未接标准 | `23e0aa7` | P1 | ✅ |
+
+## 未完成项
+
+| 问题 | 状态 | 说明 |
+|---|---|---|
+| #9 无 human-in-the-loop / 危险操作审批 | 未实现 | 不在本轮范围；可参考 LangGraph `interrupt` / Claude Code approval 设计审批闸门 |
+
+## 文档结构约定
+
+每份文档统一包含：
+
+1. 问题背景
+2. 主流方案参考
+3. 方案设计
+4. 代码变动清单（新增/修改文件 + 关键代码）
+5. 使用方式
+6. 验证
+7. 兼容性与注意事项
+8. 后续可扩展点
+9. 附：提交与文件
