@@ -285,6 +285,22 @@ class GeminiLlmService(LlmService):
         if system_instruction:
             config_dict["system_instruction"] = system_instruction
 
+        # 结构化输出：Gemini 通过 response_mime_type + response_schema 约束
+        if request.response_format:
+            rf_type = request.response_format.get("type")
+            if rf_type == "json_schema":
+                json_schema = request.response_format.get("json_schema") or {}
+                schema = (
+                    json_schema.get("schema")
+                    if isinstance(json_schema, dict)
+                    else None
+                )
+                config_dict["response_mime_type"] = "application/json"
+                if schema:
+                    config_dict["response_schema"] = schema
+            elif rf_type == "json_object":
+                config_dict["response_mime_type"] = "application/json"
+
         config = self._types.GenerateContentConfig(**config_dict)
 
         return contents, config

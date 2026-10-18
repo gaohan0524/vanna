@@ -10,7 +10,6 @@
 
 from typing import Any, Dict, List, Optional, Type, cast
 import asyncio
-import re
 import uuid
 
 from vanna.core.tool import Tool, ToolContext, ToolResult
@@ -24,66 +23,10 @@ from vanna.components import (
 from vanna.capabilities.sql_runner import SqlRunner, RunSqlToolArgs
 from vanna.capabilities.file_system import FileSystem
 from vanna.integrations.local import LocalFileSystem
+from .sql_validation import _is_read_only_query, validate_sql
 
 # 喂给 LLM 的结果文本默认预算（字符），超出截断
 DEFAULT_MAX_RESULT_CHARS = 1000
-
-# 只读模式允许的首关键字
-_READ_ONLY_LEADING_KEYWORDS = {
-    "SELECT",
-    "WITH",
-    "EXPLAIN",
-    "SHOW",
-    "DESCRIBE",
-    "DESC",
-    "PRAGMA",
-}
-
-# 显式禁止的写操作关键字（防御 WITH ... INSERT 或子查询混入 DML）
-_WRITE_KEYWORDS = {
-    "INSERT",
-    "UPDATE",
-    "DELETE",
-    "DROP",
-    "ALTER",
-    "CREATE",
-    "TRUNCATE",
-    "MERGE",
-    "GRANT",
-    "REVOKE",
-    "REPLACE",
-    "UPSERT",
-    "CALL",
-    "EXEC",
-    "EXECUTE",
-    "VACUUM",
-    "ATTACH",
-    "DETACH",
-    "COMMIT",
-    "ROLLBACK",
-    "BEGIN",
-}
-
-
-def _strip_sql_comments(sql: str) -> str:
-    """移除 SQL 中的块注释与行注释，便于关键字判定。"""
-    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
-    sql = re.sub(r"--[^\n]*", " ", sql)
-    return sql
-
-
-def _is_read_only_query(sql: str) -> bool:
-    """判断 SQL 是否为只读查询（首关键字属于只读白名单且全文不含写关键字）。"""
-    cleaned = _strip_sql_comments(sql).strip()
-    if not cleaned:
-        return False
-
-    leading = cleaned.split(None, 1)[0].upper()
-    if leading not in _READ_ONLY_LEADING_KEYWORDS:
-        return False
-
-    upper = cleaned.upper()
-    return not any(re.search(rf"\b{kw}\b", upper) for kw in _WRITE_KEYWORDS)
 
 
 class RunSqlTool(Tool[RunSqlToolArgs]):
@@ -103,6 +46,8 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
         timeout_seconds: Optional[float] = None,
         max_rows: Optional[int] = None,
         max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
+        max_sql_length: Optional[int] = None,
+        require_single_statement: bool = True,
     ):
         """Initialize the tool with a SqlRunner implementation.
 
@@ -117,6 +62,8 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
                 真正的超时需要这些 runner 用数据库原生的 statement_timeout 配合。
             max_rows: 返回行数上限（None 表示不限）
             max_result_chars: 喂给 LLM 的结果文本预算（默认 1000）
+            max_sql_length: SQL 最大字符数（None 表示不限），防御超长/注入型内容
+            require_single_statement: 是否只允许单条语句（默认 True，拒绝堆叠语句）
         """
         self.sql_runner = sql_runner
         self.file_system = file_system or LocalFileSystem()
@@ -126,6 +73,8 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
         self.timeout_seconds = timeout_seconds
         self.max_rows = max_rows
         self.max_result_chars = max_result_chars
+        self.max_sql_length = max_sql_length
+        self.require_single_statement = require_single_statement
 
     @property
     def name(self) -> str:
@@ -148,12 +97,16 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
         中文说明：执行前做只读校验，执行时套查询超时，执行后按 max_rows /
         max_result_chars 截断。
         """
-        # 只读模式校验：在执行前拦截写操作
-        if self.read_only and not _is_read_only_query(args.sql):
-            message = (
-                "Write operations are not allowed in read-only mode. "
-                f"Rejected query: {args.sql.strip()[:200]}"
-            )
+        # 结构化校验：空语句 / 多语句（堆叠注入）/ 超长 / 只读违规。
+        # 校验失败时把结构化原因回喂 LLM，让其在下一轮自我修复。
+        validation = validate_sql(
+            args.sql,
+            read_only=self.read_only,
+            max_length=self.max_sql_length,
+            require_single_statement=self.require_single_statement,
+        )
+        if not validation.ok:
+            message = validation.reason or "SQL validation failed."
             return ToolResult(
                 success=False,
                 result_for_llm=message,
@@ -166,7 +119,7 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
                     simple_component=SimpleTextComponent(text=message),
                 ),
                 error=message,
-                metadata={"error_type": "read_only_violation"},
+                metadata={"error_type": validation.error_type or "invalid_sql"},
             )
 
         # 执行查询（套超时）

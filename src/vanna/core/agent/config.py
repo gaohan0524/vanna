@@ -9,7 +9,7 @@ This module contains configuration models that control agent behavior.
 决定权限展示粒度与合规审计粒度。
 """
 
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -176,6 +176,17 @@ class AgentConfig(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     # 单次 LLM 请求的最大生成 token 数（None 表示不限制）
     max_tokens: Optional[int] = Field(default=None, gt=0)
+    # 是否请求供应商启用「严格结构化输出 / strict tool calling」。
+    # 开启后工具参数 schema 会转成严格模式（所有字段 required、禁止额外属性），
+    # 供应商支持时会强制模型输出合法 JSON，显著降低非法参数/SQL 概率。
+    strict_tools: bool = Field(
+        default=False, description="Request strict/structured tool calling"
+    )
+    # 可选：全局结构化输出约束（对齐 OpenAI response_format 形态）。
+    # 对 Text2SQL 一般保持 None（最终答案是自然语言）；需要 JSON 输出的智能体可显式开启。
+    response_format: Optional[Dict[str, Any]] = Field(
+        default=None, description="Structured output constraint (provider-agnostic)"
+    )
     # UI 功能权限矩阵（见 UiFeatures）
     ui_features: UiFeatures = Field(default_factory=UiFeatures)
     # 审计配置（见 AuditConfig）

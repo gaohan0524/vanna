@@ -76,13 +76,20 @@ class Tool(ABC, Generic[T]):
         """
         pass
 
-    def get_schema(self) -> ToolSchema:
+    def get_schema(self, strict: bool = False) -> ToolSchema:
         """Generate tool schema for LLM.
 
         把 name/description/参数 JSON Schema/access_groups 组装成 ToolSchema，
         供 ToolRegistry.get_schemas 过滤后送入 LLM 提示词。
+
+        Args:
+            strict: 若为 True，把参数 schema 转成严格模式（``additionalProperties:
+                false`` + 全字段 required），以满足 OpenAI Structured Outputs /
+                strict function calling 等供应商要求，从而强制模型输出合法结构。
         """
         from typing import Any, cast
+
+        from ..llm.schema import make_strict_json_schema
 
         args_model = self.get_args_schema()
         # Get the schema - args_model should be a Pydantic model class
@@ -92,9 +99,12 @@ class Tool(ABC, Generic[T]):
             if hasattr(args_model, "model_json_schema")
             else {}
         )
+        if strict and schema:
+            schema = make_strict_json_schema(schema)
         return ToolSchema(
             name=self.name,
             description=self.description,
             parameters=schema,
             access_groups=self.access_groups,
+            strict=strict,
         )

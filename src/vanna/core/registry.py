@@ -110,8 +110,15 @@ class ToolRegistry:
         """
         return list(self._tools.keys())
 
-    async def get_schemas(self, user: Optional[User] = None) -> List[ToolSchema]:
+    async def get_schemas(
+        self, user: Optional[User] = None, *, strict: bool = False
+    ) -> List[ToolSchema]:
         """Get schemas for all tools accessible to user.
+
+        Args:
+            user: If provided, only return tools the user can access.
+            strict: If True, emit strict-mode JSON schemas (all fields required,
+                ``additionalProperties: false``) for structured tool calling.
 
         返回用户可见工具 schema（第一道权限闸门）：user 为 None 时返回全部，
         否则逐个按分组交集过滤。LLM 只会拿到这里返回的工具清单。
@@ -119,7 +126,7 @@ class ToolRegistry:
         schemas = []
         for tool in self._tools.values():
             if user is None or await self._validate_tool_permissions(tool, user):
-                schemas.append(tool.get_schema())
+                schemas.append(tool.get_schema(strict=strict))
         return schemas
 
     async def _validate_tool_permissions(self, tool: Tool[Any], user: User) -> bool:

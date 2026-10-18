@@ -233,17 +233,19 @@ class OpenAILlmService(LlmService):
 
         tools_payload: Optional[List[Dict[str, Any]]] = None
         if request.tools:
-            tools_payload = [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.parameters,
-                    },
+            tools_payload = []
+            for t in request.tools:
+                function: Dict[str, Any] = {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
                 }
-                for t in request.tools
-            ]
+                # Strict function calling / Structured Outputs：
+                # 要求 schema 满足 additionalProperties=false + 全字段 required
+                # （由 Tool.get_schema(strict=True) 生成）。
+                if request.strict_tools:
+                    function["strict"] = True
+                tools_payload.append({"type": "function", "function": function})
 
         payload: Dict[str, Any] = {
             "model": self.model,
@@ -254,6 +256,8 @@ class OpenAILlmService(LlmService):
         if tools_payload:
             payload["tools"] = tools_payload
             payload["tool_choice"] = "auto"
+        if request.response_format:
+            payload["response_format"] = request.response_format
 
         return payload
 

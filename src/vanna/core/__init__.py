@@ -7,7 +7,14 @@ that form the foundation of the agent framework.
 
 # Core domains - re-export from new structure
 from .tool import T, Tool, ToolCall, ToolContext, ToolResult, ToolSchema
-from .llm import LlmMessage, LlmRequest, LlmResponse, LlmService, LlmStreamChunk
+from .llm import (
+    LlmMessage,
+    LlmRequest,
+    LlmResponse,
+    LlmService,
+    LlmStreamChunk,
+    make_strict_json_schema,
+)
 from .storage import Conversation, ConversationStore, Message
 from .user import User, UserService
 from .agent import Agent, AgentConfig
@@ -107,6 +114,7 @@ __all__ = [
     "LlmRequest",
     "LlmResponse",
     "LlmStreamChunk",
+    "make_strict_json_schema",
     "RecoveryAction",
     "RecoveryActionType",
     "Span",

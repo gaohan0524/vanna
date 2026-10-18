@@ -280,7 +280,28 @@ class OllamaLlmService(LlmService):
         if tools_payload:
             payload["tools"] = tools_payload
 
+        # 结构化输出：Ollama 的 `format` 接受 "json" 或 JSON Schema
+        if request.response_format:
+            response_format = self._translate_response_format(request.response_format)
+            if response_format is not None:
+                payload["format"] = response_format
+
         return payload
+
+    @staticmethod
+    def _translate_response_format(response_format: Dict[str, Any]) -> Any:
+        """把 provider-agnostic 的 response_format 翻译为 Ollama 的 format 参数。"""
+        kind = response_format.get("type")
+        if kind == "json_object":
+            return "json"
+        if kind == "json_schema":
+            json_schema = response_format.get("json_schema") or {}
+            if isinstance(json_schema, dict):
+                schema = json_schema.get("schema")
+                if schema:
+                    return schema
+            return "json"
+        return None
 
     def _extract_tool_calls_from_message(
         self, message: Dict[str, Any]

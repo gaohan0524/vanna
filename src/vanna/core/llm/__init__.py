@@ -6,6 +6,7 @@ This module provides the core abstractions for LLM services in the Vanna Agents 
 
 from .base import LlmService
 from .models import LlmMessage, LlmRequest, LlmResponse, LlmStreamChunk
+from .schema import make_strict_json_schema
 
 __all__ = [
     "LlmService",
@@ -13,4 +14,5 @@ __all__ = [
     "LlmRequest",
     "LlmResponse",
     "LlmStreamChunk",
+    "make_strict_json_schema",
 ]

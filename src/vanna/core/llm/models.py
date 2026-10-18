@@ -58,6 +58,18 @@ class LlmRequest(BaseModel):
     system_prompt: Optional[str] = Field(
         default=None, description="System prompt for the LLM"
     )
+    # 是否请求供应商启用「严格结构化输出 / strict tool calling」。
+    # 即便供应商不支持，工具参数仍由 ToolRegistry 做 Pydantic 校验兜底。
+    strict_tools: bool = Field(
+        default=False, description="Request strict/structured tool calling if supported"
+    )
+    # 结构化输出约束（对齐 OpenAI response_format 形态）：
+    #   {"type": "json_schema", "json_schema": {"name": ..., "schema": {...}, "strict": true}}
+    #   {"type": "json_object"}
+    # 适配器按供应商能力翻译（OpenAI response_format / Gemini response_schema / Ollama format）。
+    response_format: Optional[Dict[str, Any]] = Field(
+        default=None, description="Structured output constraint (provider-agnostic)"
+    )
     # 附加元数据
     metadata: Dict[str, Any] = Field(default_factory=dict)
 

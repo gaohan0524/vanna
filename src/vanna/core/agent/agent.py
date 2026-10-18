@@ -649,7 +649,9 @@ class Agent:
 
         # 第一道权限闸门：get_schemas 内部按 user.group_memberships 过滤工具，
         # 无权限的工具连名字都不会出现在 LLM 的 prompt 里，从源头杜绝越权调用。
-        tool_schemas = await self.tool_registry.get_schemas(user)
+        tool_schemas = await self.tool_registry.get_schemas(
+            user, strict=self.config.strict_tools
+        )
 
         if self.observability_provider and schema_span:
             schema_span.set_attribute("schema_count", len(tool_schemas))
@@ -1305,6 +1307,8 @@ You can:
             max_tokens=self.config.max_tokens,
             stream=self.config.stream_responses,
             system_prompt=system_prompt,
+            strict_tools=self.config.strict_tools,
+            response_format=self.config.response_format,
         )
 
     async def _execute_tool_call(

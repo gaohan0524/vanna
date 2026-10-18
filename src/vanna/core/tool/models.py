@@ -113,6 +113,10 @@ class ToolSchema(BaseModel):
     access_groups: List[str] = Field(
         default_factory=list, description="Groups permitted to access this tool"
     )
+    # 参数 schema 是否已转换为严格模式（additionalProperties=false + 全字段 required）
+    strict: bool = Field(
+        default=False, description="Whether parameters is a strict-mode JSON schema"
+    )
 
 
 class ToolRejection(BaseModel):
