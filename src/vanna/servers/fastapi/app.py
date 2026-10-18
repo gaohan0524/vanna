@@ -40,6 +40,12 @@ class VannaFastAPIServer:
             from ...config import apply_storage_config
 
             apply_storage_config(agent, storage_config)
+        # 可观测性配置（OTel / Langfuse / LangSmith / composite），原地注入 provider
+        observability_config = self.config.get("observability")
+        if observability_config:
+            from ...config import apply_observability_config
+
+            apply_observability_config(agent, observability_config)
         # 每个 server 实例一个 ChatHandler；其内部复用同一个 Agent
         self.chat_handler = ChatHandler(agent)
 

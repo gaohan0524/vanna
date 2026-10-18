@@ -123,6 +123,29 @@ class ExampleAgentLoader:
     is_flag=True,
     help="Share data within a tenant instead of isolating per user",
 )
+@click.option(
+    "--observability-backend",
+    type=click.Choice(
+        ["none", "logging", "otel", "langfuse", "langsmith", "composite"]
+    ),
+    default=None,
+    help="Observability backend (default: keep the agent's own provider)",
+)
+@click.option(
+    "--observability-backends",
+    default=None,
+    help="Comma-separated backends when --observability-backend=composite",
+)
+@click.option(
+    "--observability-service-name",
+    default="vanna",
+    help="service.name reported to the observability backend",
+)
+@click.option(
+    "--otel-endpoint",
+    default=None,
+    help="OTLP endpoint when --observability-backend=otel (e.g. http://localhost:4318)",
+)
 def main(
     framework: str,
     port: int,
@@ -138,6 +161,10 @@ def main(
     storage_url: Optional[str],
     storage_sqlite_path: str,
     storage_tenant_sharing: bool,
+    observability_backend: Optional[str],
+    observability_backends: Optional[str],
+    observability_service_name: str,
+    otel_endpoint: Optional[str],
 ) -> None:
     """Run Vanna Agents server with optional example agent."""
 
@@ -183,6 +210,30 @@ def main(
             from ...config import StorageConfig
 
             server_config["storage"] = StorageConfig.from_env().to_dict()
+
+    # 可观测性配置：显式 CLI 参数优先；否则读取 VANNA_OBSERVABILITY_BACKEND 环境变量。
+    if observability_backend:
+        observability_config = {
+            "backend": observability_backend,
+            "service_name": observability_service_name,
+            "otel_endpoint": otel_endpoint,
+        }
+        if observability_backends:
+            observability_config["backends"] = [
+                item.strip()
+                for item in observability_backends.split(",")
+                if item.strip()
+            ]
+        server_config["observability"] = observability_config
+    else:
+        import os
+
+        if os.getenv("VANNA_OBSERVABILITY_BACKEND"):
+            from ...config import ObservabilityConfig
+
+            server_config["observability"] = (
+                ObservabilityConfig.from_env().to_dict()
+            )
 
     # Create agent
     if example:

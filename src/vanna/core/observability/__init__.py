@@ -6,6 +6,12 @@ monitoring agent behavior.
 """
 
 from .base import ObservabilityProvider
+from .composite import CompositeObservabilityProvider
 from .models import Span, Metric
 
-__all__ = ["ObservabilityProvider", "Span", "Metric"]
+__all__ = [
+    "ObservabilityProvider",
+    "CompositeObservabilityProvider",
+    "Span",
+    "Metric",
+]

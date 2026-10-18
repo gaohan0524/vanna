@@ -96,9 +96,12 @@ from .integrations import (
 # Storage configuration & backend factory
 from .config import (
     StorageConfig,
+    ObservabilityConfig,
     apply_storage_config,
+    apply_observability_config,
     create_agent_memory,
     create_conversation_store,
+    create_observability_provider,
     create_stores,
 )
 
@@ -182,6 +185,10 @@ __all__ = [
     "create_conversation_store",
     "create_agent_memory",
     "apply_storage_config",
+    # Observability configuration & factory
+    "ObservabilityConfig",
+    "create_observability_provider",
+    "apply_observability_config",
     # Server components
     "VannaFlaskServer",
     "VannaFastAPIServer",

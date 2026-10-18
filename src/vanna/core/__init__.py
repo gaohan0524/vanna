@@ -26,7 +26,12 @@ from .recovery import ErrorRecoveryStrategy, RecoveryAction, RecoveryActionType
 from .enricher import ToolContextEnricher
 from .enhancer import LlmContextEnhancer, DefaultLlmContextEnhancer
 from .filter import ConversationFilter, SlidingWindowFilter, SummaryBufferFilter
-from .observability import ObservabilityProvider, Span, Metric
+from .observability import (
+    CompositeObservabilityProvider,
+    ObservabilityProvider,
+    Metric,
+    Span,
+)
 from .audit import (
     AuditLogger,
     AuditEvent,
@@ -139,6 +144,7 @@ __all__ = [
     "SlidingWindowFilter",
     "SummaryBufferFilter",
     "ObservabilityProvider",
+    "CompositeObservabilityProvider",
     "AuditLogger",
     "T",
     # Audit
