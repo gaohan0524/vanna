@@ -2,6 +2,10 @@
 Local file system implementation.
 
 This module provides a local file system implementation with per-user isolation.
+
+说明：本实现的文件操作（mkdir / stat / read / write / rglob）都是同步阻塞调用。
+为避免在 async 方法里阻塞事件循环，所有磁盘 I/O 都下沉到同步的 ``_*_sync`` 辅助
+方法，再由公开的 async 方法通过 ``asyncio.to_thread`` 放到线程池执行。
 """
 
 import asyncio
@@ -25,6 +29,8 @@ class LocalFileSystem(FileSystem):
             working_directory: Base directory where user-specific folders will be created
         """
         self.working_directory = Path(working_directory)
+
+    # ------------------------------------------------------------------ helpers
 
     def _get_user_directory(self, context: ToolContext) -> Path:
         """Get the user-specific directory by hashing the user ID.
@@ -67,8 +73,9 @@ class LocalFileSystem(FileSystem):
 
         return resolved
 
-    async def list_files(self, directory: str, context: ToolContext) -> List[str]:
-        """List files in a directory within the user's isolated space."""
+    # --------------------------------------------------------------- sync impls
+
+    def _list_files_sync(self, directory: str, context: ToolContext) -> List[str]:
         directory_path = self._resolve_path(directory, context)
 
         if not directory_path.exists():
@@ -84,8 +91,7 @@ class LocalFileSystem(FileSystem):
 
         return sorted(files)
 
-    async def read_file(self, filename: str, context: ToolContext) -> str:
-        """Read the contents of a file within the user's isolated space."""
+    def _read_file_sync(self, filename: str, context: ToolContext) -> str:
         file_path = self._resolve_path(filename, context)
 
         if not file_path.exists():
@@ -96,10 +102,9 @@ class LocalFileSystem(FileSystem):
 
         return file_path.read_text(encoding="utf-8")
 
-    async def write_file(
-        self, filename: str, content: str, context: ToolContext, overwrite: bool = False
+    def _write_file_sync(
+        self, filename: str, content: str, context: ToolContext, overwrite: bool
     ) -> None:
-        """Write content to a file within the user's isolated space."""
         file_path = self._resolve_path(filename, context)
 
         # Create parent directories if they don't exist
@@ -112,32 +117,27 @@ class LocalFileSystem(FileSystem):
 
         file_path.write_text(content, encoding="utf-8")
 
-    async def exists(self, path: str, context: ToolContext) -> bool:
-        """Check if a file or directory exists within the user's isolated space."""
+    def _exists_sync(self, path: str, context: ToolContext) -> bool:
         try:
             resolved_path = self._resolve_path(path, context)
             return resolved_path.exists()
         except PermissionError:
             return False
 
-    async def is_directory(self, path: str, context: ToolContext) -> bool:
-        """Check if a path is a directory within the user's isolated space."""
+    def _is_directory_sync(self, path: str, context: ToolContext) -> bool:
         try:
             resolved_path = self._resolve_path(path, context)
             return resolved_path.exists() and resolved_path.is_dir()
         except PermissionError:
             return False
 
-    async def search_files(
+    def _search_files_sync(
         self,
         query: str,
         context: ToolContext,
-        *,
-        max_results: int = 20,
-        include_content: bool = False,
+        max_results: int,
+        include_content: bool,
     ) -> List[FileSearchMatch]:
-        """Search for files within the user's isolated space."""
-
         trimmed_query = query.strip()
         if not trimmed_query:
             raise ValueError("Search query must not be empty")
@@ -204,6 +204,45 @@ class LocalFileSystem(FileSystem):
 
         return matches
 
+    # -------------------------------------------------------------- async facade
+
+    async def list_files(self, directory: str, context: ToolContext) -> List[str]:
+        """List files in a directory within the user's isolated space."""
+        return await asyncio.to_thread(self._list_files_sync, directory, context)
+
+    async def read_file(self, filename: str, context: ToolContext) -> str:
+        """Read the contents of a file within the user's isolated space."""
+        return await asyncio.to_thread(self._read_file_sync, filename, context)
+
+    async def write_file(
+        self, filename: str, content: str, context: ToolContext, overwrite: bool = False
+    ) -> None:
+        """Write content to a file within the user's isolated space."""
+        await asyncio.to_thread(
+            self._write_file_sync, filename, content, context, overwrite
+        )
+
+    async def exists(self, path: str, context: ToolContext) -> bool:
+        """Check if a file or directory exists within the user's isolated space."""
+        return await asyncio.to_thread(self._exists_sync, path, context)
+
+    async def is_directory(self, path: str, context: ToolContext) -> bool:
+        """Check if a path is a directory within the user's isolated space."""
+        return await asyncio.to_thread(self._is_directory_sync, path, context)
+
+    async def search_files(
+        self,
+        query: str,
+        context: ToolContext,
+        *,
+        max_results: int = 20,
+        include_content: bool = False,
+    ) -> List[FileSearchMatch]:
+        """Search for files within the user's isolated space."""
+        return await asyncio.to_thread(
+            self._search_files_sync, query, context, max_results, include_content
+        )
+
     async def run_bash(
         self,
         command: str,
@@ -216,7 +255,8 @@ class LocalFileSystem(FileSystem):
         if not command.strip():
             raise ValueError("Command must not be empty")
 
-        user_dir = self._get_user_directory(context)
+        # mkdir 也是阻塞调用，放到线程池避免阻塞事件循环
+        user_dir = await asyncio.to_thread(self._get_user_directory, context)
 
         process = await asyncio.create_subprocess_shell(
             command,

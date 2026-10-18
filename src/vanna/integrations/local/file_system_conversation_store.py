@@ -3,12 +3,16 @@ File system conversation store implementation.
 
 This module provides a file-based implementation of the ConversationStore
 interface that persists conversations to disk as a directory structure.
+
+说明：文件读写是同步阻塞调用。为避免在 async 方法里阻塞事件循环，所有磁盘 I/O
+都下沉到同步的 ``_*_sync`` 方法，再由公开的 async 方法通过 ``asyncio.to_thread``
+放到线程池执行。
 """
 
+import asyncio
 import json
-import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import List, Optional
 from datetime import datetime
 import time
 
@@ -101,10 +105,11 @@ class FileSystemConversationStore(ConversationStore):
         with open(file_path, "w") as f:
             json.dump(message.model_dump(mode="json"), f, indent=2)
 
-    async def create_conversation(
+    # --------------------------------------------------------------- sync impls
+
+    def _create_conversation_sync(
         self, conversation_id: str, user: User, initial_message: str
     ) -> Conversation:
-        """Create a new conversation with the specified ID."""
         conversation = Conversation(
             id=conversation_id,
             user=user,
@@ -119,10 +124,9 @@ class FileSystemConversationStore(ConversationStore):
 
         return conversation
 
-    async def get_conversation(
+    def _get_conversation_sync(
         self, conversation_id: str, user: User
     ) -> Optional[Conversation]:
-        """Get conversation by ID, scoped to user."""
         metadata_path = self._get_metadata_path(conversation_id)
 
         if not metadata_path.exists():
@@ -154,8 +158,7 @@ class FileSystemConversationStore(ConversationStore):
             print(f"Failed to load conversation {conversation_id}: {e}")
             return None
 
-    async def update_conversation(self, conversation: Conversation) -> None:
-        """Update conversation with new messages."""
+    def _update_conversation_sync(self, conversation: Conversation) -> None:
         # Update the updated_at timestamp
         conversation.updated_at = datetime.now()
 
@@ -172,15 +175,14 @@ class FileSystemConversationStore(ConversationStore):
         ):
             self._append_message(conversation.id, message, i)
 
-    async def delete_conversation(self, conversation_id: str, user: User) -> bool:
-        """Delete conversation."""
+    def _delete_conversation_sync(self, conversation_id: str, user: User) -> bool:
         conv_dir = self._get_conversation_dir(conversation_id)
 
         if not conv_dir.exists():
             return False
 
         # Verify ownership before deleting
-        conversation = await self.get_conversation(conversation_id, user)
+        conversation = self._get_conversation_sync(conversation_id, user)
         if not conversation:
             return False
 
@@ -205,10 +207,9 @@ class FileSystemConversationStore(ConversationStore):
             print(f"Failed to delete conversation {conversation_id}: {e}")
             return False
 
-    async def list_conversations(
-        self, user: User, limit: int = 50, offset: int = 0
+    def _list_conversations_sync(
+        self, user: User, limit: int, offset: int
     ) -> List[Conversation]:
-        """List conversations for user."""
         if not self.base_dir.exists():
             return []
 
@@ -253,3 +254,39 @@ class FileSystemConversationStore(ConversationStore):
 
         # Apply pagination
         return conversations[offset : offset + limit]
+
+    # -------------------------------------------------------------- async facade
+
+    async def create_conversation(
+        self, conversation_id: str, user: User, initial_message: str
+    ) -> Conversation:
+        """Create a new conversation with the specified ID."""
+        return await asyncio.to_thread(
+            self._create_conversation_sync, conversation_id, user, initial_message
+        )
+
+    async def get_conversation(
+        self, conversation_id: str, user: User
+    ) -> Optional[Conversation]:
+        """Get conversation by ID, scoped to user."""
+        return await asyncio.to_thread(
+            self._get_conversation_sync, conversation_id, user
+        )
+
+    async def update_conversation(self, conversation: Conversation) -> None:
+        """Update conversation with new messages."""
+        await asyncio.to_thread(self._update_conversation_sync, conversation)
+
+    async def delete_conversation(self, conversation_id: str, user: User) -> bool:
+        """Delete conversation."""
+        return await asyncio.to_thread(
+            self._delete_conversation_sync, conversation_id, user
+        )
+
+    async def list_conversations(
+        self, user: User, limit: int = 50, offset: int = 0
+    ) -> List[Conversation]:
+        """List conversations for user."""
+        return await asyncio.to_thread(
+            self._list_conversations_sync, user, limit, offset
+        )
