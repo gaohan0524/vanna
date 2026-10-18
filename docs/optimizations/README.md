@@ -8,6 +8,9 @@
 |---|---|---|---|---|
 | [P0-01-async-llm-sdk.md](./P0-01-async-llm-sdk.md) | #1 LLM 集成用同步阻塞 SDK | `23234c7` | P0 | ✅ |
 | [P0-02-stream-finish-reason-usage.md](./P0-02-stream-finish-reason-usage.md) | #2 流式丢失 finish_reason/usage | `23234c7` | P0 | ✅ |
+| [P0-03-conversation-isolation.md](./P0-03-conversation-isolation.md) | 跨用户会话越权与路径穿越 | `99fd483` | P0 | ✅ |
+| [P0-04-shell-tool-sandbox.md](./P0-04-shell-tool-sandbox.md) | shell 工具命令注入 | `45f5003` | P0 | ✅ |
+| [P0-05-nonblocking-sql-runners.md](./P0-05-nonblocking-sql-runners.md) | 同步 DB 驱动阻塞事件循环 | `b573980` | P0 | ✅ |
 | [P1-03-parallel-tool-execution.md](./P1-03-parallel-tool-execution.md) | #3 工具串行执行 | `32a1f23` | P1 | ✅ |
 | [P1-04-token-level-streaming.md](./P1-04-token-level-streaming.md) | #4 token 级流式未实现 | `fca7ceb` | P1 | ✅ |
 | [P1-05-persistence-multi-tenant.md](./P1-05-persistence-multi-tenant.md) | #5 会话/记忆默认内存态 | `c13633d` | P1 | ✅ |
