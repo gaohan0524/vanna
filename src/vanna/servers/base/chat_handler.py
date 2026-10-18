@@ -8,11 +8,14 @@ UiComponent 逐个包装成 ChatStreamChunk，供上层（FastAPI/Flask）编码
 """
 
 import asyncio
+import logging
 import uuid
 from typing import AsyncGenerator, List, Optional
 
 from ...core import Agent
 from .models import ChatRequest, ChatResponse, ChatStreamChunk
+
+logger = logging.getLogger(__name__)
 
 
 class ChatHandler:
@@ -55,7 +58,7 @@ class ChatHandler:
         cancel_event 原样透传给 Agent；Agent 在 token 级流式循环里监听它，一旦置位即
         中止底层 LLM 调用并向这里抛出 asyncio.CancelledError。
         """
-        conversation_id = request.conversation_id or self._generate_conversation_id()
+        conversation_id = await self._resolve_conversation_id(request)
         # Use request_id from client for tracking, or use the one generated internally
         # request_id 优先复用客户端传来的（用于端到端追踪），否则内部生成。
         request_id = request.request_id or str(uuid.uuid4())
@@ -85,6 +88,42 @@ class ChatHandler:
             chunks.append(chunk)
 
         return ChatResponse.from_chunks(chunks)
+
+    async def _resolve_conversation_id(self, request: ChatRequest) -> str:
+        """Resolve a safe conversation id for an incoming request.
+
+        客户端传入的 conversation_id 只有在「已存在且属于当前用户」时才复用；
+        否则生成新的服务端 id，避免跨用户会话注入/接管。没有 request_context
+        或归属校验失败时，同样退回服务端生成。
+        """
+        requested = request.conversation_id
+        if not requested or request.request_context is None:
+            return self._generate_conversation_id()
+
+        try:
+            user = await self.agent.user_resolver.resolve_user(
+                request.request_context
+            )
+            existing = await self.agent.conversation_store.get_conversation(
+                requested, user
+            )
+        except Exception:
+            logger.warning(
+                "Failed to verify conversation ownership for %r; issuing a new id",
+                requested,
+                exc_info=True,
+            )
+            return self._generate_conversation_id()
+
+        if existing is None:
+            logger.warning(
+                "Rejecting unowned conversation_id %r for user %s; issuing a new id",
+                requested,
+                user.id,
+            )
+            return self._generate_conversation_id()
+
+        return requested
 
     def _generate_conversation_id(self) -> str:
         """Generate new conversation ID.

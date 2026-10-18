@@ -133,9 +133,17 @@ class SQLiteConversationStore(ConversationStore):
             messages=[Message(role="user", content=initial_message)],
         )
         with self._lock:
+            existing = self._conn.execute(
+                "SELECT 1 FROM conversations WHERE id = ?", (conversation.id,)
+            ).fetchone()
+            if existing is not None:
+                # 不允许静默覆盖已存在的会话（否则会清空历史 / 重指派归属）
+                raise ValueError(
+                    f"Conversation '{conversation.id}' already exists"
+                )
             self._conn.execute(
                 """
-                INSERT OR REPLACE INTO conversations
+                INSERT INTO conversations
                     (id, user_id, tenant_id, user_json, created_at, updated_at, metadata_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -150,7 +158,7 @@ class SQLiteConversationStore(ConversationStore):
                 ),
             )
             self._conn.execute(
-                "INSERT OR REPLACE INTO messages (conversation_id, seq, message_json) "
+                "INSERT INTO messages (conversation_id, seq, message_json) "
                 "VALUES (?, ?, ?)",
                 (conversation.id, 0, conversation.messages[0].model_dump_json()),
             )
@@ -172,15 +180,14 @@ class SQLiteConversationStore(ConversationStore):
 
     def _update_conversation_sync(self, conversation: Conversation) -> None:
         user = conversation.user
+        scope_col, scope_val = self._scope(user)
         with self._lock:
+            # 1) 不存在则按当前归属创建；已存在（即使属于他人）则忽略
             self._conn.execute(
                 """
-                INSERT INTO conversations
+                INSERT OR IGNORE INTO conversations
                     (id, user_id, tenant_id, user_json, created_at, updated_at, metadata_json)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    updated_at = excluded.updated_at,
-                    metadata_json = excluded.metadata_json
                 """,
                 (
                     conversation.id,
@@ -192,6 +199,23 @@ class SQLiteConversationStore(ConversationStore):
                     json.dumps(conversation.metadata, ensure_ascii=False),
                 ),
             )
+            # 2) 仅允许更新当前作用域内的行；0 行说明会话属于他人
+            cursor = self._conn.execute(
+                f"UPDATE conversations SET updated_at = ?, metadata_json = ? "
+                f"WHERE id = ? AND {scope_col} = ?",
+                (
+                    conversation.updated_at.isoformat(),
+                    json.dumps(conversation.metadata, ensure_ascii=False),
+                    conversation.id,
+                    scope_val,
+                ),
+            )
+            if cursor.rowcount == 0:
+                self._conn.rollback()
+                raise ValueError(
+                    f"Conversation '{conversation.id}' does not belong to the "
+                    "current user/tenant"
+                )
 
             existing = self._conn.execute(
                 "SELECT COUNT(*) AS c FROM messages WHERE conversation_id = ?",

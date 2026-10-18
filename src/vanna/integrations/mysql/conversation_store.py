@@ -149,14 +149,20 @@ class MySQLConversationStore(ConversationStore):
         try:
             with conn.cursor() as cur:
                 cur.execute(
+                    "SELECT 1 FROM vanna_conversations WHERE id = %s",
+                    (conversation.id,),
+                )
+                if cur.fetchone() is not None:
+                    conn.rollback()
+                    raise ValueError(
+                        f"Conversation '{conversation.id}' already exists"
+                    )
+                cur.execute(
                     """
                     INSERT INTO vanna_conversations
                         (id, user_id, tenant_id, user_json,
                          created_at, updated_at, metadata_json)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        updated_at = VALUES(updated_at),
-                        metadata_json = VALUES(metadata_json)
                     """,
                     (
                         conversation.id,
@@ -167,10 +173,6 @@ class MySQLConversationStore(ConversationStore):
                         conversation.updated_at.isoformat(),
                         json.dumps(conversation.metadata, ensure_ascii=False),
                     ),
-                )
-                cur.execute(
-                    "DELETE FROM vanna_messages WHERE conversation_id = %s",
-                    (conversation.id,),
                 )
                 cur.execute(
                     "INSERT INTO vanna_messages (conversation_id, seq, message_json) "
@@ -201,27 +203,55 @@ class MySQLConversationStore(ConversationStore):
 
     def _update_sync(self, conversation: Conversation) -> None:
         user = conversation.user
+        scope_col, scope_val = self._scope(user)
         conn = self._connect()
         try:
             with conn.cursor() as cur:
+                # 归属校验：已存在但作用域不匹配 → 拒绝（避免跨用户注入/接管）
                 cur.execute(
-                    """
-                    INSERT INTO vanna_conversations
-                        (id, user_id, tenant_id, user_json,
-                         created_at, updated_at, metadata_json)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        updated_at = VALUES(updated_at),
-                        metadata_json = VALUES(metadata_json)
-                    """,
+                    "SELECT 1 FROM vanna_conversations WHERE id = %s",
+                    (conversation.id,),
+                )
+                exists = cur.fetchone() is not None
+                if exists:
+                    cur.execute(
+                        f"SELECT 1 FROM vanna_conversations "
+                        f"WHERE id = %s AND {scope_col} = %s",
+                        (conversation.id, scope_val),
+                    )
+                    if cur.fetchone() is None:
+                        conn.rollback()
+                        raise ValueError(
+                            f"Conversation '{conversation.id}' does not belong to "
+                            "the current user/tenant"
+                        )
+                else:
+                    cur.execute(
+                        """
+                        INSERT INTO vanna_conversations
+                            (id, user_id, tenant_id, user_json,
+                             created_at, updated_at, metadata_json)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (
+                            conversation.id,
+                            user.id,
+                            self._tenant_of(user),
+                            user.model_dump_json(),
+                            conversation.created_at.isoformat(),
+                            conversation.updated_at.isoformat(),
+                            json.dumps(conversation.metadata, ensure_ascii=False),
+                        ),
+                    )
+
+                cur.execute(
+                    f"UPDATE vanna_conversations SET updated_at = %s, metadata_json = %s "
+                    f"WHERE id = %s AND {scope_col} = %s",
                     (
-                        conversation.id,
-                        user.id,
-                        self._tenant_of(user),
-                        user.model_dump_json(),
-                        conversation.created_at.isoformat(),
                         conversation.updated_at.isoformat(),
                         json.dumps(conversation.metadata, ensure_ascii=False),
+                        conversation.id,
+                        scope_val,
                     ),
                 )
                 cur.execute(

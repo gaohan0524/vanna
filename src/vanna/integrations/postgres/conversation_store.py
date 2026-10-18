@@ -163,14 +163,20 @@ class PostgresConversationStore(ConversationStore):
         try:
             with conn.cursor() as cur:
                 cur.execute(
+                    "SELECT 1 FROM vanna_conversations WHERE id = %s",
+                    (conversation.id,),
+                )
+                if cur.fetchone() is not None:
+                    conn.rollback()
+                    raise ValueError(
+                        f"Conversation '{conversation.id}' already exists"
+                    )
+                cur.execute(
                     """
                     INSERT INTO vanna_conversations
                         (id, user_id, tenant_id, user_json,
                          created_at, updated_at, metadata_json)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        updated_at = EXCLUDED.updated_at,
-                        metadata_json = EXCLUDED.metadata_json
                     """,
                     (
                         conversation.id,
@@ -181,10 +187,6 @@ class PostgresConversationStore(ConversationStore):
                         conversation.updated_at.isoformat(),
                         json.dumps(conversation.metadata, ensure_ascii=False),
                     ),
-                )
-                cur.execute(
-                    "DELETE FROM vanna_messages WHERE conversation_id = %s",
-                    (conversation.id,),
                 )
                 cur.execute(
                     "INSERT INTO vanna_messages (conversation_id, seq, message_json) "
@@ -215,18 +217,18 @@ class PostgresConversationStore(ConversationStore):
 
     def _update_sync(self, conversation: Conversation) -> None:
         user = conversation.user
+        scope_col, scope_val = self._scope(user)
         conn = self._connect()
         try:
             with conn.cursor() as cur:
+                # 1) 不存在则按当前归属创建；已存在（即使属于他人）则忽略
                 cur.execute(
                     """
                     INSERT INTO vanna_conversations
                         (id, user_id, tenant_id, user_json,
                          created_at, updated_at, metadata_json)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (id) DO UPDATE SET
-                        updated_at = EXCLUDED.updated_at,
-                        metadata_json = EXCLUDED.metadata_json
+                    ON CONFLICT (id) DO NOTHING
                     """,
                     (
                         conversation.id,
@@ -238,6 +240,24 @@ class PostgresConversationStore(ConversationStore):
                         json.dumps(conversation.metadata, ensure_ascii=False),
                     ),
                 )
+                # 2) 仅允许更新当前作用域内的行；0 行说明会话属于他人
+                cur.execute(
+                    f"UPDATE vanna_conversations SET updated_at = %s, metadata_json = %s "
+                    f"WHERE id = %s AND {scope_col} = %s",
+                    (
+                        conversation.updated_at.isoformat(),
+                        json.dumps(conversation.metadata, ensure_ascii=False),
+                        conversation.id,
+                        scope_val,
+                    ),
+                )
+                if cur.rowcount == 0:
+                    conn.rollback()
+                    raise ValueError(
+                        f"Conversation '{conversation.id}' does not belong to the "
+                        "current user/tenant"
+                    )
+
                 cur.execute(
                     "SELECT COUNT(*) AS c FROM vanna_messages WHERE conversation_id = %s",
                     (conversation.id,),

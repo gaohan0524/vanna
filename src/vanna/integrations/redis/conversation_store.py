@@ -117,6 +117,10 @@ class RedisConversationStore(ConversationStore):
             user=user,
             messages=[Message(role="user", content=initial_message)],
         )
+        existing = await self._client.hgetall(self._conv_key(conversation_id))
+        if existing:
+            # 不允许静默覆盖已存在的会话（否则会清空历史 / 重指派归属）
+            raise ValueError(f"Conversation '{conversation_id}' already exists")
         pipe = self._client.pipeline()
         pipe.hset(
             self._conv_key(conversation_id),
@@ -156,6 +160,16 @@ class RedisConversationStore(ConversationStore):
     async def update_conversation(self, conversation: Conversation) -> None:
         user = conversation.user
         conversation_id = conversation.id
+
+        # 归属校验：已存在的会话必须属于当前用户/租户，否则拒绝写入
+        field, value = self._scope_field_and_value(user)
+        data = await self._client.hgetall(self._conv_key(conversation_id))
+        if data and data.get(field) != value:
+            raise ValueError(
+                f"Conversation '{conversation_id}' does not belong to the "
+                "current user/tenant"
+            )
+
         existing = await self._client.llen(self._msgs_key(conversation_id))
 
         pipe = self._client.pipeline()

@@ -11,6 +11,7 @@ interface that persists conversations to disk as a directory structure.
 
 import asyncio
 import json
+import re
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
@@ -39,9 +40,26 @@ class FileSystemConversationStore(ConversationStore):
         self.base_dir = Path(base_dir)
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
+    _SAFE_CONVERSATION_ID = re.compile(r"^[A-Za-z0-9_-]+$")
+
     def _get_conversation_dir(self, conversation_id: str) -> Path:
-        """Get the directory path for a conversation."""
-        return self.base_dir / conversation_id
+        """Get the directory path for a conversation.
+
+        对 id 做白名单校验，防止 ``../`` 路径穿越；解析后仍必须位于 base_dir 内。
+        """
+        if not conversation_id or not self._SAFE_CONVERSATION_ID.match(
+            conversation_id
+        ):
+            raise ValueError(f"Invalid conversation id: {conversation_id!r}")
+
+        candidate = self.base_dir / conversation_id
+        try:
+            candidate.resolve().relative_to(self.base_dir.resolve())
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid conversation id: {conversation_id!r}"
+            ) from exc
+        return candidate
 
     def _get_metadata_path(self, conversation_id: str) -> Path:
         """Get the metadata file path for a conversation."""
@@ -116,6 +134,10 @@ class FileSystemConversationStore(ConversationStore):
             messages=[Message(role="user", content=initial_message)],
         )
 
+        # 不允许静默覆盖已存在的会话（否则会清空历史 / 重指派归属）
+        if self._get_conversation_dir(conversation_id).exists():
+            raise ValueError(f"Conversation '{conversation_id}' already exists")
+
         # Save metadata
         self._save_metadata(conversation)
 
@@ -159,6 +181,24 @@ class FileSystemConversationStore(ConversationStore):
             return None
 
     def _update_conversation_sync(self, conversation: Conversation) -> None:
+        # 归属校验：已存在的会话必须属于当前用户，否则拒绝写入（避免接管他人会话）
+        metadata_path = self._get_metadata_path(conversation.id)
+        if metadata_path.exists():
+            try:
+                with open(metadata_path, "r") as f:
+                    existing_metadata = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                existing_metadata = None
+            if (
+                existing_metadata
+                and existing_metadata.get("user", {}).get("id")
+                != conversation.user.id
+            ):
+                raise ValueError(
+                    f"Conversation '{conversation.id}' does not belong to the "
+                    "current user/tenant"
+                )
+
         # Update the updated_at timestamp
         conversation.updated_at = datetime.now()
 
