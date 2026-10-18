@@ -28,6 +28,9 @@
 | [P1-18-tool-error-recovery.md](./P1-18-tool-error-recovery.md) | #18 handle_tool_error 未接线 | `045d8aa` | P1 | ✅ |
 | [P1-19-core-errors-semantics.md](./P1-19-core-errors-semantics.md) | #19 core/errors.py 去留与异常语义 | `03242de` | P1 | ✅ |
 | [P1-20-thinking-indicator.md](./P1-20-thinking-indicator.md) | #20 include_thinking_indicators 死开关 | `03242de` | P1 | ✅ |
+| [P1-21-sql-tool-secure-defaults.md](./P1-21-sql-tool-secure-defaults.md) | RunSqlTool 默认只读/限行 | `3c4c958` | P1 | ✅ |
+| [P1-22-public-api-fixes.md](./P1-22-public-api-fixes.md) | register/create_basic_agent/__all__/版本号 | `3c4c958` | P1 | ✅ |
+| [P1-23-cors-defaults.md](./P1-23-cors-defaults.md) | CORS 默认收紧 | `3c4c958` | P1 | ✅ |
 
 ## 未完成项
 
