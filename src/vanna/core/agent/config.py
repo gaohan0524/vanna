@@ -65,9 +65,12 @@ class UiFeatures(BaseModel):
     """
 
     # Custom features for extensibility
-    # 功能名到允许访问分组的映射；默认从 DEFAULT_UI_FEATURES 拷贝，避免共享可变默认值
+    # 功能名到允许访问分组的映射；默认从 DEFAULT_UI_FEATURES 逐项深拷贝，
+    # 避免 dict.copy() 只复制外层、内部 list 仍被所有实例共享（跨实例串扰）。
     feature_group_access: Dict[str, List[str]] = Field(
-        default_factory=lambda: DEFAULT_UI_FEATURES.copy(),
+        default_factory=lambda: {
+            feature: list(groups) for feature, groups in DEFAULT_UI_FEATURES.items()
+        },
         description="Which groups can access UI features",
     )
 

@@ -81,3 +81,23 @@ def test_explicit_lists_are_copied():
     assert agent.lifecycle_hooks is not hooks
     hooks.append(object())
     assert agent.lifecycle_hooks == []
+
+
+def test_ui_features_default_lists_are_not_shared():
+    """UiFeatures 的默认分组 list 也必须按实例隔离（不能只做 dict 浅拷贝）。"""
+    a, b = AgentConfig(), AgentConfig()
+
+    a.ui_features.feature_group_access["tool_arguments"].append("__probe__")
+
+    assert "__probe__" in a.ui_features.feature_group_access["tool_arguments"]
+    assert "__probe__" not in b.ui_features.feature_group_access["tool_arguments"]
+    assert b.ui_features.feature_group_access["tool_arguments"] == ["admin"]
+
+
+def test_ui_features_register_feature_is_isolated():
+    a, b = AgentConfig(), AgentConfig()
+
+    a.ui_features.register_feature("custom_feature", ["admin"])
+
+    assert "custom_feature" in a.ui_features.feature_group_access
+    assert "custom_feature" not in b.ui_features.feature_group_access
