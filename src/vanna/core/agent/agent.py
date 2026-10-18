@@ -69,6 +69,14 @@ logger.info("Loaded vanna.core.agent.agent module")
 # 决定何时放弃（返回 FAIL），此上限仅用于兜底，防止错误的 strategy 导致无限重试。
 MAX_LLM_RECOVERY_ATTEMPTS = 10
 
+# 工具循环触顶后的收尾总结提示词：要求模型禁用工具、基于已收集结果给出最佳回答。
+TOOL_LIMIT_SUMMARY_PROMPT = (
+    "You have reached the maximum number of tool calls allowed for this turn. "
+    "Do NOT call any tools. Based on the information gathered so far, provide the "
+    "best possible final answer. If the task is incomplete, briefly state what "
+    "remains unclear and what the user could do next."
+)
+
 if TYPE_CHECKING:
     pass
 
@@ -1093,8 +1101,9 @@ class Agent:
                 break
 
         # Check if we hit the tool iteration limit
-        # 注意语义：达到上限时，最后一次工具调用的结果已写回会话，但循环已退出，
-        # LLM 没有机会据此生成总结——用户得到的是「达到上限」警告而非那次查询的答案。
+        # 达到上限时，先做一次「禁用工具」的收尾总结，把已收集到的结果转化成用户可用的
+        # 最佳回答；总结失败再退回原来的警告文案。
+        summary_text: Optional[str] = None
         if tool_iterations >= self.config.max_tool_iterations:
             # The loop exited due to hitting the limit, not due to a natural completion
             logger.warning(
@@ -1110,8 +1119,65 @@ class Agent:
                 )
             )
 
-            # Provide detailed warning message to user
-            warning_message = f"""⚠️ **Tool Execution Limit Reached**
+            # 1) 收尾总结：不带 tools，强制模型基于已有结果回答
+            if self.config.summarize_on_tool_limit:
+                summary_request = request.model_copy(
+                    update={
+                        "tools": None,
+                        "stream": self.config.stream_responses,
+                        "messages": [
+                            *request.messages,
+                            LlmMessage(
+                                role="user", content=TOOL_LIMIT_SUMMARY_PROMPT
+                            ),
+                        ],
+                    }
+                )
+                try:
+                    if self.config.stream_responses:
+                        summary_holder: Dict[str, LlmResponse] = {}
+                        async for component in self._stream_response_components(
+                            summary_request, summary_holder
+                        ):
+                            yield component
+                        summary_response = summary_holder["response"]
+                    else:
+                        summary_response = await self._send_llm_request(
+                            summary_request
+                        )
+                        if summary_response.content:
+                            yield UiComponent(
+                                rich_component=RichTextComponent(
+                                    content=summary_response.content, markdown=True
+                                ),
+                                simple_component=SimpleTextComponent(
+                                    text=summary_response.content
+                                ),
+                            )
+                    summary_text = (summary_response.content or "").strip() or None
+                except Exception as e:
+                    logger.warning(
+                        "Failed to summarize after tool limit: %s", e, exc_info=True
+                    )
+
+                if summary_text:
+                    conversation.add_message(
+                        Message(role="assistant", content=summary_text)
+                    )
+
+            # 2) 收尾提示：有总结时给出简短说明，否则回退到完整警告
+            if summary_text:
+                note = (
+                    f"⚠️ Reached the tool-call limit ({tool_iterations}). "
+                    "The summary above is based on results gathered so far and may be incomplete."
+                )
+                yield UiComponent(
+                    rich_component=RichTextComponent(content=note, markdown=True),
+                    simple_component=SimpleTextComponent(text=note),
+                )
+            else:
+                # Provide detailed warning message to user
+                warning_message = f"""⚠️ **Tool Execution Limit Reached**
 
 The agent stopped after executing {tool_iterations} tools (the configured maximum). The task may not be fully complete.
 
@@ -1120,14 +1186,14 @@ You can:
 - Adjust the `max_tool_iterations` setting if you need more tool calls
 - Break the task into smaller steps"""
 
-            yield UiComponent(
-                rich_component=RichTextComponent(
-                    content=warning_message, markdown=True
-                ),
-                simple_component=SimpleTextComponent(
-                    text=f"Tool limit reached after {tool_iterations} executions. Task may be incomplete."
-                ),
-            )
+                yield UiComponent(
+                    rich_component=RichTextComponent(
+                        content=warning_message, markdown=True
+                    ),
+                    simple_component=SimpleTextComponent(
+                        text=f"Tool limit reached after {tool_iterations} executions. Task may be incomplete."
+                    ),
+                )
 
             # Update chat input to suggest follow-up
             yield UiComponent(  # type: ignore
@@ -1191,6 +1257,9 @@ You can:
             # Track if we hit the tool iteration limit
             hit_tool_limit = tool_iterations >= self.config.max_tool_iterations
             message_span.set_attribute("hit_tool_limit", hit_tool_limit)
+            message_span.set_attribute(
+                "summarized_on_tool_limit", summary_text is not None
+            )
             if hit_tool_limit:
                 message_span.set_attribute("incomplete_response", True)
                 logger.info(

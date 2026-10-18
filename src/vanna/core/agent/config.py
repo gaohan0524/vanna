@@ -169,6 +169,14 @@ class AgentConfig(BaseModel):
 
     # 单个用户回合内工具调用的最大次数（LLM 生成/修复 SQL 的重试上限）
     max_tool_iterations: int = Field(default=10, gt=0)
+    # 触顶后是否再做一次「禁用工具」的收尾总结（基于已收集结果给出最佳回答）
+    summarize_on_tool_limit: bool = Field(
+        default=True,
+        description=(
+            "When the tool iteration limit is reached, make a final tool-free "
+            "LLM call to summarize the results gathered so far"
+        ),
+    )
     # 是否启用 LLM 流式响应（token 级打字机：逐 token 实时推送文本组件）
     stream_responses: bool = Field(default=True)
     # 是否在处理结束后自动持久化会话
