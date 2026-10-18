@@ -17,6 +17,8 @@ from vanna.core.tool import ToolContext
 class SqliteRunner(SqlRunner):
     """SQLite implementation of the SqlRunner interface."""
 
+    BLOCKING = True  # sqlite3 是同步驱动，由 RunSqlTool 放到线程池执行
+
     def __init__(self, database_path: str, timeout_seconds: Optional[float] = None):
         """Initialize with a SQLite database path.
 

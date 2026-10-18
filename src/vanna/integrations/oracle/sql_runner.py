@@ -10,6 +10,8 @@ from vanna.core.tool import ToolContext
 class OracleRunner(SqlRunner):
     """Oracle implementation of the SqlRunner interface."""
 
+    BLOCKING = True  # oracledb 是同步驱动，由 RunSqlTool 放到线程池执行
+
     def __init__(self, user: str, password: str, dsn: str, **kwargs):
         """Initialize with Oracle connection parameters.
 

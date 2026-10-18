@@ -11,6 +11,8 @@ from vanna.core.tool import ToolContext
 class SnowflakeRunner(SqlRunner):
     """Snowflake implementation of the SqlRunner interface."""
 
+    BLOCKING = True  # snowflake-connector 是同步驱动，由 RunSqlTool 放到线程池执行
+
     def __init__(
         self,
         account: str,

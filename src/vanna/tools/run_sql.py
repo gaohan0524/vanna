@@ -29,6 +29,16 @@ from .sql_validation import _is_read_only_query, validate_sql
 DEFAULT_MAX_RESULT_CHARS = 1000
 
 
+def _run_blocking_in_loop(runner, args, context):
+    """在独立线程的事件循环里执行同步驱动 runner 的 async run_sql。
+
+    同步数据库驱动（BLOCKING=True）的 run_sql 若直接 await，会阻塞主事件循环；
+    这里把它丢进线程池，并在该线程内用独立事件循环跑完这个协程。异步驱动实现
+    （BLOCKING=False）不会走到这里。
+    """
+    return asyncio.run(runner.run_sql(args, context))
+
+
 class RunSqlTool(Tool[RunSqlToolArgs]):
     """Tool that executes SQL queries using an injected SqlRunner implementation.
 
@@ -76,6 +86,13 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
         self.max_sql_length = max_sql_length
         self.require_single_statement = require_single_statement
 
+    def _run_sql(self, args: RunSqlToolArgs, context: ToolContext):
+        """执行 SQL；同步驱动（BLOCKING=True）放到线程池，避免阻塞事件循环。"""
+        runner = self.sql_runner
+        if getattr(runner, "BLOCKING", False):
+            return asyncio.to_thread(_run_blocking_in_loop, runner, args, context)
+        return runner.run_sql(args, context)
+
     @property
     def name(self) -> str:
         return self._custom_name if self._custom_name else "run_sql"
@@ -122,15 +139,13 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
                 metadata={"error_type": validation.error_type or "invalid_sql"},
             )
 
-        # 执行查询（套超时）
+        # 执行查询（套超时；同步驱动走线程池，见 _run_sql）
         try:
+            run = self._run_sql(args, context)
             if self.timeout_seconds is not None:
-                df = await asyncio.wait_for(
-                    self.sql_runner.run_sql(args, context),
-                    timeout=self.timeout_seconds,
-                )
+                df = await asyncio.wait_for(run, timeout=self.timeout_seconds)
             else:
-                df = await self.sql_runner.run_sql(args, context)
+                df = await run
         except (TimeoutError, asyncio.TimeoutError) as e:
             # str(e) 为空时（asyncio.wait_for 触发）回退到配置值
             message = (

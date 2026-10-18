@@ -10,6 +10,8 @@ from vanna.core.tool import ToolContext
 class HiveRunner(SqlRunner):
     """Hive implementation of the SqlRunner interface."""
 
+    BLOCKING = True  # pyhive 是同步驱动，由 RunSqlTool 放到线程池执行
+
     def __init__(
         self,
         host: str,

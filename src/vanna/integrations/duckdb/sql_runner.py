@@ -10,6 +10,8 @@ from vanna.core.tool import ToolContext
 class DuckDBRunner(SqlRunner):
     """DuckDB implementation of the SqlRunner interface."""
 
+    BLOCKING = True  # duckdb 是同步驱动，由 RunSqlTool 放到线程池执行
+
     def __init__(
         self, database_path: str = ":memory:", init_sql: Optional[str] = None, **kwargs
     ):

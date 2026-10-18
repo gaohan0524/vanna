@@ -23,7 +23,14 @@ class SqlRunner(ABC):
     """Interface for SQL execution with different implementations.
 
     SQL 执行接口：不同数据库（SQLite/Postgres/ClickHouse 等）各自实现 run_sql。
+
+    BLOCKING 类属性：标记实现是否使用同步数据库驱动。同步驱动的 run_sql 若直接在
+    事件循环里执行会阻塞整条循环；RunSqlTool 检测到 BLOCKING=True 时会把它丢到
+    线程池（asyncio.to_thread）执行。异步驱动（如 asyncpg）的实现保持 False。
     """
+
+    # 同步驱动实现置 True；异步驱动实现保持 False
+    BLOCKING: bool = False
 
     @abstractmethod
     async def run_sql(

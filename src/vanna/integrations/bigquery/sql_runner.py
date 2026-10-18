@@ -10,6 +10,8 @@ from vanna.core.tool import ToolContext
 class BigQueryRunner(SqlRunner):
     """BigQuery implementation of the SqlRunner interface."""
 
+    BLOCKING = True  # google-cloud-bigquery 是同步驱动，由 RunSqlTool 放到线程池执行
+
     def __init__(self, project_id: str, cred_file_path: Optional[str] = None, **kwargs):
         """Initialize with BigQuery connection parameters.
 

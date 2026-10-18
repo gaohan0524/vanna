@@ -10,6 +10,8 @@ from vanna.core.tool import ToolContext
 class MSSQLRunner(SqlRunner):
     """Microsoft SQL Server implementation of the SqlRunner interface."""
 
+    BLOCKING = True  # pymssql/pyodbc 是同步驱动，由 RunSqlTool 放到线程池执行
+
     def __init__(self, odbc_conn_str: str, **kwargs):
         """Initialize with MSSQL connection parameters.
 
