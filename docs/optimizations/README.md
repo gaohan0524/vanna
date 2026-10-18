@@ -16,6 +16,7 @@
 | [P1-08-context-window-management.md](./P1-08-context-window-management.md) | #8 无内置上下文窗口管理 | `23b5432` | P1 | ✅ |
 | [P1-10-structured-output-sql-validation.md](./P1-10-structured-output-sql-validation.md) | #10 无结构化输出约束 | `c0a269a` | P1 | ✅ |
 | [P1-11-observability-standards.md](./P1-11-observability-standards.md) | #11 observability 未接标准 | `23e0aa7` | P1 | ✅ |
+| [P1-12-agent-mutable-defaults.md](./P1-12-agent-mutable-defaults.md) | #12 Agent 共享可变默认参数 | `f0dadfd` | P1 | ✅ |
 
 ## 未完成项
 
