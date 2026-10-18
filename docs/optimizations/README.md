@@ -23,6 +23,8 @@
 | [P1-16-tool-limit-summary.md](./P1-16-tool-limit-summary.md) | #16 max_tool_iterations 触顶无总结 | `0b1df4d` | P1 | ✅ |
 | [P1-17-evaluation-trajectory-capture.md](./P1-17-evaluation-trajectory-capture.md) | #17 评测轨迹 tool_calls/llm_requests 恒为空 | `bfe64e8` | P1 | ✅ |
 | [P1-18-tool-error-recovery.md](./P1-18-tool-error-recovery.md) | #18 handle_tool_error 未接线 | `045d8aa` | P1 | ✅ |
+| [P1-19-core-errors-semantics.md](./P1-19-core-errors-semantics.md) | #19 core/errors.py 去留与异常语义 | `03242de` | P1 | ✅ |
+| [P1-20-thinking-indicator.md](./P1-20-thinking-indicator.md) | #20 include_thinking_indicators 死开关 | `03242de` | P1 | ✅ |
 
 ## 未完成项
 
