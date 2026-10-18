@@ -9,6 +9,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from vanna import Agent
+from vanna.core.errors import LlmServiceError
 from vanna.core.llm import LlmRequest, LlmResponse, LlmStreamChunk
 from vanna.core.recovery import (
     ErrorRecoveryStrategy,
@@ -124,7 +125,7 @@ class TestInvokeLlmWithRecovery:
         async def invoke() -> LlmResponse:
             raise RuntimeError("boom")
 
-        with pytest.raises(RuntimeError, match="boom"):
+        with pytest.raises(LlmServiceError, match="boom"):
             await agent._invoke_llm_with_recovery(make_request(), invoke)
 
     async def test_fallback_returns_value(self):
@@ -154,7 +155,7 @@ class TestInvokeLlmWithRecovery:
         async def invoke() -> LlmResponse:
             raise RuntimeError("always fails")
 
-        with pytest.raises(RuntimeError, match="always fails"):
+        with pytest.raises(LlmServiceError, match="always fails"):
             await agent._invoke_llm_with_recovery(make_request(), invoke)
 
 

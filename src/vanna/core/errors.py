@@ -1,81 +1,69 @@
 """
 Exception classes for the Vanna Agents framework.
 
-This module defines all custom exceptions used throughout the framework.
+本模块定义框架的语义异常层级。核心执行路径的约定：
 
-本模块定义了框架在整个 Text2SQL 链路中可能用到的语义异常类型。
-所有自定义异常都继承自 AgentError，目的是让调用方（尤其是自定义
-LifecycleHook、Tool、Middleware 的开发者）能够用统一的基类一次性捕获
-"框架自身产生的错误"，与 Python 内置异常 / 第三方库异常区分开来。
+- **工具执行失败不抛异常**：`ToolRegistry.execute` 统一返回
+  ``ToolResult(success=False, error=...)``，由 LLM 读取错误后自我修复（agentic 范式）。
+- **LLM 通信失败**：经 `ErrorRecoveryStrategy.handle_llm_error` 处理完毕后
+  （返回 FAIL 或重试上限），由 `Agent._invoke_llm_with_recovery` 抛出
+  ``LlmServiceError``，并保留原始异常为 ``__cause__``。
+- **其余异常类属于扩展点语义**：供自定义 Tool / Hook / Store 在需要显式中断流程时
+  主动抛出，或供上层用 ``except AgentError`` 统一兜底。
 
-设计意图说明（重要，避免误用）：
-- 当前核心执行路径（Agent._send_message / ToolRegistry.execute）并不
-  主动抛出这些异常，而是用 ToolResult(success=False, error=...) 来
-  传递工具执行失败，再由 LLM 读取错误信息自我修复。
-- 因此本异常体系更多是"预留的语义出口"，供自定义扩展点（hook、tool、
-  enricher 等）在需要显式中断流程时主动抛出，或供框架未来演进使用。
-  【待确认设计】
+命名冲突提醒：``PermissionError`` / ``ValidationError`` 与 Python 内置 / Pydantic
+同名。框架内部的系统权限错误仍用内置 ``PermissionError``，Pydantic 字段校验错误仍用
+``pydantic.ValidationError``。使用本模块的同名类时请显式 import。
 """
 
 
 class AgentError(Exception):
-    """Base exception for agent framework.
+    """Base exception for all Vanna framework errors.
 
-    框架所有自定义异常的基类，用于统一标识框架内部错误，便于上层（如自定义
-    服务器、外部调用方）通过捕获 AgentError 一次性兜底所有框架级异常，而无需
-    逐一列举子类。
-
-    适用场景：
-    - 在自定义 hook / 中间件中需要抛出框架级错误时，优先继承或使用它；
-    - 在顶层做防御性捕获时，用 except AgentError 作为安全网。
+    框架所有自定义异常的基类。上层（自定义服务器、外部调用方）可以用
+    ``except AgentError`` 一次性捕获框架级异常，与内置/第三方异常区分开。
     """
 
     pass
 
 
 class ToolExecutionError(AgentError):
-    """Error during tool execution.
+    """Error during tool execution (extension-point semantics).
 
-    工具执行过程中发生错误的语义异常，表示某个工具（如 run_sql、visualize_data）
-    在执行阶段失败。注意：框架内部的 ToolRegistry.execute 已用 try/except 将工具
-    异常转换为 ToolResult(success=False)，因此本异常更适用于工具作者在希望
-    "显式中断并向上抛出"的场景主动 raise。  【待确认设计】
+    工具作者在需要「显式中断并向上抛出」时使用。注意：核心执行路径不会抛出它——
+    `ToolRegistry.execute` 已把工具异常转换为 ``ToolResult(success=False)``，交给
+    LLM 自我修复。若希望基础设施级异常触发重试，请让工具抛出普通异常并配置
+    `ErrorRecoveryStrategy.handle_tool_error`。
     """
 
     pass
 
 
 class ToolNotFoundError(AgentError):
-    """Tool not found in registry.
+    """Tool not found in registry (extension-point semantics).
 
-    请求的工具在注册表中不存在的语义异常。业务含义：LLM 幻觉出一个未注册的
-    工具名，或代码拼写错误导致查找失败。注意：ToolRegistry.execute 对"工具不存在"
-    目前是返回失败结果而非抛出本异常，因此它更像语义占位。  【待确认设计】
+    请求的工具不存在。核心执行路径不会抛出它：`ToolRegistry.execute` 返回失败结果，
+    让 LLM 看到并纠正工具名。
     """
 
     pass
 
 
 class PermissionError(AgentError):
-    """User lacks required permissions.
+    """User lacks required permissions (extension-point semantics).
 
-    用户缺少所需权限的语义异常。业务含义：用户的分组（group_memberships）与
-    工具/功能的访问组（access_groups）无交集，被拒绝访问。
-
-    命名冲突提醒：本类与 Python 内置的 PermissionError 同名。框架内实际抛出/捕获
-    的"文件/系统权限错误"（如 tools/file_system.py）用的是内置 PermissionError，
-    而非本类。使用时需显式 import 本类以避免混淆。  【待确认设计】
+    与 Python 内置 ``PermissionError`` 同名。框架内部的系统权限错误（如文件系统越权）
+    仍使用内置 ``PermissionError``；本类供扩展点在业务权限校验失败时显式抛出。
     """
 
     pass
 
 
 class ConversationNotFoundError(AgentError):
-    """Conversation not found.
+    """Conversation not found (extension-point semantics).
 
-    会话不存在时的语义异常。业务含义：按 conversation_id 检索会话时未命中
-    （可能被删除或 id 错误）。适用场景：自定义 ConversationStore 或工具在
-    会话缺失时抛出。
+    按 conversation_id 检索会话未命中。适用于自定义 `ConversationStore` 或工具在
+    会话缺失时显式抛出。
     """
 
     pass
@@ -84,20 +72,19 @@ class ConversationNotFoundError(AgentError):
 class LlmServiceError(AgentError):
     """Error communicating with LLM service.
 
-    与 LLM 服务通信失败的语义异常。业务含义：模型服务超时、鉴权失败、限流、
-    返回非法响应等底层通信问题。适用场景：自定义 LlmService 实现或 LLM 中间件
-    在调用失败时抛出。
+    与 LLM 服务通信失败的语义异常。由 `Agent._invoke_llm_with_recovery` 在错误恢复
+    策略返回 FAIL、或重试次数超过防御上限时抛出；原始异常保存在 ``__cause__``。
+    调用方可用 ``except LlmServiceError`` 或 ``except AgentError`` 捕获。
     """
 
     pass
 
 
 class ValidationError(AgentError):
-    """Data validation error.
+    """Data validation error (extension-point semantics).
 
-    数据校验失败的语义异常。业务含义：输入数据（如工具参数、SQL 文本）未通过
-    校验。命名冲突提醒：pydantic 也定义了 ValidationError，两者同名不同源；
-    本类用于框架自身的业务校验错误，pydantic 的用于模型字段校验。  【待确认设计】
+    与 ``pydantic.ValidationError`` 同名。本类用于框架自身的业务校验错误（如自定义
+    SQL/输入校验）；Pydantic 模型字段校验仍抛 Pydantic 的 ``ValidationError``。
     """
 
     pass

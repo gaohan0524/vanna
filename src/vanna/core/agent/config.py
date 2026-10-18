@@ -181,7 +181,7 @@ class AgentConfig(BaseModel):
     stream_responses: bool = Field(default=True)
     # 是否在处理结束后自动持久化会话
     auto_save_conversations: bool = Field(default=True)
-    # 是否包含"思考中"指示（agent.py 中该逻辑目前仅为 TODO 占位，未实现）
+    # 是否在首轮 LLM 调用前输出「思考中」状态栏更新
     include_thinking_indicators: bool = Field(default=True)
     # LLM 采样温度（0.0 ~ 2.0）
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)

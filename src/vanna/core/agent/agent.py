@@ -41,6 +41,7 @@ from vanna.core.llm import LlmService
 from vanna.core.system_prompt import SystemPromptBuilder
 from vanna.core.storage import Conversation, Message
 from vanna.core.llm import LlmMessage, LlmRequest, LlmResponse
+from vanna.core.errors import LlmServiceError
 from vanna.core.tool import ToolCall, ToolContext, ToolResult, ToolSchema
 from vanna.core.user import User
 from vanna.core.registry import ToolRegistry
@@ -754,8 +755,15 @@ class Agent:
             self._raise_if_cancelled(cancel_event)
 
             if self.config.include_thinking_indicators and tool_iterations == 0:
-                # TODO: Yield thinking indicator
-                pass
+                # 首次进入工具循环时给出「思考中」状态；后续轮次由 "Executing tools..."
+                # 接管。仅更新状态栏，不新增卡片，避免 UI 噪音。
+                yield UiComponent(  # type: ignore
+                    rich_component=StatusBarUpdateComponent(
+                        status="working",
+                        message="Thinking...",
+                        detail="Reasoning about your request",
+                    )
+                )
 
             # Get LLM response
             # 流式时逐 token 产出文本组件（打字机效果）；streamed_text 标记本轮流式
@@ -1566,8 +1574,9 @@ You can:
 
         把一次 LLM 调用（一次性或流式聚合）包进错误恢复循环：仅在配置了
         error_recovery_strategy 且其 handle_llm_error 返回 RETRY 时按 retry_delay_ms
-        退避重试，FALLBACK 时用 fallback_value 降级，SKIP 时返回空响应跳过本轮，
-        其余（FAIL / 未配置策略 / 动作非法）直接向上抛出，交给 send_message 兜底。
+        退避重试，FALLBACK 时用 fallback_value 降级，SKIP 时返回空响应跳过本轮。
+        未配置策略时直通（原始异常向上抛）；FAIL / 重试上限 / 非法 FALLBACK 抛出
+        LlmServiceError（保留原始异常为 __cause__），交给 send_message 兜底。
         """
         # 未配置恢复策略时保持原样直通，零开销
         if not self.error_recovery_strategy:
@@ -1598,23 +1607,29 @@ You can:
                             "LLM recovery attempt limit (%d) exceeded, giving up",
                             MAX_LLM_RECOVERY_ATTEMPTS,
                         )
-                        raise
+                        raise LlmServiceError(
+                            "LLM recovery attempt limit "
+                            f"({MAX_LLM_RECOVERY_ATTEMPTS}) exceeded: {e}"
+                        ) from e
                     continue
 
                 if action.action == RecoveryActionType.FALLBACK:
                     if isinstance(action.fallback_value, LlmResponse):
                         return action.fallback_value
                     logger.error(
-                        "FALLBACK action without LlmResponse fallback_value, re-raising"
+                        "FALLBACK action without LlmResponse fallback_value, raising"
                     )
-                    raise
+                    raise LlmServiceError(
+                        "FALLBACK action without LlmResponse fallback_value: "
+                        f"{e}"
+                    ) from e
 
                 if action.action == RecoveryActionType.SKIP:
                     # 跳过本轮 LLM 调用：返回空响应，agent 将视为无工具调用而结束
                     return LlmResponse(content=None, tool_calls=None)
 
-                # FAIL 或未知动作：直接抛出
-                raise
+                # FAIL 或未知动作：抛出带原始 cause 的 LlmServiceError
+                raise LlmServiceError(f"LLM request failed: {e}") from e
 
     async def _send_llm_request(self, request: LlmRequest) -> LlmResponse:
         """Send LLM request with middleware and observability.
