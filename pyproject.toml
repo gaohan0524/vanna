@@ -44,6 +44,7 @@ servers = ["vanna[flask,fastapi]"]
 
 postgres = ["psycopg2-binary", "db-dtypes"]
 mysql = ["PyMySQL"]
+redis = ["redis>=4.5.0"]
 clickhouse = ["clickhouse_connect"]
 bigquery = ["google-cloud-bigquery"]
 snowflake = ["snowflake-connector-python"]

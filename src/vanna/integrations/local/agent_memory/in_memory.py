@@ -13,7 +13,7 @@ import difflib
 import time
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from vanna.capabilities.agent_memory import (
     AgentMemory,
@@ -34,18 +34,47 @@ class DemoAgentMemory(AgentMemory):
     - Async-safe with an asyncio.Lock
     """
 
-    def __init__(self, *, max_items: int = 10_000):
+    def __init__(
+        self,
+        *,
+        max_items: int = 10_000,
+        user_scoped: bool = False,
+        tenant_resolver: Optional[Callable[[Any], str]] = None,
+    ):
         """
         Initialize the in-memory storage.
 
         Args:
             max_items: Maximum number of memories to keep. Oldest memories are
                       evicted when this limit is reached (FIFO).
+            user_scoped: If True, isolate memories per user (multi-user / multi-tenant
+                isolation). Defaults to False to preserve the original demo behavior
+                where all memories are shared; set True to make even the demo backend
+                safe for multi-user local testing.
+            tenant_resolver: Optional callable(User) -> str deriving a tenant id from
+                the user. Defaults to the user id.
         """
         self._memories: List[ToolMemory] = []
         self._text_memories: List[TextMemory] = []
         self._lock = asyncio.Lock()
         self._max_items = max_items
+        self._user_scoped = user_scoped
+        self._tenant_resolver: Callable[[Any], str] = tenant_resolver or (
+            lambda user: user.id
+        )
+
+    def _tenant_of(self, context: ToolContext) -> str:
+        """Derive the tenant id for the current context."""
+        try:
+            return str(self._tenant_resolver(context.user))
+        except Exception:
+            return context.user.id
+
+    def _is_visible(self, memory: Any, context: ToolContext) -> bool:
+        """Whether a stored memory is visible to the current user (isolation check)."""
+        if not self._user_scoped:
+            return True
+        return memory.user_id == context.user.id
 
     @staticmethod
     def _now_iso() -> str:
@@ -104,6 +133,8 @@ class DemoAgentMemory(AgentMemory):
             timestamp=self._now_iso(),
             success=success,
             metadata=metadata or {},
+            user_id=context.user.id,
+            tenant_id=self._tenant_of(context),
         )
         async with self._lock:
             self._memories.append(tm)
@@ -115,7 +146,11 @@ class DemoAgentMemory(AgentMemory):
     async def save_text_memory(self, content: str, context: ToolContext) -> TextMemory:
         """Store a text memory in RAM."""
         tm = TextMemory(
-            memory_id=str(uuid.uuid4()), content=content, timestamp=self._now_iso()
+            memory_id=str(uuid.uuid4()),
+            content=content,
+            timestamp=self._now_iso(),
+            user_id=context.user.id,
+            tenant_id=self._tenant_of(context),
         )
         async with self._lock:
             self._text_memories.append(tm)
@@ -137,11 +172,12 @@ class DemoAgentMemory(AgentMemory):
         q = self._normalize(question)
 
         async with self._lock:
-            # Filter candidates by tool name and success status
+            # Filter candidates by tool name, success status and ownership
             candidates = [
                 m
                 for m in self._memories
                 if m.success
+                and self._is_visible(m, context)
                 and (tool_name_filter is None or m.tool_name == tool_name_filter)
             ]
 
@@ -177,6 +213,8 @@ class DemoAgentMemory(AgentMemory):
         async with self._lock:
             scored: List[tuple[TextMemory, float]] = []
             for memory in self._text_memories:
+                if not self._is_visible(memory, context):
+                    continue
                 score = self._similarity(normalized_query, memory.content)
                 scored.append((memory, min(score, 1.0)))
 
@@ -201,21 +239,24 @@ class DemoAgentMemory(AgentMemory):
     ) -> List[ToolMemory]:
         """Get recently added memories. Returns most recent memories first."""
         async with self._lock:
-            # Return memories in reverse order (most recent first)
-            return list(reversed(self._memories[-limit:]))
+            visible = [m for m in self._memories if self._is_visible(m, context)]
+            return list(reversed(visible[-limit:]))
 
     async def get_recent_text_memories(
         self, context: ToolContext, limit: int = 10
     ) -> List[TextMemory]:
         """Return recently added text memories."""
         async with self._lock:
-            return list(reversed(self._text_memories[-limit:]))
+            visible = [
+                m for m in self._text_memories if self._is_visible(m, context)
+            ]
+            return list(reversed(visible[-limit:]))
 
     async def delete_text_memory(self, context: ToolContext, memory_id: str) -> bool:
         """Delete a stored text memory by ID."""
         async with self._lock:
             for index, memory in enumerate(self._text_memories):
-                if memory.memory_id == memory_id:
+                if memory.memory_id == memory_id and self._is_visible(memory, context):
                     del self._text_memories[index]
                     return True
             return False
@@ -224,7 +265,7 @@ class DemoAgentMemory(AgentMemory):
         """Delete a memory by its ID. Returns True if deleted, False if not found."""
         async with self._lock:
             for i, m in enumerate(self._memories):
-                if m.memory_id == memory_id:
+                if m.memory_id == memory_id and self._is_visible(m, context):
                     del self._memories[i]
                     return True
             return False
@@ -240,9 +281,13 @@ class DemoAgentMemory(AgentMemory):
             original_tool_count = len(self._memories)
             original_text_count = len(self._text_memories)
 
-            # Filter memories to keep
+            # Filter memories to keep（不可见的他人记忆一律保留，保证隔离）
             kept_memories = []
             for m in self._memories:
+                if not self._is_visible(m, context):
+                    kept_memories.append(m)
+                    continue
+
                 should_delete = True
 
                 # Check tool name filter
@@ -254,10 +299,6 @@ class DemoAgentMemory(AgentMemory):
                     if m.timestamp >= before_date:
                         should_delete = False
 
-                # If no filters specified, delete all
-                if tool_name is None and before_date is None:
-                    should_delete = True
-
                 # Keep if should not delete
                 if not should_delete:
                     kept_memories.append(m)
@@ -268,6 +309,10 @@ class DemoAgentMemory(AgentMemory):
             # Apply filters to text memories (tool filter ignored)
             kept_text_memories = []
             for memory in self._text_memories:
+                if not self._is_visible(memory, context):
+                    kept_text_memories.append(memory)
+                    continue
+
                 should_delete = (
                     tool_name is None
                 )  # only delete text when not targeting a tool

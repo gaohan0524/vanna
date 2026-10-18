@@ -101,6 +101,28 @@ class ExampleAgentLoader:
     default="https://img.vanna.ai/vanna-components.js",
     help="CDN URL for web components",
 )
+@click.option(
+    "--storage-backend",
+    type=click.Choice(["memory", "sqlite", "postgres", "mysql", "redis"]),
+    default=None,
+    help="Persistence backend for conversations and agent memory "
+    "(default: keep the agent's own stores)",
+)
+@click.option(
+    "--storage-url",
+    default=None,
+    help="Connection URL for postgres/mysql/redis storage backend",
+)
+@click.option(
+    "--storage-sqlite-path",
+    default="vanna.db",
+    help="SQLite database path when --storage-backend=sqlite",
+)
+@click.option(
+    "--storage-tenant-sharing",
+    is_flag=True,
+    help="Share data within a tenant instead of isolating per user",
+)
 def main(
     framework: str,
     port: int,
@@ -112,6 +134,10 @@ def main(
     dev: bool,
     static_folder: Optional[str],
     cdn_url: str,
+    storage_backend: Optional[str],
+    storage_url: Optional[str],
+    storage_sqlite_path: str,
+    storage_tenant_sharing: bool,
 ) -> None:
     """Run Vanna Agents server with optional example agent."""
 
@@ -140,6 +166,23 @@ def main(
             "api_base_url": "",  # Can be overridden in config file
         }
     )
+
+    # Storage backend configuration (persistent + multi-tenant options)
+    # 优先使用显式 CLI 参数；否则若设置了 VANNA_STORAGE_BACKEND 环境变量则采用之。
+    if storage_backend:
+        server_config["storage"] = {
+            "backend": storage_backend,
+            "url": storage_url,
+            "sqlite_path": storage_sqlite_path,
+            "tenant_sharing": storage_tenant_sharing,
+        }
+    else:
+        import os
+
+        if os.getenv("VANNA_STORAGE_BACKEND"):
+            from ...config import StorageConfig
+
+            server_config["storage"] = StorageConfig.from_env().to_dict()
 
     # Create agent
     if example:

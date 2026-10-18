@@ -86,7 +86,21 @@ from .core import (
 )
 
 # Import basic implementations
-from .integrations import MemoryConversationStore, MockLlmService
+from .integrations import (
+    MemoryConversationStore,
+    MockLlmService,
+    SQLiteAgentMemory,
+    SQLiteConversationStore,
+)
+
+# Storage configuration & backend factory
+from .config import (
+    StorageConfig,
+    apply_storage_config,
+    create_agent_memory,
+    create_conversation_store,
+    create_stores,
+)
 
 # Main exports
 __all__ = [
@@ -159,6 +173,15 @@ __all__ = [
     # Basic implementations
     "MemoryConversationStore",
     "MockLlmService",
+    # Persistent, multi-tenant-aware backends
+    "SQLiteConversationStore",
+    "SQLiteAgentMemory",
+    # Storage configuration & factory
+    "StorageConfig",
+    "create_stores",
+    "create_conversation_store",
+    "create_agent_memory",
+    "apply_storage_config",
     # Server components
     "VannaFlaskServer",
     "VannaFastAPIServer",

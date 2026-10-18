@@ -33,6 +33,13 @@ class VannaFastAPIServer:
         """
         self.agent = agent
         self.config = config or {}
+        # 若提供 storage 配置段，则按配置替换 Agent 的会话存储与记忆后端
+        # （进程内原地替换，随后创建的 ChatHandler 自然使用新后端）
+        storage_config = self.config.get("storage")
+        if storage_config:
+            from ...config import apply_storage_config
+
+            apply_storage_config(agent, storage_config)
         # 每个 server 实例一个 ChatHandler；其内部复用同一个 Agent
         self.chat_handler = ChatHandler(agent)
 

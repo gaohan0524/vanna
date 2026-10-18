@@ -44,3 +44,4 @@ query_results_*.csv
 
 # 本地测试脚本：内含明文数据库口令与内网地址，仅本地使用，不推送
 src/vanna/examples/test.py
+src/vanna/examples/test_redis.py

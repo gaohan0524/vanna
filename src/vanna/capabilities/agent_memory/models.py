@@ -24,6 +24,10 @@ class ToolMemory(BaseModel):
     timestamp: Optional[str] = None
     success: bool = True
     metadata: Optional[Dict[str, Any]] = None
+    # 归属用户（多租户/多用户隔离键）；由实现写入，用于检索时按身份过滤
+    user_id: Optional[str] = None
+    # 归属租户（可选，支持「组织内共享记忆」等更粗粒度隔离）
+    tenant_id: Optional[str] = None
 
 
 class TextMemory(BaseModel):
@@ -35,6 +39,10 @@ class TextMemory(BaseModel):
     memory_id: Optional[str] = None
     content: str
     timestamp: Optional[str] = None
+    # 归属用户（多租户/多用户隔离键）
+    user_id: Optional[str] = None
+    # 归属租户（可选）
+    tenant_id: Optional[str] = None
 
 
 class ToolMemorySearchResult(BaseModel):

@@ -25,6 +25,12 @@ class VannaFlaskServer:
         """
         self.agent = agent
         self.config = config or {}
+        # 若提供 storage 配置段，则按配置替换 Agent 的会话存储与记忆后端
+        storage_config = self.config.get("storage")
+        if storage_config:
+            from ...config import apply_storage_config
+
+            apply_storage_config(agent, storage_config)
         self.chat_handler = ChatHandler(agent)
 
     def create_app(self) -> Flask:
