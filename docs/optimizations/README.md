@@ -20,6 +20,7 @@
 | [P1-13-nonblocking-local-io.md](./P1-13-nonblocking-local-io.md) | #13 同步文件 I/O 阻塞事件循环 | `2e8ee0c` | P1 | ✅ |
 | [P1-14-uifeatures-mutable-defaults.md](./P1-14-uifeatures-mutable-defaults.md) | #14 UiFeatures 默认分组浅拷贝共享 | `6ecca2b` | P1 | ✅ |
 | [P1-15-test-collection-health.md](./P1-15-test-collection-health.md) | #15 test_agent_top_artist 被误收集 | `cacb98b` | P1 | ✅ |
+| [P1-16-tool-limit-summary.md](./P1-16-tool-limit-summary.md) | #16 max_tool_iterations 触顶无总结 | `0b1df4d` | P1 | ✅ |
 
 ## 未完成项
 
