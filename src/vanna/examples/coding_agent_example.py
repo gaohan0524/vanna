@@ -207,12 +207,13 @@ def create_demo_agent() -> Agent:
     # Create tool registry and register file system tools
     tool_registry = ToolRegistry()
 
-    # Use the convenience function to create tools with default LocalFileSystem
+    # 使用默认 LocalFileSystem 创建工具。文件/命令/包管理工具具备危险能力，
+    # 默认仅 admin 分组可用（access_groups=["admin"]），避免普通用户直接执行。
     for tool in create_file_system_tools():
-        tool_registry.register(tool)
+        tool_registry.register_local_tool(tool, access_groups=["admin"])
 
     for tool in create_python_tools():
-        tool_registry.register(tool)
+        tool_registry.register_local_tool(tool, access_groups=["admin"])
 
     # Create LLM service
     llm_service = CodingLlmService()

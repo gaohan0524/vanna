@@ -10,8 +10,10 @@ This module provides a local file system implementation with per-user isolation.
 
 import asyncio
 import hashlib
+import os
+import shlex
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from vanna.capabilities.file_system import CommandResult, FileSearchMatch, FileSystem
 from vanna.core.tool import ToolContext
@@ -22,13 +24,20 @@ MAX_SEARCH_FILE_BYTES = 1_000_000
 class LocalFileSystem(FileSystem):
     """Local file system implementation with per-user isolation."""
 
-    def __init__(self, working_directory: str = "."):
+    def __init__(
+        self,
+        working_directory: str = ".",
+        command_allowlist: Optional[List[str]] = None,
+    ):
         """Initialize with a working directory.
 
         Args:
             working_directory: Base directory where user-specific folders will be created
+            command_allowlist: Optional executable-name allowlist; when set, only these
+                executables may be run (e.g. ["python", "pip"]). Defaults to None (any).
         """
         self.working_directory = Path(working_directory)
+        self.command_allowlist = command_allowlist
 
     # ------------------------------------------------------------------ helpers
 
@@ -250,16 +259,48 @@ class LocalFileSystem(FileSystem):
         *,
         timeout: Optional[float] = None,
     ) -> CommandResult:
-        """Execute a bash command within the user's isolated space."""
+        """Execute a shell-style command string within the user's isolated space.
 
+        安全说明：不经过 shell——用 shlex 拆分后 exec，避免命令注入。
+        """
         if not command.strip():
             raise ValueError("Command must not be empty")
+
+        argv = shlex.split(command, posix=(os.name != "nt"))
+        if not argv:
+            raise ValueError("Command must not be empty")
+
+        return await self.run_command(argv, context, timeout=timeout)
+
+    async def run_command(
+        self,
+        argv: Sequence[str],
+        context: ToolContext,
+        *,
+        timeout: Optional[float] = None,
+    ) -> CommandResult:
+        """Run an executable with an explicit argument list (no shell)."""
+        argv = list(argv)
+        if not argv:
+            raise ValueError("Command must not be empty")
+
+        if self.command_allowlist:
+            executable = Path(argv[0]).name.lower()
+            if executable.endswith(".exe"):
+                executable = executable[:-4]
+            allowed = {
+                (name.lower()[:-4] if name.lower().endswith(".exe") else name.lower())
+                for name in self.command_allowlist
+            }
+            if executable not in allowed:
+                raise PermissionError(f"Command not allowed: {argv[0]}")
 
         # mkdir 也是阻塞调用，放到线程池避免阻塞事件循环
         user_dir = await asyncio.to_thread(self._get_user_directory, context)
 
-        process = await asyncio.create_subprocess_shell(
-            command,
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(user_dir),
@@ -274,9 +315,8 @@ class LocalFileSystem(FileSystem):
             await process.wait()
             raise TimeoutError(f"Command timed out after {timeout} seconds") from exc
 
-        stdout = stdout_bytes.decode("utf-8", errors="replace")
-        stderr = stderr_bytes.decode("utf-8", errors="replace")
-
         return CommandResult(
-            stdout=stdout, stderr=stderr, returncode=process.returncode or 0
+            stdout=stdout_bytes.decode("utf-8", errors="replace"),
+            stderr=stderr_bytes.decode("utf-8", errors="replace"),
+            returncode=process.returncode or 0,
         )

@@ -75,20 +75,18 @@ class RunPythonFileTool(Tool[RunPythonFileArgs]):
             message = f"Cannot execute '{args.filename}' because it does not exist."
             return _error_result(message)
 
-        # 拼接命令：当前 Python 解释器 + 文件名 + 附加参数
-        command_parts = [sys.executable, args.filename]
-        command_parts.extend(args.arguments)
-        command = _quote_command(command_parts)
+        # 拼接命令：当前 Python 解释器 + 文件名 + 附加参数（不经过 shell）
+        command_parts = [sys.executable, args.filename, *args.arguments]
+        command = shlex.join(command_parts)
 
         try:
-            result = await self.file_system.run_bash(
-                command,
+            result = await self.file_system.run_command(
+                command_parts,
                 context,
                 timeout=args.timeout_seconds,
             )
         except TimeoutError as exc:
-            message = str(exc)
-            return _error_result(message)
+            return _error_result(str(exc))
 
         summary = f"Executed python {args.filename} (exit code {result.returncode})."
         success = result.returncode == 0
@@ -145,13 +143,30 @@ class PipInstallTool(Tool[PipInstallArgs]):
         command_parts = [sys.executable, "-m", "pip", "install"]
         if args.upgrade:
             command_parts.append("--upgrade")
+
+        # 供应链防护：禁止通过 extra_args 覆盖 pip 源 / 信任主机 / 离线安装
+        forbidden_args = {
+            "--index-url",
+            "-i",
+            "--extra-index-url",
+            "--trusted-host",
+            "--no-index",
+            "--find-links",
+            "-f",
+        }
+        for arg in args.extra_args:
+            if arg in forbidden_args:
+                return _error_result(
+                    f"Refusing pip install: argument '{arg}' is not allowed."
+                )
+
         command_parts.extend(args.packages)
         command_parts.extend(args.extra_args)
-        command = _quote_command(command_parts)
+        command = shlex.join(command_parts)
 
         try:
-            result = await self.file_system.run_bash(
-                command,
+            result = await self.file_system.run_command(
+                command_parts,
                 context,
                 timeout=args.timeout_seconds,
             )
@@ -179,11 +194,6 @@ def create_python_tools(file_system: Optional[FileSystem] = None) -> List[Tool[A
         RunPythonFileTool(fs),
         PipInstallTool(fs),
     ]
-
-
-def _quote_command(parts: Sequence[str]) -> str:
-    """对命令的各部分进行 shell 转义并拼接为字符串。"""
-    return " ".join(shlex.quote(part) for part in parts)
 
 
 def _truncate(text: str, limit: int = MAX_OUTPUT_LENGTH) -> str:

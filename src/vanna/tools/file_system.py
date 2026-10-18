@@ -7,10 +7,12 @@ The tools accept a FileSystem instance via dependency injection.
 """
 
 import asyncio
+import os
+import shlex
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, List, Optional, Type
+from typing import Any, List, Optional, Sequence, Type
 import difflib
 import hashlib
 
@@ -119,17 +121,38 @@ class FileSystem(ABC):
         """Execute a bash command within the accessible namespace."""
         pass
 
+    async def run_command(
+        self,
+        argv: Sequence[str],
+        context: ToolContext,
+        *,
+        timeout: Optional[float] = None,
+    ) -> CommandResult:
+        """Run an executable with an explicit argument list (no shell).
+
+        安全版本：直接以 argv 调用可执行文件，不经过 shell，避免命令注入。
+        默认实现退化为 run_bash（供只实现了 run_bash 的自定义后端使用）。
+        """
+        return await self.run_bash(shlex.join(argv), context, timeout=timeout)
+
 
 class LocalFileSystem(FileSystem):
     """Local file system implementation with per-user isolation."""
 
-    def __init__(self, working_directory: str = "."):
+    def __init__(
+        self,
+        working_directory: str = ".",
+        command_allowlist: Optional[List[str]] = None,
+    ):
         """Initialize with a working directory.
 
         Args:
             working_directory: Base directory where user-specific folders will be created
+            command_allowlist: Optional executable-name allowlist; when set, only these
+                executables may be run (e.g. ["python", "pip"]). Defaults to None (any).
         """
         self.working_directory = Path(working_directory)
+        self.command_allowlist = command_allowlist
 
     def _get_user_directory(self, context: ToolContext) -> Path:
         """Get the user-specific directory by hashing the user ID.
@@ -305,15 +328,48 @@ class LocalFileSystem(FileSystem):
         *,
         timeout: Optional[float] = None,
     ) -> CommandResult:
-        """Execute a bash command within the user's isolated space."""
+        """Execute a shell-style command string within the user's isolated space.
 
+        安全说明：不经过 shell——先用 shlex 拆分成 argv，再走 run_command（exec），
+        因此 ``;`` / ``|`` / 重定向等 shell 特性不再生效，可避免命令注入。
+        """
         if not command.strip():
             raise ValueError("Command must not be empty")
 
+        argv = shlex.split(command, posix=(os.name != "nt"))
+        if not argv:
+            raise ValueError("Command must not be empty")
+
+        return await self.run_command(argv, context, timeout=timeout)
+
+    async def run_command(
+        self,
+        argv: Sequence[str],
+        context: ToolContext,
+        *,
+        timeout: Optional[float] = None,
+    ) -> CommandResult:
+        """Run an executable with an explicit argument list (no shell)."""
+        argv = list(argv)
+        if not argv:
+            raise ValueError("Command must not be empty")
+
+        if self.command_allowlist:
+            executable = Path(argv[0]).name.lower()
+            if executable.endswith(".exe"):
+                executable = executable[:-4]
+            allowed = {
+                (name.lower()[:-4] if name.lower().endswith(".exe") else name.lower())
+                for name in self.command_allowlist
+            }
+            if executable not in allowed:
+                raise PermissionError(f"Command not allowed: {argv[0]}")
+
         user_dir = self._get_user_directory(context)
 
-        process = await asyncio.create_subprocess_shell(
-            command,
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(user_dir),
@@ -328,11 +384,10 @@ class LocalFileSystem(FileSystem):
             await process.wait()
             raise TimeoutError(f"Command timed out after {timeout} seconds") from exc
 
-        stdout = stdout_bytes.decode("utf-8", errors="replace")
-        stderr = stderr_bytes.decode("utf-8", errors="replace")
-
         return CommandResult(
-            stdout=stdout, stderr=stderr, returncode=process.returncode or 0
+            stdout=stdout_bytes.decode("utf-8", errors="replace"),
+            stderr=stderr_bytes.decode("utf-8", errors="replace"),
+            returncode=process.returncode or 0,
         )
 
 
