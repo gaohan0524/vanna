@@ -18,6 +18,7 @@
 | [P1-11-observability-standards.md](./P1-11-observability-standards.md) | #11 observability 未接标准 | `23e0aa7` | P1 | ✅ |
 | [P1-12-agent-mutable-defaults.md](./P1-12-agent-mutable-defaults.md) | #12 Agent 共享可变默认参数 | `f0dadfd` | P1 | ✅ |
 | [P1-13-nonblocking-local-io.md](./P1-13-nonblocking-local-io.md) | #13 同步文件 I/O 阻塞事件循环 | `2e8ee0c` | P1 | ✅ |
+| [P1-14-uifeatures-mutable-defaults.md](./P1-14-uifeatures-mutable-defaults.md) | #14 UiFeatures 默认分组浅拷贝共享 | `6ecca2b` | P1 | ✅ |
 
 ## 未完成项
 
