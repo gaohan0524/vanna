@@ -41,7 +41,3 @@ frontends/**/.mypy_cache/
 # RunSqlTool 会把查询结果写到 <sha256(user.id)[:16]>/query_results_<uuid8>.csv，
 # 属于本地运行时产物，不应进仓库
 query_results_*.csv
-
-# 本地测试脚本：内含明文数据库口令与内网地址，仅本地使用，不推送
-src/vanna/examples/test.py
-src/vanna/examples/test_redis.py
