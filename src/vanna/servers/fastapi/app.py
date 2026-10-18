@@ -65,14 +65,14 @@ class VannaFastAPIServer:
         )
 
         # Configure CORS if enabled
-        # CORS 默认开启并允许所有来源（开发期便利；生产应按需收紧 allow_origins）
+        # 默认「不开放跨域」（allow_origins=[]），需要跨域时显式配置 allow_origins。
         cors_config = self.config.get("cors", {})
         if cors_config.get("enabled", True):
             cors_params = {k: v for k, v in cors_config.items() if k != "enabled"}
 
-            # Set sensible defaults
-            cors_params.setdefault("allow_origins", ["*"])
-            cors_params.setdefault("allow_credentials", True)
+            # 安全默认：默认不开放任何跨域来源，也不允许携带凭据
+            cors_params.setdefault("allow_origins", [])
+            cors_params.setdefault("allow_credentials", False)
             cors_params.setdefault("allow_methods", ["*"])
             cors_params.setdefault("allow_headers", ["*"])
 

@@ -52,9 +52,9 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
         file_system: Optional[FileSystem] = None,
         custom_tool_name: Optional[str] = None,
         custom_tool_description: Optional[str] = None,
-        read_only: bool = False,
+        read_only: bool = True,
         timeout_seconds: Optional[float] = None,
-        max_rows: Optional[int] = None,
+        max_rows: Optional[int] = 1000,
         max_result_chars: int = DEFAULT_MAX_RESULT_CHARS,
         max_sql_length: Optional[int] = None,
         require_single_statement: bool = True,
@@ -66,11 +66,12 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
             file_system: FileSystem implementation for saving results (defaults to LocalFileSystem)
             custom_tool_name: Optional custom name for the tool (overrides default "run_sql")
             custom_tool_description: Optional custom description for the tool (overrides default description)
-            read_only: 只读模式，True 时拒绝写操作（默认 False）
+            read_only: 只读模式，True 时拒绝写操作（默认 True，安全优先；确需写入
+                时显式置 False）
             timeout_seconds: 查询超时秒数（None 表示不限）。注意：对同步驱动
                 （SQLite/PostgreSQL/Snowflake 等）asyncio.wait_for 无法中断阻塞线程，
                 真正的超时需要这些 runner 用数据库原生的 statement_timeout 配合。
-            max_rows: 返回行数上限（None 表示不限）
+            max_rows: 返回行数上限（默认 1000，防止大结果集打满内存/SSE；None 表示不限）
             max_result_chars: 喂给 LLM 的结果文本预算（默认 1000）
             max_sql_length: SQL 最大字符数（None 表示不限），防御超长/注入型内容
             require_single_statement: 是否只允许单条语句（默认 True，拒绝堆叠语句）
