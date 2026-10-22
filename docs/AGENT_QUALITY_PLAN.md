@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：Stage 0 代码骨架已完成（2026-10-22，`1e1e565`），待灌数与首次基线；详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
+- **当前进度**：Stage 0 的 D1 已完成（灌数 312,569 行 + 预检 20/20，2026-10-22），待冒烟 run 与首次基线；详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -608,7 +608,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [x] T0-6 失败 taxonomy **规则完成**；待真实失败样本验证
 - [x] T0-0 运行时：`seed --scale 0.1` 实跑通过（2026-10-22，12 表 312,569 行，锚点 2026-10-21）
 - [ ] T0-1 评测集：**6 / 30**（`v1_30.yaml` 目前 6 条，需业务专家补 24 条）
-- [ ] T0-5 运行时：`check --dataset smoke.yaml` 全 PASS
+- [x] T0-5 运行时：`check --dataset smoke.yaml` **20/20 PASS**（2026-10-22；30 条齐备后跑 `--strict` 复检）
 - [ ] 基线 EX 记录：`____%`（复跑波动 `____pt`）
 - 已验证：`pytest tests/test_eval_compare.py tests/test_eval_config.py` 9 passed；ruff 全通过；CLI/YAML/报告生成均正常；`.env` 可直接使用
 - 顺带修复：`vanna/core/evaluation/dataset.py` 补 `encoding="utf-8"`（Windows GBK 下中文用例无法解析）

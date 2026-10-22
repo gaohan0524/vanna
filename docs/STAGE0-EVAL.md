@@ -3,7 +3,7 @@
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 0 / T0-0 ~ T0-6** 的详细执行版。
 > 完成本文全部验收项（G0）后，才进入 Stage 1（静态上下文工程）。
 >
-> - 状态：**代码骨架已完成，待灌数与首次基线**（见 0.1）
+> - 状态：**D1 完成（灌数 + 预检 20/20），待冒烟 run 与首次基线**（见 0.1）
 > - 主评测库：自建 ClickHouse 合成业务库（`shop`）
 > - 方法论参考：`ClickHouse/data-agent-mnist`（Apache-2.0）
 > - 业务专家：项目负责人本人（负责口径与 golden SQL 审核）
@@ -39,11 +39,13 @@
 | 报告生成（构造数据） | `report.json` / `report.html` / `failures.csv` 均可产出 |
 | `seed --scale 0.1` 实跑 | 成功：12 表共 312,569 行；锚点 `2026-10-21`；见附录 D |
 | 只读账号抽查数据 | 通过：测试账号 2.3%、USD 5.07%、重试流水 3.0%、GMV 非空且排序合理 |
+| `check --dataset smoke.yaml` | **20/20 PASS**：连接、只读探针、12 表行数、数据锚点、3 条用例、golden `A-01`（4 行 / 0.02s） |
 
 ### 未完成 / 待执行（下一步）
 
 - [x] **D1-2** `seed --scale 0.1` 已实跑（2026-10-22，见附录 D）
-- [ ] **D1-4** `check --dataset smoke.yaml` 全 PASS
+- [x] **D1-4** `check --dataset smoke.yaml` 全 PASS（20/20，2026-10-22，见附录 D）
+- [ ] **D1-5** `run --dataset smoke.yaml` 冒烟评测（验证 LLM 链路与报告产出）
 - [ ] **D2** 补齐 24 条用例（A 4 / B 5 / C 4 / D 3 / E 4 / F 2 / G 3 / H 2 / I 3 的剩余配额）
 - [ ] **D3~D4** 首次 `run`，记录基线 EX / 首答命中 / 工具轮次 / P95
 - [ ] **D5** 复跑稳定性验证，勾选 G0
@@ -99,7 +101,8 @@
 > 状态：代码侧已就绪（`[x]`），运行时验收项仍未开始（`[ ]`）。详见 0.1。
 
 - [x] **代码就绪**：`check` / `run` / `report` 三个命令已实现并通过静态检查与单元测试
-- [ ] `python -m analytics_agent.evaluation.cli check` 通过（数据锚点、连接、只读权限、golden SQL 全部可执行）
+- [x] **smoke 预检通过**：`check --dataset smoke.yaml` → 20/20 PASS（2026-10-22）
+- [ ] 30 条用例齐备后复检：`check --strict` 全 PASS
 - [ ] `python -m analytics_agent.evaluation.cli run` 一条命令跑完 30 题，产出 `report.json` + `report.html`（当前用例 6/30）
 - [ ] 连续两次运行，EX 差异 ≤ 2pt（评测稳定）
 - [ ] 100% 用例的失败都能落到 taxonomy 之一（`UNKNOWN` 占比 < 10%）
@@ -1024,6 +1027,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 | D1-0 | 创建只读账号并授权 | 成功 | 当前为 `GRANT SELECT ON *.*`，建议收紧到 `shop.*` |
 | 2026-10-22 | D1-2 | `seed --scale 0.1` | 成功 | 12 表 312,569 行；明细见下 |
 | 2026-10-22 | D1-2 | 只读账号抽查（锚点/测试账号/币种/状态/重试/GMV） | 通过 | 锚点 `2026-10-21`，seed=42 |
+| 2026-10-22 | D1-4 | `check --dataset smoke.yaml` | **20/20 PASS** | 只读探针生效；golden `A-01` 4 行 / 0.02s |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
