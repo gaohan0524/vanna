@@ -133,10 +133,10 @@
 
 ## 4. 代码结构规划
 
-建议在业务侧新增独立包（不要改 `src/vanna/` 框架代码）：
+在仓库根新增**一个**业务包 `analytics_agent/`，评测作为其子包 `analytics_agent.eval`（不要改 `src/vanna/` 框架代码，也不要放根目录 `eval/`——`eval` 与内置函数同名且过于通用）：
 
 ```
-agent_app/
+analytics_agent/
   __init__.py
   config.py            # 环境变量、连接配置、开关
   agent_factory.py     # 组装 Agent（唯一入口，示例 test.py 收敛到这里）
@@ -160,14 +160,20 @@ agent_app/
   sql/
     guardrails.py      # AST 级只读校验、LIMIT 注入、超时
     result_norm.py     # 结果集归一化
-  eval/
+  eval/                # 子包：python -m analytics_agent.eval.cli
+    cli.py             # check / seed / run / report
+    preflight.py       # 锚点、连接、只读、golden 自检
+    executor.py        # 只读执行（重放 + golden）
+    compare.py         # 结果集等价比较
+    evaluators.py      # ResultSet / Clarification / FirstTry
+    labeling.py        # 失败分类
     datasets/          # YAML 用例
-    golden/            # golden 结果 CSV
-    evaluators.py      # ResultSetEvaluator 等
-    run_eval.py        # 一条命令跑全集
+    seed/              # DDL 与合成数据生成
 ```
 
-`src/vanna/examples/test.py` 只保留启动入口，业务逻辑全部迁入 `agent_app/`，便于测试。
+`src/vanna/examples/test.py` 只保留启动入口，业务逻辑全部迁入 `analytics_agent/`，便于测试；将来独立部署时整个目录可直接搬走。
+
+**配套配置**（详见 `STAGE0-EVAL.md` 4.2）：`pyproject.toml` 的 flit sdist 排除 `analytics_agent/`、`scripts/`、`reports/`；`tox.ini` 的 ruff 命令追加 `analytics_agent/`；`.gitignore` 增加 `reports/`。
 
 ---
 
@@ -207,14 +213,14 @@ agent_app/
 #### 代码骨架
 
 ```python
-# agent_app/eval/evaluators.py
+# analytics_agent/eval/evaluators.py
 import pandas as pd
 
 from vanna.core.evaluation import (
     Evaluator, TestCase, AgentResult, EvaluationResult,
 )
-from agent_app.sql.guardrails import execute_readonly
-from agent_app.sql.result_norm import normalize_frame, frames_equal
+from analytics_agent.sql.guardrails import execute_readonly
+from analytics_agent.sql.result_norm import normalize_frame, frames_equal
 
 
 class ResultSetEvaluator(Evaluator):
@@ -256,7 +262,7 @@ class ResultSetEvaluator(Evaluator):
 
 #### 验收
 
-- `python -m agent_app.eval.run_eval` 一条命令跑完 100 条，产出 HTML。
+- `python -m analytics_agent.eval.cli run` 一条命令跑完全部用例，产出 HTML/JSON。
 - 基线 EX 有明确数字，失败按 taxonomy 分类统计。
 - 同一份代码连跑两次，EX 波动 ≤ 2pt（否则说明评测不稳定，先修评测）。
 
@@ -270,7 +276,7 @@ class ResultSetEvaluator(Evaluator):
 
 - **T1-1 schema 目录自动生成**
   - 从 `system.columns` + `system.tables` 抽出：库、表、字段、类型、注释、默认值、引擎、行数。
-  - 落成 JSON（`agent_app/context/schema_catalog.json`），启动时加载；提供刷新脚本，建议每天或 DDL 变更时跑。
+  - 落成 JSON（`analytics_agent/context/schema_catalog.json`），启动时加载；提供刷新脚本，建议每天或 DDL 变更时跑。
   - 对每个字段补一句“口语化说明”（可用强模型批量生成，人工抽检 20%）。
 - **T1-2 L1 稳定指令**
   - 方言规则、硬约束、输出格式、工作流，写进 `prompts/templates.py`。
@@ -287,7 +293,7 @@ class ResultSetEvaluator(Evaluator):
 #### 代码骨架
 
 ```python
-# agent_app/prompts/builder.py
+# analytics_agent/prompts/builder.py
 from vanna.core.system_prompt import DefaultSystemPromptBuilder
 
 from .templates import L1_RULES, L2_FACTS
@@ -379,7 +385,7 @@ L1_RULES = """
 #### 代码骨架
 
 ```python
-# agent_app/tools/search_columns.py
+# analytics_agent/tools/search_columns.py
 from typing import Type
 
 from pydantic import BaseModel, Field
@@ -650,37 +656,36 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 
 ```yaml
 dataset:
-  name: "clickhouse_analytics"
-  description: "分层 Text2SQL 评测集"
+  name: "shop_v1_30"
+  description: "自建 ClickHouse 合成业务库评测集"
   test_cases:
-    - id: "agg_001"
+    - id: "A-01"
       user_id: "analyst"
       user_groups: ["analyst"]
       message: "最近 30 天各渠道的 GMV 是多少"
       metadata:
-        layer: aggregation
+        layer: A
         difficulty: easy
+        # golden 存 SQL 而非 CSV：评测时与 agent 的 SQL 在同一份数据上执行后比较
         golden_sql: |
-          SELECT channel, SUM(amount)/100.0 AS gmv
-          FROM default.orders
-          WHERE created_at >= today() - 30
-          GROUP BY channel
-        golden_result: "agent_app/eval/golden/agg_001.csv"
-      expected_outcome:
-        tools_called: ["run_sql"]
+          SELECT channel, SUM(amount_cents) / 100.0 AS gmv
+          FROM shop.orders
+          WHERE created_at >= now() - INTERVAL 30 DAY
+            AND status IN ('paid','shipped','completed')
+            AND currency = 'CNY' AND is_test = 0
+          GROUP BY channel ORDER BY gmv DESC
+        expected_behavior: answer
 
-    - id: "ambig_001"
+    - id: "E-05"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "看一下活跃用户"
+      message: "看一下复购率"
       metadata:
-        layer: ambiguity
-        expect_clarification: true
-      expected_outcome:
-        tools_not_called: ["run_sql"]
+        layer: E
+        expected_behavior: clarify   # answer | clarify | refuse
 ```
 
-> 说明：`golden_result` 与 `expect_clarification` 放在 `metadata` 中，由自定义 `Evaluator` 消费；内置 `ExpectedOutcome` 只支持工具名与关键词匹配。
+> 说明：`golden_sql` 与 `expected_behavior` 放在 `metadata` 中，由自定义 `Evaluator` 消费；内置 `ExpectedOutcome` 只支持工具名与关键词匹配，不支持结果集对比。完整样例见 `STAGE0-EVAL.md` 6.3。
 
 ### B. ClickHouse schema 抽取 SQL
 
