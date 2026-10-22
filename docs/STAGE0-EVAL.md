@@ -931,36 +931,43 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 
 > 裁决结果写回 `seed/metrics.md`，并在表格里保留“裁决日期”，后续口径变更走版本记录。
 
-#### D2-1 24 条选题清单（按 6.1 配额）
+#### D2-1 30 条选题清单（与 `v1_30.yaml` 一一对应）
 
-现有 6 条：`A-01`（GMV）、`B-02`（品类净收入）、`C-03`（GMV 环比）、`D-04`（渠道转化率）、`E-05`（复购率）、`F-06`（竞品份额）。
+> 2026-10-22 定稿。`期望` 列：`answer` = 应执行查询并命中结果；`clarify` = 应先澄清；`refuse` = 应说明无法回答/无权限。
+> 问题文本与 YAML 中的 `message` 完全一致；改题必须先改 YAML。
 
-| ID | 层 | 问题（可直接用） | 考点 / golden 必须包含 |
-|---|---|---|---|
-| A-07 | A | 各支付方式的成功支付金额分别是多少？ | `payments.status='succeeded'` 且 `is_retry=0`；`/100.0` |
-| A-08 | A | 近 7 天各渠道新增用户数 | `users.is_test=0`、`deleted_at IS NULL`、相对时间 |
-| A-09 | A | 当前各套餐的 MRR 是多少？ | `accounts.status='active'`；不按用户去重 |
-| B-10 | B | 各渠道的退款金额（近 90 天） | join `orders`；`refunds.status='approved'`；币种/测试过滤 |
-| B-11 | B | 销量最高的 10 个商品 | `order_items` join `products`；仅有效订单；`SUM(quantity)` |
-| B-12 | B | 各国家用户的支付转化率 | `sessions` join `users`；`converted=1 / count()` |
-| B-13 | B | 各品类的客单价 | 品类收入 / `count(DISTINCT order_id)`；金额 `/100` |
-| C-14 | C | 近 4 周每周的有效订单数 | `toStartOfWeek`；固定 4 周窗口 |
-| C-15 | C | 本月至今的净收入，跟上月同期比增长多少？ | 净收入 = GMV − approved 退款；MTD vs 上月 1 日至同日 |
-| C-16 | C | 近 12 个月每月新增用户数及环比 | `toStartOfMonth`；无数据月份需补 0 或说明 |
-| D-17 | D | 近 3 个月每月注册用户的 7 日留存率 | 按月 cohort；窗口 `[D+1, D+7)`；排除测试/软删 |
-| D-18 | D | 近 7 天加购后最终下单的会话比例 | `events` + `uniqExactIf`；除零保护 |
-| E-19 | E | 看一下销售额 | 未给指标/时间/渠道 → 应澄清 |
-| E-20 | E | 算下留存 | 新用户留存还是活跃留存、窗口未知 → 应澄清 |
-| E-21 | E | 最近的转化率怎么样 | 渠道/设备/时间均未指定 → 应澄清 |
-| F-22 | F | 查一下我们的库存周转天数 | 库内无库存表 → 应明确说明不可回答 |
-| G-23 | G | （viewer 组）各渠道 GMV 是多少？ | 无 `run_sql` 权限 → 应说明无权限，不编造 |
-| G-24 | G | （viewer 组）把最近 10 条订单明细列出来 | 同上 |
-| G-25 | G | （空 group）本月订单量是多少？ | 同上；验证默认拒绝（fail-closed） |
-| H-26 | H | 近 7 天每天的下单事件数 | `events` 100 万行；必须带时间过滤 |
-| H-27 | H | 近 30 天各类事件的次数分布 | 同上；验证分区裁剪与 <30s |
-| I-28 | I | 近 30 天各渠道 GMV（多轮第 1 轮，`conversation_id: multi-1`） | 建立上下文 |
-| I-29 | I | 只看 organic 呢（同会话第 2 轮） | 继承上一轮时间窗口与口径 |
-| I-30 | I | 跟再往前 30 天比呢（同会话第 3 轮） | 继承 organic 过滤；滚动 30 天 vs 前 30 天 |
+| ID | 层 | 用户组 | 问题 | 期望 | 考点 / golden 必须包含 |
+|---|---|---|---|---|---|
+| A-01 | A | analyst | 最近 30 天各渠道的 GMV 是多少？ | answer | 有效订单 + `CNY` + 排除测试账号；按渠道聚合 |
+| A-07 | A | analyst | 各支付方式的成功支付金额分别是多少？ | answer | `status='succeeded' AND is_retry=0`；金额 `/100` |
+| A-08 | A | analyst | 近 7 天各渠道新增用户数是多少？ | answer | `is_test=0`、`deleted_at IS NULL`、相对时间 |
+| A-09 | A | analyst | 当前各套餐的 MRR 是多少？ | answer | 仅 `accounts.status='active'`；不按用户去重 |
+| B-02 | B | analyst | 按品类看最近一个月的净收入 | answer | items+orders+products+refunds；仅 approved 退款 |
+| B-10 | B | analyst | 近 90 天各渠道的退款金额是多少？ | answer | 退款 approved；币种/测试过滤；按订单渠道归因 |
+| B-11 | B | analyst | 销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；`LIMIT 10` |
+| B-12 | B | analyst | 各国家用户的支付转化率是多少？ | answer | sessions join users；`countIf(converted=1)/count()` |
+| B-13 | B | analyst | 各品类的客单价是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；金额 `/100` |
+| C-03 | C | analyst | 本月至今的 GMV，跟上月同期比增长了多少？ | answer | MTD vs 上月 1 日至同日；`nullIf` 防除零 |
+| C-14 | C | analyst | 近 4 周每周的有效订单数是多少？ | answer | `toStartOfWeek`；4 个完整周（不含本周） |
+| C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？ | answer | GMV − approved 退款；按退款发生月；MTD 对比 |
+| C-16 | C | analyst | 近 12 个月每月新增用户数及环比是多少？ | answer | 无数据月份补 0；首月环比为 `NULL` |
+| D-04 | D | analyst | 上周各渠道的支付转化率 | answer | 上周完整窗口；`converted=1` 占比 |
+| D-17 | D | analyst | 近 3 个月每月注册用户的 7 日留存率是多少？ | answer | 月度 cohort；窗口 `[D+1, D+7)`；排除测试/软删 |
+| D-18 | D | analyst | 近 7 天加购后最终下单的会话比例是多少？ | answer | `uniqExactIf`；`nullIf` 防除零 |
+| E-05 | E | analyst | 看一下复购率 | clarify | 未给时间窗口与“复购”口径 |
+| E-19 | E | analyst | 看一下销售额 | clarify | 未给指标（GMV/净收入）、时间、渠道 |
+| E-20 | E | analyst | 算下留存 | clarify | 新用户留存还是活跃留存、窗口未知 |
+| E-21 | E | analyst | 最近的转化率怎么样 | clarify | 渠道/设备/时间均未指定 |
+| F-06 | F | analyst | 帮我查一下竞品的市场份额 | refuse | 库内无竞品数据，应明确说明不可回答 |
+| F-22 | F | analyst | 查一下我们的库存周转天数 | refuse | 库内无库存表，应明确说明不可回答 |
+| G-23 | G | viewer | 各渠道 GMV 是多少？ | refuse | 无 `run_sql` 权限（`access_groups` 闸门） |
+| G-24 | G | viewer | 把最近 10 条订单明细列出来 | refuse | 同上；不得编造数据 |
+| G-25 | G | guest（空组） | 本月订单量是多少？ | refuse | 默认拒绝（fail-closed） |
+| H-26 | H | analyst | 近 7 天每天的下单事件数是多少？ | answer | `events` 时间过滤；注意 `now()-7d` 会跨 8 个自然日 |
+| H-27 | H | analyst | 近 30 天各类事件的次数分布是怎样的？ | answer | 100 万行 + 时间过滤；验证分区裁剪 |
+| I-28 | I | analyst | 近 30 天各渠道的 GMV 是多少？ | answer | `conversation_id=multi-1` 第 1 轮，建立上下文 |
+| I-29 | I | analyst | 只看 organic 呢？ | answer | 第 2 轮；继承上一轮时间窗口与口径 |
+| I-30 | I | analyst | 跟再往前 30 天比呢？ | answer | 第 3 轮；继承 organic；滚动 30 天 vs 前 30 天 |
 
 **G 类说明**：本库没有行级安全（RLS），G 只验证**工具级闸门**（`access_groups`）。行级安全在 Stage 5 用 `transform_args` 实现，届时再扩 G 类。
 
@@ -1186,31 +1193,38 @@ GRANT SELECT ON shop.* TO readonly;
 > 用法：`SQL` 列打勾表示已写并在只读账号执行通过；`核对` 表示人工看过行数与量级；
 > `入 YAML` 表示已合并进 `v1_30.yaml` 且该条 `check` 通过。
 
-| ID | 层 | SQL | 核对 | 入 YAML | 备注 |
-|---|---|---|---|---|---|
-| A-07 | A | [x] | [ ] | [x] | 排除 `is_retry`；3 行 |
-| A-08 | A | [x] | [ ] | [x] | 排除测试/软删；4 行 |
-| A-09 | A | [x] | [ ] | [x] | 仅 active；3 行 |
-| B-10 | B | [x] | [ ] | [x] | join orders；approved；4 行 |
-| B-11 | B | [x] | [ ] | [x] | Top 10 销量；10 行 |
-| B-12 | B | [x] | [ ] | [x] | join users；4 行 |
-| B-13 | B | [x] | [ ] | [x] | distinct order；5 行 |
-| C-14 | C | [x] | [ ] | [x] | 近 4 周；4 行 |
-| C-15 | C | [x] | [ ] | [x] | 净收入 MTD 环比；1 行 |
-| C-16 | C | [x] | [ ] | [x] | 12 个月趋势；12 行 |
-| D-17 | D | [x] | [ ] | [x] | 月度 7 日留存；3 行 |
-| D-18 | D | [x] | [ ] | [x] | 事件漏斗；1 行 |
-| E-19 | E | — | [ ] | [x] | 应澄清 |
-| E-20 | E | — | [ ] | [x] | 应澄清 |
-| E-21 | E | — | [ ] | [x] | 应澄清 |
-| F-22 | F | — | [ ] | [x] | 应拒答 |
-| G-23 | G | — | [ ] | [x] | viewer 无工具 |
-| G-24 | G | — | [ ] | [x] | viewer 无工具 |
-| G-25 | G | — | [ ] | [x] | 空 group |
-| H-26 | H | [x] | [ ] | [x] | events 时间过滤；8 行 |
-| H-27 | H | [x] | [ ] | [x] | 100 万行；4 行 |
-| I-28 | I | [x] | [ ] | [x] | multi-1 第 1 轮 |
-| I-29 | I | [x] | [ ] | [x] | multi-1 第 2 轮 |
-| I-30 | I | [x] | [ ] | [x] | multi-1 第 3 轮 |
+| ID | 层 | 期望 | SQL | 核对 | 入 YAML | 审核意见 |
+|---|---|---|---|---|---|---|
+| A-01 | A | answer | [x] | [ ] | [x] | |
+| A-07 | A | answer | [x] | [ ] | [x] | |
+| A-08 | A | answer | [x] | [ ] | [x] | |
+| A-09 | A | answer | [x] | [ ] | [x] | |
+| B-02 | B | answer | [x] | [ ] | [x] | |
+| B-10 | B | answer | [x] | [ ] | [x] | |
+| B-11 | B | answer | [x] | [ ] | [x] | |
+| B-12 | B | answer | [x] | [ ] | [x] | |
+| B-13 | B | answer | [x] | [ ] | [x] | |
+| C-03 | C | answer | [x] | [ ] | [x] | |
+| C-14 | C | answer | [x] | [ ] | [x] | |
+| C-15 | C | answer | [x] | [ ] | [x] | |
+| C-16 | C | answer | [x] | [ ] | [x] | |
+| D-04 | D | answer | [x] | [ ] | [x] | |
+| D-17 | D | answer | [x] | [ ] | [x] | |
+| D-18 | D | answer | [x] | [ ] | [x] | |
+| E-05 | E | clarify | — | [ ] | [x] | |
+| E-19 | E | clarify | — | [ ] | [x] | |
+| E-20 | E | clarify | — | [ ] | [x] | |
+| E-21 | E | clarify | — | [ ] | [x] | |
+| F-06 | F | refuse | — | [ ] | [x] | |
+| F-22 | F | refuse | — | [ ] | [x] | |
+| G-23 | G | refuse | — | [ ] | [x] | |
+| G-24 | G | refuse | — | [ ] | [x] | |
+| G-25 | G | refuse | — | [ ] | [x] | |
+| H-26 | H | answer | [x] | [ ] | [x] | |
+| H-27 | H | answer | [x] | [ ] | [x] | |
+| I-28 | I | answer | [x] | [ ] | [x] | |
+| I-29 | I | answer | [x] | [ ] | [x] | |
+| I-30 | I | answer | [x] | [ ] | [x] | |
 
-> `核对` 列留空：需要业务负责人逐条确认数值量级与口径，确认后在列中打 `x`。
+> `核对`：业务负责人逐条确认数值量级与口径后打 `x`。
+> `审核意见`：写“通过”，或“需调整：<具体原因>”；有调整时同步改 `v1_30.yaml` 并重跑 `check`。
