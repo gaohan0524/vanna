@@ -1,13 +1,15 @@
-# 主评测集（v1）：先放入 6 条完整样例，其余按 6.1 分层矩阵补到 30 条。
-# 分层配额（30）：A 4 / B 5 / C 4 / D 3 / E 4 / F 2 / G 3 / H 2 / I 3
-# 出题纪律：先写 golden SQL 并在 ClickHouse 上跑通、看懂结果，再录入 YAML。
-#   python -m analytics_agent.evaluation.cli check --dataset analytics_agent/evaluation/datasets/v1_30.yaml
-#   python -m analytics_agent.evaluation.cli run   --dataset analytics_agent/evaluation/datasets/v1_30.yaml
+# 主评测集 v1：30 条，覆盖 A~I 九层。
+# 口径以 analytics_agent/evaluation/seed/metrics.md 为准（2026-10-22 已裁决 5 项）。
+# 分层配额：A 4 / B 5 / C 4 / D 3 / E 4 / F 2 / G 3 / H 2 / I 3
+#
+#   python -m analytics_agent.evaluation.cli check --strict --dataset analytics_agent/evaluation/datasets/v1_30.yaml
+#   python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/v1_30.yaml
 
 dataset:
   name: "shop_v1_30"
-  description: "自建 ClickHouse 合成业务库评测集 v1"
+  description: "自建 ClickHouse 合成业务库评测集 v1（30 条）"
   test_cases:
+    # ---------------- A 单表聚合 ----------------
     - id: "A-01"
       user_id: "analyst"
       user_groups: ["analyst"]
@@ -23,8 +25,72 @@ dataset:
             AND currency = 'CNY' AND is_test = 0
           GROUP BY channel
           ORDER BY gmv DESC
+        without_filter_sql: |
+          SELECT channel, SUM(amount_cents) / 100.0 AS gmv
+          FROM shop.orders
+          WHERE created_at >= now() - INTERVAL 30 DAY
+          GROUP BY channel
+          ORDER BY gmv DESC
         expected_behavior: answer
 
+    - id: "A-07"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "各支付方式的成功支付金额分别是多少？"
+      metadata:
+        layer: A
+        difficulty: easy
+        golden_sql: |
+          SELECT method, SUM(amount_cents) / 100.0 AS paid_amount
+          FROM shop.payments
+          WHERE status = 'succeeded' AND is_retry = 0
+          GROUP BY method
+          ORDER BY paid_amount DESC
+        without_filter_sql: |
+          SELECT method, SUM(amount_cents) / 100.0 AS paid_amount
+          FROM shop.payments
+          WHERE status = 'succeeded'
+          GROUP BY method
+          ORDER BY paid_amount DESC
+        expected_behavior: answer
+
+    - id: "A-08"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "近 7 天各渠道新增用户数是多少？"
+      metadata:
+        layer: A
+        difficulty: easy
+        golden_sql: |
+          SELECT channel, count() AS new_users
+          FROM shop.users
+          WHERE signup_at >= now() - INTERVAL 7 DAY
+            AND is_test = 0 AND deleted_at IS NULL
+          GROUP BY channel
+          ORDER BY new_users DESC
+        expected_behavior: answer
+
+    - id: "A-09"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "当前各套餐的 MRR 是多少？"
+      metadata:
+        layer: A
+        difficulty: easy
+        golden_sql: |
+          SELECT plan, SUM(mrr_cents) / 100.0 AS mrr
+          FROM shop.accounts
+          WHERE status = 'active'
+          GROUP BY plan
+          ORDER BY mrr DESC
+        without_filter_sql: |
+          SELECT plan, SUM(mrr_cents) / 100.0 AS mrr
+          FROM shop.accounts
+          GROUP BY plan
+          ORDER BY mrr DESC
+        expected_behavior: answer
+
+    # ---------------- B 多表 join ----------------
     - id: "B-02"
       user_id: "analyst"
       user_groups: ["analyst"]
@@ -51,10 +117,100 @@ dataset:
           ORDER BY net_revenue DESC
         expected_behavior: answer
 
+    - id: "B-10"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "近 90 天各渠道的退款金额是多少？"
+      metadata:
+        layer: B
+        difficulty: medium
+        golden_sql: |
+          SELECT o.channel, SUM(r.amount_cents) / 100.0 AS refund_amount
+          FROM shop.refunds r
+          JOIN shop.orders o ON o.order_id = r.order_id
+          WHERE r.status = 'approved'
+            AND r.created_at >= now() - INTERVAL 90 DAY
+            AND o.currency = 'CNY' AND o.is_test = 0
+          GROUP BY o.channel
+          ORDER BY refund_amount DESC
+        without_filter_sql: |
+          SELECT o.channel, SUM(r.amount_cents) / 100.0 AS refund_amount
+          FROM shop.refunds r
+          JOIN shop.orders o ON o.order_id = r.order_id
+          WHERE r.created_at >= now() - INTERVAL 90 DAY
+            AND o.currency = 'CNY' AND o.is_test = 0
+          GROUP BY o.channel
+          ORDER BY refund_amount DESC
+        expected_behavior: answer
+
+    - id: "B-11"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "销量最高的 10 个商品是哪些？"
+      metadata:
+        layer: B
+        difficulty: medium
+        golden_sql: |
+          SELECT p.name AS product, SUM(oi.quantity) AS units
+          FROM shop.order_items oi
+          JOIN shop.orders o ON o.order_id = oi.order_id
+          JOIN shop.products p ON p.product_id = oi.product_id
+          WHERE o.status IN ('paid','shipped','completed')
+            AND o.currency = 'CNY' AND o.is_test = 0
+          GROUP BY p.name
+          ORDER BY units DESC
+          LIMIT 10
+        expected_behavior: answer
+
+    - id: "B-12"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "各国家用户的支付转化率是多少？"
+      metadata:
+        layer: B
+        difficulty: medium
+        golden_sql: |
+          SELECT u.country, countIf(s.converted = 1) / count() AS cvr
+          FROM shop.sessions s
+          JOIN shop.users u ON u.user_id = s.user_id
+          WHERE u.is_test = 0
+          GROUP BY u.country
+          ORDER BY cvr DESC
+        expected_behavior: answer
+
+    - id: "B-13"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "各品类的客单价是多少？"
+      metadata:
+        layer: B
+        difficulty: hard
+        golden_sql: |
+          SELECT p.category,
+                 SUM(oi.item_amount_cents) / 100.0 / count(DISTINCT o.order_id) AS aov
+          FROM shop.order_items oi
+          JOIN shop.orders o ON o.order_id = oi.order_id
+          JOIN shop.products p ON p.product_id = oi.product_id
+          WHERE o.status IN ('paid','shipped','completed')
+            AND o.currency = 'CNY' AND o.is_test = 0
+          GROUP BY p.category
+          ORDER BY aov DESC
+        without_filter_sql: |
+          SELECT p.category,
+                 SUM(oi.item_amount_cents) / 100.0 / count(DISTINCT o.order_id) AS aov
+          FROM shop.order_items oi
+          JOIN shop.orders o ON o.order_id = oi.order_id
+          JOIN shop.products p ON p.product_id = oi.product_id
+          WHERE o.currency = 'CNY' AND o.is_test = 0
+          GROUP BY p.category
+          ORDER BY aov DESC
+        expected_behavior: answer
+
+    # ---------------- C 时间窗口 / 同环比 ----------------
     - id: "C-03"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "本月 GMV 跟上月比增长了多少？"
+      message: "本月至今的 GMV，跟上月同期比增长了多少？"
       metadata:
         layer: C
         difficulty: medium
@@ -69,7 +225,8 @@ dataset:
             ),
             prev AS (
               SELECT SUM(amount_cents) AS v FROM shop.orders
-              WHERE toStartOfMonth(created_at) = toStartOfMonth(today() - INTERVAL 1 MONTH)
+              WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+                AND created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
                 AND status IN ('paid','shipped','completed')
                 AND currency = 'CNY' AND is_test = 0
             )
@@ -80,6 +237,112 @@ dataset:
           FROM cur, prev
         expected_behavior: answer
 
+    - id: "C-14"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "近 4 周每周的有效订单数是多少？"
+      metadata:
+        layer: C
+        difficulty: medium
+        order_sensitive: true
+        golden_sql: |
+          SELECT toStartOfWeek(created_at) AS week_start, count() AS orders
+          FROM shop.orders
+          WHERE created_at >= toStartOfWeek(today()) - INTERVAL 4 WEEK
+            AND created_at < toStartOfWeek(today())
+            AND status IN ('paid','shipped','completed')
+            AND currency = 'CNY' AND is_test = 0
+          GROUP BY week_start
+          ORDER BY week_start
+        expected_behavior: answer
+
+    - id: "C-15"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "本月至今的净收入，跟上月同期比增长多少？"
+      metadata:
+        layer: C
+        difficulty: hard
+        golden_sql: |
+          SELECT round(
+              (
+                  (
+                      (SELECT SUM(amount_cents) FROM shop.orders
+                       WHERE toStartOfMonth(created_at) = toStartOfMonth(today())
+                         AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
+                      -
+                      (SELECT SUM(r.amount_cents) FROM shop.refunds r
+                       JOIN shop.orders o ON o.order_id = r.order_id
+                       WHERE toStartOfMonth(r.created_at) = toStartOfMonth(today())
+                         AND r.status='approved' AND o.currency='CNY' AND o.is_test=0)
+                  )
+                  -
+                  (
+                      (SELECT SUM(amount_cents) FROM shop.orders
+                       WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+                         AND created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
+                         AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
+                      -
+                      (SELECT SUM(r.amount_cents) FROM shop.refunds r
+                       JOIN shop.orders o ON o.order_id = r.order_id
+                       WHERE r.created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+                         AND r.created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
+                         AND r.status='approved' AND o.currency='CNY' AND o.is_test=0)
+                  )
+              )
+              / nullIf(
+                  (
+                      (SELECT SUM(amount_cents) FROM shop.orders
+                       WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+                         AND created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
+                         AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
+                      -
+                      (SELECT SUM(r.amount_cents) FROM shop.refunds r
+                       JOIN shop.orders o ON o.order_id = r.order_id
+                       WHERE r.created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+                         AND r.created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
+                         AND r.status='approved' AND o.currency='CNY' AND o.is_test=0)
+                  ), 0
+              ) * 100,
+              2
+          ) AS net_mom_pct
+        expected_behavior: answer
+
+    - id: "C-16"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "近 12 个月每月新增用户数及环比是多少？"
+      metadata:
+        layer: C
+        difficulty: hard
+        order_sensitive: true
+        golden_sql: |
+          WITH
+              months AS (
+                  SELECT toStartOfMonth(today()) - toIntervalMonth(number) AS month
+                  FROM numbers(12)
+              ),
+              counts AS (
+                  SELECT toStartOfMonth(signup_at) AS month, count() AS new_users
+                  FROM shop.users
+                  WHERE signup_at >= toStartOfMonth(today()) - INTERVAL 13 MONTH
+                    AND is_test = 0 AND deleted_at IS NULL
+                  GROUP BY month
+              )
+          SELECT m.month AS month,
+                 ifNull(c.new_users, 0) AS new_users,
+                 round(
+                     (ifNull(c.new_users, 0) - ifNull(p.new_users, 0))
+                     / nullIf(ifNull(p.new_users, 0), 0) * 100,
+                     2
+                 ) AS mom_pct
+          FROM months m
+          LEFT JOIN counts c ON c.month = m.month
+          LEFT JOIN counts p ON p.month = m.month - toIntervalMonth(1)
+          ORDER BY m.month
+        expected_behavior: answer
+
+    # ---------------- D 留存 / 漏斗 ----------------
     - id: "D-04"
       user_id: "analyst"
       user_groups: ["analyst"]
@@ -96,6 +359,53 @@ dataset:
           ORDER BY cvr DESC
         expected_behavior: answer
 
+    - id: "D-17"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "近 3 个月每月注册用户的 7 日留存率是多少？"
+      metadata:
+        layer: D
+        difficulty: hard
+        order_sensitive: true
+        golden_sql: |
+          SELECT cohort_month, users, retained_d7, round(retained_d7 / users * 100, 2) AS d7_pct
+          FROM (
+              SELECT toStartOfMonth(u.signup_at) AS cohort_month,
+                     uniqExact(u.user_id) AS users,
+                     uniqExactIf(
+                         u.user_id,
+                         s.started_at >= u.signup_at + INTERVAL 1 DAY
+                         AND s.started_at < u.signup_at + INTERVAL 7 DAY
+                     ) AS retained_d7
+              FROM shop.users u
+              LEFT JOIN shop.sessions s ON s.user_id = u.user_id
+              WHERE u.signup_at >= toStartOfMonth(today()) - INTERVAL 3 MONTH
+                AND u.signup_at < toStartOfMonth(today())
+                AND u.is_test = 0 AND u.deleted_at IS NULL
+              GROUP BY cohort_month
+          )
+          ORDER BY cohort_month
+        expected_behavior: answer
+
+    - id: "D-18"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "近 7 天加购后最终下单的会话比例是多少？"
+      metadata:
+        layer: D
+        difficulty: hard
+        golden_sql: |
+          SELECT cart_sessions, purchase_sessions,
+                 round(purchase_sessions / nullIf(cart_sessions, 0) * 100, 2) AS cvr_pct
+          FROM (
+              SELECT uniqExactIf(session_id, event_name = 'add_to_cart') AS cart_sessions,
+                     uniqExactIf(session_id, event_name = 'purchase') AS purchase_sessions
+              FROM shop.events
+              WHERE event_time >= now() - INTERVAL 7 DAY
+          )
+        expected_behavior: answer
+
+    # ---------------- E 口径歧义（应澄清） ----------------
     - id: "E-05"
       user_id: "analyst"
       user_groups: ["analyst"]
@@ -105,6 +415,34 @@ dataset:
         difficulty: easy
         expected_behavior: clarify
 
+    - id: "E-19"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "看一下销售额"
+      metadata:
+        layer: E
+        difficulty: easy
+        expected_behavior: clarify
+
+    - id: "E-20"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "算下留存"
+      metadata:
+        layer: E
+        difficulty: easy
+        expected_behavior: clarify
+
+    - id: "E-21"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "最近的转化率怎么样"
+      metadata:
+        layer: E
+        difficulty: easy
+        expected_behavior: clarify
+
+    # ---------------- F 无法回答（应拒答） ----------------
     - id: "F-06"
       user_id: "analyst"
       user_groups: ["analyst"]
@@ -113,3 +451,139 @@ dataset:
         layer: F
         difficulty: easy
         expected_behavior: refuse
+
+    - id: "F-22"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "查一下我们的库存周转天数"
+      metadata:
+        layer: F
+        difficulty: easy
+        expected_behavior: refuse
+
+    # ---------------- G 权限（工具级闸门） ----------------
+    - id: "G-23"
+      user_id: "viewer"
+      user_groups: ["viewer"]
+      message: "各渠道 GMV 是多少？"
+      metadata:
+        layer: G
+        difficulty: easy
+        expected_behavior: refuse
+
+    - id: "G-24"
+      user_id: "viewer"
+      user_groups: ["viewer"]
+      message: "把最近 10 条订单明细列出来"
+      metadata:
+        layer: G
+        difficulty: easy
+        expected_behavior: refuse
+
+    - id: "G-25"
+      user_id: "guest"
+      user_groups: []
+      message: "本月订单量是多少？"
+      metadata:
+        layer: G
+        difficulty: easy
+        expected_behavior: refuse
+
+    # ---------------- H 大表 / 性能 ----------------
+    - id: "H-26"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "近 7 天每天的下单事件数是多少？"
+      metadata:
+        layer: H
+        difficulty: medium
+        order_sensitive: true
+        golden_sql: |
+          SELECT toDate(event_time) AS day, count() AS purchase_events
+          FROM shop.events
+          WHERE event_name = 'purchase' AND event_time >= now() - INTERVAL 7 DAY
+          GROUP BY day
+          ORDER BY day
+        expected_behavior: answer
+
+    - id: "H-27"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "近 30 天各类事件的次数分布是怎样的？"
+      metadata:
+        layer: H
+        difficulty: medium
+        golden_sql: |
+          SELECT event_name, count() AS events
+          FROM shop.events
+          WHERE event_time >= now() - INTERVAL 30 DAY
+          GROUP BY event_name
+          ORDER BY events DESC
+        expected_behavior: answer
+
+    # ---------------- I 多轮（同一 conversation_id） ----------------
+    - id: "I-28"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      conversation_id: "multi-1"
+      message: "近 30 天各渠道的 GMV 是多少？"
+      metadata:
+        layer: I
+        difficulty: medium
+        golden_sql: |
+          SELECT channel, SUM(amount_cents) / 100.0 AS gmv
+          FROM shop.orders
+          WHERE created_at >= now() - INTERVAL 30 DAY
+            AND status IN ('paid','shipped','completed')
+            AND currency = 'CNY' AND is_test = 0
+          GROUP BY channel
+          ORDER BY gmv DESC
+        expected_behavior: answer
+
+    - id: "I-29"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      conversation_id: "multi-1"
+      message: "只看 organic 呢？"
+      metadata:
+        layer: I
+        difficulty: medium
+        golden_sql: |
+          SELECT SUM(amount_cents) / 100.0 AS organic_gmv
+          FROM shop.orders
+          WHERE channel = 'organic'
+            AND created_at >= now() - INTERVAL 30 DAY
+            AND status IN ('paid','shipped','completed')
+            AND currency = 'CNY' AND is_test = 0
+        expected_behavior: answer
+
+    - id: "I-30"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      conversation_id: "multi-1"
+      message: "跟再往前 30 天比呢？"
+      metadata:
+        layer: I
+        difficulty: hard
+        golden_sql: |
+          SELECT round(
+              (
+                  (SELECT SUM(amount_cents) FROM shop.orders
+                   WHERE channel='organic' AND created_at >= now() - INTERVAL 30 DAY
+                     AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
+                  -
+                  (SELECT SUM(amount_cents) FROM shop.orders
+                   WHERE channel='organic' AND created_at >= now() - INTERVAL 60 DAY
+                     AND created_at < now() - INTERVAL 30 DAY
+                     AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
+              )
+              / nullIf(
+                  (SELECT SUM(amount_cents) FROM shop.orders
+                   WHERE channel='organic' AND created_at >= now() - INTERVAL 60 DAY
+                     AND created_at < now() - INTERVAL 30 DAY
+                     AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0),
+                  0
+              ) * 100,
+              2
+          ) AS organic_mom_30d_pct
+        expected_behavior: answer

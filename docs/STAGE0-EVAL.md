@@ -18,7 +18,7 @@
 | 任务 | 状态 | 产物 / 证据 |
 |---|---|---|
 | T0-0 合成业务库 | **完成**（0.1 规模已在真实实例实跑，2026-10-22） | `evaluation/seed/ddl.sql`（12 表）、`seed/generate.py`、`scripts/clickhouse/init_ro_user.sql`；行数见附录 D |
-| T0-1 评测集 | **6 / 30**（骨架可跑） | `datasets/v1_30.yaml` 6 条、`datasets/smoke.yaml` 3 条 |
+| T0-1 评测集 | **30 / 30**（golden 全部可执行；数值待业务确认） | `datasets/v1_30.yaml` 30 条、`datasets/smoke.yaml` 4 条 |
 | T0-2 golden 机制 | **完成** | golden 存 SQL、评测时现场执行；拒绝存 CSV 的过期问题 |
 | T0-3 评测器 | **完成** | `ResultSetEvaluator` / `ClarificationEvaluator` / `FirstTryEvaluator` |
 | T0-4 运行器与报告 | **完成** | `cli.py`（check/seed/run/report）、`report.py`（JSON/HTML/CSV） |
@@ -41,6 +41,7 @@
 | 只读账号抽查数据 | 通过：测试账号 2.3%、USD 5.07%、重试流水 3.0%、GMV 非空且排序合理 |
 | `check --dataset smoke.yaml` | **20/20 PASS**：连接、只读探针、12 表行数、数据锚点、3 条用例、golden `A-01`（4 行 / 0.02s） |
 | `run --dataset smoke.yaml`（4 条） | 管线验证通过：EX 50%、首答 50%、behavior 0%、avg_tools 0.5；`A-02` 走通 `run_sql` 并命中（详见附录 D） |
+| `check --strict --dataset v1_30.yaml` | **41/41 PASS**：30 条用例、21 条 golden（各 <0.1s）、5 条 `without_filter_sql` 破坏性验证全部“结果有变化” |
 
 ### 未完成 / 待执行（下一步）
 
@@ -48,7 +49,9 @@
 - [x] **D1-4** `check --dataset smoke.yaml` 全 PASS（20/20，2026-10-22，见附录 D）
 - [x] **D1-5** `run --dataset smoke.yaml` 冒烟评测完成（4 条，管线跑通；质量基线待 D2 后测）
 - [ ] **Stage 1 输入已明确**：schema/方言 prompt、澄清策略、拒答策略（见附录 D 的观察与第 9 节）
-- [ ] **D2** 补齐 24 条用例：先做 D2-0 的 5 项口径裁决，再按 D2 章节逐条产出（工作表见附录 E）
+- [x] **D2-0** 5 项口径已裁决（2026-10-22，写入 `seed/metrics.md`）
+- [x] **D2-1** 24 条用例已产出并合并进 `v1_30.yaml`（golden 逐条执行验证）
+- [ ] **D2-2 业务核对**：逐条确认数值量级与口径（附录 E 的“核对”列留空待确认）
 - [ ] **D3~D4** 首次 `run`，记录基线 EX / 首答命中 / 工具轮次 / P95
 - [ ] **D5** 复跑稳定性验证，勾选 G0
 - [ ] 待确认：`seed/generate.py` 的 1.0 规模（100 万 events）在本机耗时与内存
@@ -106,7 +109,7 @@
 
 - [x] **代码就绪**：`check` / `run` / `report` 三个命令已实现并通过静态检查与单元测试
 - [x] **smoke 预检通过**：`check --dataset smoke.yaml` → 20/20 PASS（2026-10-22）
-- [ ] 30 条用例齐备后复检：`check --strict` 全 PASS
+- [x] **30 条用例齐备后复检**：`check --strict` → 41/41 PASS（2026-10-22）
 - [ ] `python -m analytics_agent.evaluation.cli run` 一条命令跑完 30 题，产出 `report.json` + `report.html`（当前用例 6/30）
 - [ ] 连续两次运行，EX 差异 ≤ 2pt（评测稳定）
 - [ ] 100% 用例的失败都能落到 taxonomy 之一（`UNKNOWN` 占比 < 10%）
@@ -942,9 +945,9 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | B-12 | B | 各国家用户的支付转化率 | `sessions` join `users`；`converted=1 / count()` |
 | B-13 | B | 各品类的客单价 | 品类收入 / `count(DISTINCT order_id)`；金额 `/100` |
 | C-14 | C | 近 4 周每周的有效订单数 | `toStartOfWeek`；固定 4 周窗口 |
-| C-15 | C | 本月净收入跟上月比增长多少？ | 净收入 = GMV − approved 退款（按退款发生月） |
+| C-15 | C | 本月至今的净收入，跟上月同期比增长多少？ | 净收入 = GMV − approved 退款；MTD vs 上月 1 日至同日 |
 | C-16 | C | 近 12 个月每月新增用户数及环比 | `toStartOfMonth`；无数据月份需补 0 或说明 |
-| D-17 | D | 最近 14 天注册用户的次日留存率 | `signup_at` 与 `started_at` 的 1~2 天窗口；排除测试账号 |
+| D-17 | D | 近 3 个月每月注册用户的 7 日留存率 | 按月 cohort；窗口 `[D+1, D+7)`；排除测试/软删 |
 | D-18 | D | 近 7 天加购后最终下单的会话比例 | `events` + `uniqExactIf`；除零保护 |
 | E-19 | E | 看一下销售额 | 未给指标/时间/渠道 → 应澄清 |
 | E-20 | E | 算下留存 | 新用户留存还是活跃留存、窗口未知 → 应澄清 |
@@ -957,7 +960,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | H-27 | H | 近 30 天各类事件的次数分布 | 同上；验证分区裁剪与 <30s |
 | I-28 | I | 近 30 天各渠道 GMV（多轮第 1 轮，`conversation_id: multi-1`） | 建立上下文 |
 | I-29 | I | 只看 organic 呢（同会话第 2 轮） | 继承上一轮时间窗口与口径 |
-| I-30 | I | 跟上个月比呢（同会话第 3 轮） | 继承渠道过滤 + 时间窗口切换 |
+| I-30 | I | 跟再往前 30 天比呢（同会话第 3 轮） | 继承 organic 过滤；滚动 30 天 vs 前 30 天 |
 
 **G 类说明**：本库没有行级安全（RLS），G 只验证**工具级闸门**（`access_groups`）。行级安全在 Stage 5 用 `transform_args` 实现，届时再扩 G 类。
 
@@ -1125,6 +1128,9 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 15:13 | D1-5 | 列值匹配 + 收紧拒答判定 | `A-02` PASS | 新增 `column_match="values"`；`F-06` 反问用户不再算拒答 |
 | 2026-10-22 15:15 | D1-5 | 归因口径与评测器对齐 | 最终 4 条：1 PASS / 3 FAIL | EX 50%、首答 50%、behavior 0%、avg_tools 0.5 |
 | 2026-10-22 | D2-0 | 细化 24 条选题、流程与验收 | 完成（文档） | 见 D2 章节与附录 E 工作表 |
+| 2026-10-22 | D2-0 | 5 项口径裁决 | 已确认 | 复购率 90 天 / 首触归因 / 退款按发生月 / 有效订单三态 / 仅 CNY |
+| 2026-10-22 | D2-1 | 产出 24 条用例并合并进 `v1_30.yaml` | 完成 | 21 条 golden 全部可执行；`C-16` 改写为自连接避免窗口类型问题 |
+| 2026-10-22 | D2-1 | `check --strict --dataset v1_30.yaml` | **41/41 PASS** | 30 条用例；golden 均 <0.1s；5 条 without_filter 结果均变化 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
@@ -1182,27 +1188,29 @@ GRANT SELECT ON shop.* TO readonly;
 
 | ID | 层 | SQL | 核对 | 入 YAML | 备注 |
 |---|---|---|---|---|---|
-| A-07 | A | [ ] | [ ] | [ ] | 排除 `is_retry` |
-| A-08 | A | [ ] | [ ] | [ ] | 排除测试/软删 |
-| A-09 | A | [ ] | [ ] | [ ] | 仅 active |
-| B-10 | B | [ ] | [ ] | [ ] | join orders；approved |
-| B-11 | B | [ ] | [ ] | [ ] | Top 10 销量 |
-| B-12 | B | [ ] | [ ] | [ ] | join users；country |
-| B-13 | B | [ ] | [ ] | [ ] | distinct order |
-| C-14 | C | [ ] | [ ] | [ ] | 近 4 周 |
-| C-15 | C | [ ] | [ ] | [ ] | 净收入环比 |
-| C-16 | C | [ ] | [ ] | [ ] | 12 个月趋势 |
-| D-17 | D | [ ] | [ ] | [ ] | 次日留存 |
-| D-18 | D | [ ] | [ ] | [ ] | 事件漏斗 |
-| E-19 | E | — | [ ] | [ ] | 应澄清 |
-| E-20 | E | — | [ ] | [ ] | 应澄清 |
-| E-21 | E | — | [ ] | [ ] | 应澄清 |
-| F-22 | F | — | [ ] | [ ] | 应拒答 |
-| G-23 | G | — | [ ] | [ ] | viewer 无工具 |
-| G-24 | G | — | [ ] | [ ] | viewer 无工具 |
-| G-25 | G | — | [ ] | [ ] | 空 group |
-| H-26 | H | [ ] | [ ] | [ ] | events 时间过滤 |
-| H-27 | H | [ ] | [ ] | [ ] | 100 万行 |
-| I-28 | I | [ ] | [ ] | [ ] | multi-1 第 1 轮 |
-| I-29 | I | [ ] | [ ] | [ ] | multi-1 第 2 轮 |
-| I-30 | I | [ ] | [ ] | [ ] | multi-1 第 3 轮 |
+| A-07 | A | [x] | [ ] | [x] | 排除 `is_retry`；3 行 |
+| A-08 | A | [x] | [ ] | [x] | 排除测试/软删；4 行 |
+| A-09 | A | [x] | [ ] | [x] | 仅 active；3 行 |
+| B-10 | B | [x] | [ ] | [x] | join orders；approved；4 行 |
+| B-11 | B | [x] | [ ] | [x] | Top 10 销量；10 行 |
+| B-12 | B | [x] | [ ] | [x] | join users；4 行 |
+| B-13 | B | [x] | [ ] | [x] | distinct order；5 行 |
+| C-14 | C | [x] | [ ] | [x] | 近 4 周；4 行 |
+| C-15 | C | [x] | [ ] | [x] | 净收入 MTD 环比；1 行 |
+| C-16 | C | [x] | [ ] | [x] | 12 个月趋势；12 行 |
+| D-17 | D | [x] | [ ] | [x] | 月度 7 日留存；3 行 |
+| D-18 | D | [x] | [ ] | [x] | 事件漏斗；1 行 |
+| E-19 | E | — | [ ] | [x] | 应澄清 |
+| E-20 | E | — | [ ] | [x] | 应澄清 |
+| E-21 | E | — | [ ] | [x] | 应澄清 |
+| F-22 | F | — | [ ] | [x] | 应拒答 |
+| G-23 | G | — | [ ] | [x] | viewer 无工具 |
+| G-24 | G | — | [ ] | [x] | viewer 无工具 |
+| G-25 | G | — | [ ] | [x] | 空 group |
+| H-26 | H | [x] | [ ] | [x] | events 时间过滤；8 行 |
+| H-27 | H | [x] | [ ] | [x] | 100 万行；4 行 |
+| I-28 | I | [x] | [ ] | [x] | multi-1 第 1 轮 |
+| I-29 | I | [x] | [ ] | [x] | multi-1 第 2 轮 |
+| I-30 | I | [x] | [ ] | [x] | multi-1 第 3 轮 |
+
+> `核对` 列留空：需要业务负责人逐条确认数值量级与口径，确认后在列中打 `x`。

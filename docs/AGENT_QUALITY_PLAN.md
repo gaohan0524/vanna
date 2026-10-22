@@ -607,7 +607,9 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [x] T0-5 预检（连接/只读/锚点/golden 自检）
 - [x] T0-6 失败 taxonomy **规则完成**；待真实失败样本验证
 - [x] T0-0 运行时：`seed --scale 0.1` 实跑通过（2026-10-22，12 表 312,569 行，锚点 2026-10-21）
-- [ ] T0-1 评测集：**6 / 30**（`v1_30.yaml` 目前 6 条；D2 已拆解为 24 条选题与逐条流程，见 `STAGE0-EVAL.md` D2 与附录 E）
+- [x] T0-1 评测集：**30 / 30**（24 条新增，golden 逐条执行验证；5 项口径已裁决）
+- [x] T0-1 预检：`check --strict --dataset v1_30.yaml` → **41/41 PASS**（2026-10-22）
+- [ ] T0-1 业务核对：逐条确认数值量级与口径（`STAGE0-EVAL.md` 附录 E 的“核对”列）
 - [x] T0-5 运行时：`check --dataset smoke.yaml` **20/20 PASS**（2026-10-22；30 条齐备后跑 `--strict` 复检）
 - [ ] 基线 EX 记录：`____%`（复跑波动 `____pt`）
 - [x] **D1-5 冒烟 run**：4 条用例，EX 50%、首答 50%、behavior 0%、avg_tools 0.5；`A-02` 走通 `run_sql`（2026-10-22）
