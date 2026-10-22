@@ -173,23 +173,30 @@ agent_app/
 
 ## 5. 阶段计划
 
-### Stage 0：评测与可观测（P0，2~3 天）
+### Stage 0：评测与可观测（P0，5 天）
+
+> **详细执行步骤见 [`docs/STAGE0-EVAL.md`](./STAGE0-EVAL.md)**（含合成库 DDL、口径卡片、30 条用例模板、评测代码骨架、D1~D5 每日任务）。本章只保留总体要求。
+
+**前提调整**：当前没有真实业务，主评测集改为**自建 ClickHouse 合成业务库**（仅方案负责人担任业务专家），方法论参考 `ClickHouse/data-agent-mnist`（Apache-2.0）。公开基准（Spider/BIRD）只作为“SQL 生成能力”的对照，不进入主评测。
 
 **目标**：建立可重复、可对比的度量体系。没有这一步，后续所有改动都是盲调。
 
 #### 任务
 
-- **T0-1 评测集（100 条，分层）**
-  - 分层与配额：单表聚合 15、多表 join 15、时间窗口/同环比 15、留存/漏斗 10、指标口径歧义 15（应澄清）、无法回答 5（应拒答）、权限/RLS 10、大表/性能 10、多轮 5。
-  - 每条用例记录：`id`、`message`、`user_groups`、`metadata.layer`、`metadata.golden_sql`、`golden/<id>.csv`。
-  - 来源：真实历史提问优先，其次人工构造。禁止只用“教科书式”问题。
-- **T0-2 golden 结果集**
-  - 人工确认过的 SQL 执行一次，导出 CSV（列名保留，行数截断到 200 行）。
-  - 对时间敏感问题，golden SQL 必须用相对时间（`today() - 30`），并在执行时记录基准日期。
+- **T0-1 评测集（先 30 条，G0 后再扩到 100 条）**
+  - Stage 0 分层与配额（30 条）：单表聚合 4、多表 join 5、时间窗口/同环比 4、留存/漏斗 3、指标口径歧义 4（应澄清）、无法回答 2（应拒答）、权限/RLS 3、大表/性能 2、多轮 3。
+  - G0 通过后按原配额扩到 100 条：单表聚合 15、多表 join 15、时间窗口/同环比 15、留存/漏斗 10、口径歧义 15、拒答 5、权限 10、大表 10、多轮 5。
+  - 每条用例记录：`id`、`message`、`user_groups`、`metadata.layer`、`metadata.golden_sql`、`metadata.expected_behavior`（answer/clarify/refuse）。
+  - 来源：业务专家（方案负责人）基于合成库人工出题；禁止只用“教科书式”问题。
+- **T0-2 golden（改为 golden SQL 现场执行）**
+  - 不存 CSV：合成库按天滚动，golden 结果集会立即过期。改为保存人工确认过的 golden SQL，评测时与 agent SQL 在同一份数据上执行后比较。
+  - 时间敏感问题一律用相对时间（`now() - INTERVAL 30 DAY`），并记录 `run_at`。
+  - 需静态回归时才额外导出 CSV，且必须同时冻结数据快照。
 - **T0-3 `ResultSetEvaluator`**
   - 仓库内置的 `ExpectedOutcome` 只支持“调用了哪些工具 / 答案包含哪些词”，**不支持结果集对比**，必须自定义。
-  - 从 `AgentResult.tool_calls` 中提取所有 `run_sql` 的 `arguments["sql"]`，逐条执行（或只执行最后一条），任一条结果集匹配 golden 即通过。
-  - 归一化规则：列名大小写不敏感、列顺序按 golden 对齐、行序无关、浮点容差、NULL 与空串区分。
+  - 从 `AgentResult.tool_calls` 中提取所有 `run_sql` 的 `arguments["sql"]`，逐条重放执行，任一条结果集匹配 golden 即通过。
+  - 归一化规则：列名小写去空格、按 golden 对齐列、行序无关（默认）、数值 `rel_tol=1e-6`、NULL 与空串区分。
+  - 另需 `ClarificationEvaluator`（该问才问）与 `FirstTryEvaluator`（首答命中率）。
 - **T0-4 运行器**
   - 用 `EvaluationRunner`（`core/evaluation/runner.py`）组织，`max_concurrency` 8~16。
   - 输出：HTML 报告 + 失败明细（含失败分类 code）。
@@ -553,13 +560,14 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 
 | 周 | 内容 | 里程碑 |
 |---|---|---|
-| W1 | Stage 0 + Stage 1 | 有基线、有观测、EX +15pt |
-| W2 | Stage 2 | 工具面完成，轮次下降 |
-| W3~W4 | Stage 3 | EX ≥ 80%，检索达标 |
-| W5 | Stage 4 | 澄清/多轮/呈现达标 |
-| W6+ | Stage 5 + 灰度 | 进入持续迭代 |
+| W1 | Stage 0（合成库 + 30 题 + 基线，见 `STAGE0-EVAL.md`） | G0 通过，有稳定基线 |
+| W2 | Stage 1（schema 目录 + prompt + 口径） | EX +15pt，schema 类错误 < 10% |
+| W3 | Stage 2（工具面 + 护栏） | 轮次 ≤ 3.5，复杂查询 +10pt |
+| W4~W5 | Stage 3（检索层 + 候选表预筛） | EX ≥ 80%，recall@5 ≥ 0.9 |
+| W6 | Stage 4（编排/skill/澄清/呈现） | 澄清 ≥ 85%，多轮 ≥ 75% |
+| W7+ | Stage 5 + 灰度 | 进入持续迭代 |
 
-人力假设：1 名后端/数据工程师全职 + 0.2 名业务专家（口径与 golden 审核）。业务专家的参与是硬依赖，缺失会直接卡住 Stage 1 与 Stage 3。
+人力假设：1 名后端/数据工程师全职 + 0.2 名业务专家（口径与 golden 审核）。业务专家的参与是硬依赖——本项目由方案负责人本人承担该角色，需在 W1 D2 前完成口径确认，否则 Stage 1 与 Stage 3 会阻塞。
 
 ---
 
@@ -581,13 +589,15 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 
 > 开发时直接勾选并补充备注。
 
-### Stage 0
-- [ ] T0-1 评测集 100 条（分层）
-- [ ] T0-2 golden 结果集
-- [ ] T0-3 `ResultSetEvaluator`
-- [ ] T0-4 一键评测运行器 + HTML 报告
-- [ ] T0-5 观测与审计接入
-- [ ] 基线 EX 记录：`____%`
+### Stage 0（执行细节见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md)）
+- [ ] T0-0 合成业务库（12 表 + 数据锚点 + 只读账号）
+- [ ] T0-1 评测集 30 条（分层；G0 后扩到 100）
+- [ ] T0-2 golden SQL（现场执行，不存 CSV）
+- [ ] T0-3 `ResultSetEvaluator` + `ClarificationEvaluator` + `FirstTryEvaluator`
+- [ ] T0-4 一键评测运行器 + HTML/JSON 报告
+- [ ] T0-5 预检（连接/只读/锚点/golden 自检）
+- [ ] T0-6 失败 taxonomy 归因（UNKNOWN < 10%）
+- [ ] 基线 EX 记录：`____%`（复跑波动 `____pt`）
 
 ### Stage 1
 - [ ] T1-1 schema 目录生成脚本
