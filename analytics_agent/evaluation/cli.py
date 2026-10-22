@@ -146,6 +146,7 @@ async def _cmd_run(args: argparse.Namespace) -> int:
                 "latency_ms": round(test_case_result.execution_time_ms),
                 "prompt_chars": _prompt_chars(agent_result),
                 "executed_sql": executed_sql,
+                "answer": agent_result.get_final_answer()[:500],
                 "reason": failing.reasoning if failing else "",
                 "error": agent_result.error or "",
             }

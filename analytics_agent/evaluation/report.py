@@ -164,6 +164,7 @@ def _write_csv(path: Path, records: List[Dict[str, Any]]) -> None:
         "tool_calls",
         "latency_ms",
         "executed_sql",
+        "answer",
         "reason",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:

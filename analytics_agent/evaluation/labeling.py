@@ -11,7 +11,13 @@ from typing import List
 from vanna.core.evaluation import AgentResult, TestCase
 
 from .compare import results_equal
-from .evaluators import behavior_of, extract_sqls, golden_sql_of
+from .evaluators import (
+    CLARIFY_CUES,
+    REFUSE_CUES,
+    behavior_of,
+    extract_sqls,
+    golden_sql_of,
+)
 from .executor import execute_safe
 
 TAXONOMY = (
@@ -56,12 +62,14 @@ async def classify(test_case: TestCase, agent_result: AgentResult) -> str:
     sqls = extract_sqls(agent_result)
     answer = agent_result.get_final_answer().strip()
 
-    # 1) 期望澄清/拒答，但行为不符
+    # 1) 期望澄清/拒答，但行为不符（判定口径与 Evaluator 保持一致）
     if expected == "clarify":
-        has_question = "?" in answer or "？" in answer
-        return "OK" if not sqls and has_question else "AMBIGUOUS"
+        has_signal = "?" in answer or "？" in answer
+        has_signal = has_signal or any(cue in answer for cue in CLARIFY_CUES)
+        return "OK" if not sqls and has_signal else "AMBIGUOUS"
     if expected == "refuse":
-        return "OK" if not sqls and answer else "AMBIGUOUS"
+        refused = any(cue in answer for cue in REFUSE_CUES)
+        return "OK" if not sqls and refused else "AMBIGUOUS"
 
     # 2) 该答却没调用工具
     if not sqls:
@@ -93,6 +101,7 @@ async def classify(test_case: TestCase, agent_result: AgentResult) -> str:
                 actual,
                 order_sensitive=order_sensitive,
                 column_alias=column_alias,
+                column_match=(test_case.metadata or {}).get("column_match", "values"),
             )
         )
 
@@ -122,7 +131,14 @@ async def classify(test_case: TestCase, agent_result: AgentResult) -> str:
                 actual, _ = await execute_safe(sql)
                 if actual is None:
                     continue
-                if results_equal(variant, actual, column_alias=column_alias).equal:
+                if results_equal(
+                    variant,
+                    actual,
+                    column_alias=column_alias,
+                    column_match=(test_case.metadata or {}).get(
+                        "column_match", "values"
+                    ),
+                ).equal:
                     return "FILTER_MISSING"
 
     return "METRIC_WRONG"

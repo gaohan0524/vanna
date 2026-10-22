@@ -21,6 +21,19 @@ dataset:
           ORDER BY gmv DESC
         expected_behavior: answer
 
+    - id: "A-02"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "统计 shop.orders 表中每个 status 的订单数"
+      metadata:
+        layer: A
+        golden_sql: |
+          SELECT status, count() AS cnt
+          FROM shop.orders
+          GROUP BY status
+          ORDER BY cnt DESC
+        expected_behavior: answer
+
     - id: "E-05"
       user_id: "analyst"
       user_groups: ["analyst"]

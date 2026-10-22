@@ -40,12 +40,14 @@
 | `seed --scale 0.1` 实跑 | 成功：12 表共 312,569 行；锚点 `2026-10-21`；见附录 D |
 | 只读账号抽查数据 | 通过：测试账号 2.3%、USD 5.07%、重试流水 3.0%、GMV 非空且排序合理 |
 | `check --dataset smoke.yaml` | **20/20 PASS**：连接、只读探针、12 表行数、数据锚点、3 条用例、golden `A-01`（4 行 / 0.02s） |
+| `run --dataset smoke.yaml`（4 条） | 管线验证通过：EX 50%、首答 50%、behavior 0%、avg_tools 0.5；`A-02` 走通 `run_sql` 并命中（详见附录 D） |
 
 ### 未完成 / 待执行（下一步）
 
 - [x] **D1-2** `seed --scale 0.1` 已实跑（2026-10-22，见附录 D）
 - [x] **D1-4** `check --dataset smoke.yaml` 全 PASS（20/20，2026-10-22，见附录 D）
-- [ ] **D1-5** `run --dataset smoke.yaml` 冒烟评测（验证 LLM 链路与报告产出）
+- [x] **D1-5** `run --dataset smoke.yaml` 冒烟评测完成（4 条，管线跑通；质量基线待 D2 后测）
+- [ ] **Stage 1 输入已明确**：schema/方言 prompt、澄清策略、拒答策略（见附录 D 的观察与第 9 节）
 - [ ] **D2** 补齐 24 条用例（A 4 / B 5 / C 4 / D 3 / E 4 / F 2 / G 3 / H 2 / I 3 的剩余配额）
 - [ ] **D3~D4** 首次 `run`，记录基线 EX / 首答命中 / 工具轮次 / P95
 - [ ] **D5** 复跑稳定性验证，勾选 G0
@@ -962,11 +964,11 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | 平均 token/题 | `____` | |
 | 失败分布 | 见 `by_taxonomy` | |
 
-### 基线观察（人工填写 3 条）
+### 基线观察（冒烟阶段，4 条用例；正式基线待 30 条齐备后更新）
 
-1. 
-2. 
-3. 
+1. **工具链路已跑通，但模型不会主动用**：显式给出表名/字段（`A-02`）时能正确调用 `run_sql` 并通过结果比对；只给业务问题（`A-01`）时把 SQL 当文本输出。缺的不是工具能力，而是 schema 与“何时该查库”的指令。
+2. **澄清与拒答是系统性缺失**：`E-05` 直接编造 SQL，`F-06` 反问用户要数据。这两类在 30 条正式集里占 6/30（E 4 + F 2），必须在 Stage 1 的 prompt 里显式约束，否则会持续拉低 behavior 指标。
+3. **CPU 推理是工程约束**：约 10 tok/s，单次 5 轮工具调用就会超时。Stage 0~2 必须保持工具精简、`num_predict` 有上限；真正的质量优化（更多探索工具）要等 GPU 或 API 模型。
 
 ---
 
@@ -1031,6 +1033,11 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 | D1-2 | 只读账号抽查（锚点/测试账号/币种/状态/重试/GMV） | 通过 | 锚点 `2026-10-21`，seed=42 |
 | 2026-10-22 | D1-4 | `check --dataset smoke.yaml` | **20/20 PASS** | 只读探针生效；golden `A-01` 4 行 / 0.02s |
 | 2026-10-22 | D1-0 | 模型选择与采样参数 | 选定 `qwen2.5-coder:7b`，`temperature=0.0`、`num_ctx=8192` | 修复 Ollama 忽略 `LlmRequest.temperature` 的问题；`qwen2.5:7b` 留作对照 |
+| 2026-10-22 15:05 | D1-5 | 冒烟首跑（3 条，含记忆工具） | 失败：`A-01` 超时 324s | 5 次工具调用后 `ReadTimeout`；`/api/ps` 显示 `size_vram=0`（纯 CPU） |
+| 2026-10-22 15:08 | D1-5 | 精简工具 + 放宽超时 + 限生成 | 3 条：11~26s | 去掉记忆工具（少一轮“强制检索”）、`num_predict=512`、超时 600s、迭代上限 5 |
+| 2026-10-22 15:11 | D1-5 | 新增 `A-02`（显式表名/字段） | `A-02` 首次走通 `run_sql` | 模型执行 `SELECT status, COUNT(*) ...`，仅列别名不同被判错 |
+| 2026-10-22 15:13 | D1-5 | 列值匹配 + 收紧拒答判定 | `A-02` PASS | 新增 `column_match="values"`；`F-06` 反问用户不再算拒答 |
+| 2026-10-22 15:15 | D1-5 | 归因口径与评测器对齐 | 最终 4 条：1 PASS / 3 FAIL | EX 50%、首答 50%、behavior 0%、avg_tools 0.5 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
@@ -1050,3 +1057,33 @@ GRANT SELECT ON shop.* TO readonly;
 - 重试流水 1,029 / 34,160 ≈ 3.0%（预期 3%）
 - 近 30 天 GMV 按渠道非空且排序合理（organic > paid_search > social > referral）
 - 只读账号可查询，说明 `.env` 的 `CH_USER` / `CH_PASSWORD` 生效
+
+**2026-10-22 · D1-5 冒烟结果（4 条，`qwen2.5-coder:7b`）**
+
+| 用例 | 结果 | 分类 | 工具调用 | 耗时 |
+|---|---|---|---|---|
+| A-01 各渠道 GMV（未给表名） | FAIL | `NO_TOOL` | 0 | 10.5s |
+| A-02 按 status 统计订单数（显式表名） | **PASS** | `OK` | 2（`run_sql` + `visualize_data`） | 39.6s |
+| E-05 复购率（口径不明确） | FAIL | `AMBIGUOUS` | 0 | 24.9s |
+| F-06 竞品市场份额（库内无数据） | FAIL | `AMBIGUOUS` | 0 | 10.5s |
+
+汇总：EX 50%、首答命中 50%、behavior 0%、平均工具轮次 0.5、P95 39.6s。
+
+**性能事实（决定后续调参）**
+
+- Ollama `/api/ps` 显示 `size_vram = 0`：模型**纯 CPU 推理**，约 10 tok/s 生成、45 tok/s prompt 预处理。
+- 同一请求 5 次工具调用即可超过 240s 默认超时，因此必须限制生成长度与迭代次数。
+- `A-02` 在问句里显式给出 `shop.orders`/`status` 后，模型能正确调用工具——说明工具链路本身可用。
+
+**三条根因（直接作为 Stage 1 的输入）**
+
+1. **没有 schema/方言上下文**：`A-01` 模型把 SQL 当作文本输出（`sales_data`、`CURDATE()`），而不是调用工具；即使调用也会猜错表名。→ Stage 1 补 L1 方言 + L2 表清单。
+2. **没有澄清策略**：`E-05` 直接编了一段 SQL 回答，而不是询问时间范围/口径。→ prompt 增加“口径不明确先澄清”。
+3. **没有拒答策略**：`F-06` 反问用户“请提供竞品表”，既没查库也没说明数据不存在。→ prompt 增加“库内无数据时明确说明不可回答”。
+
+**本轮顺带修复**
+
+- `column_match="values"`：列别名不同（`cnt` vs `order_count`）不再误判；列值集合无法配对时才判 `columns` 失败。
+- 拒答判定增加 `REFUSE_CUES`：仅反问用户不算拒答；`labeling` 与 evaluator 口径统一。
+- 记忆工具默认关闭（`enable_memory_tools=False`），避免“强制先检索”多一轮 LLM 调用。
+- Ollama 增加 `LLM_TIMEOUT_S` / `LLM_MAX_PREDICT` / `AGENT_MAX_ITERATIONS` 配置。

@@ -47,6 +47,33 @@ def _sort_key(value: Any) -> str:
     return str(value)
 
 
+def _signature(series: pd.Series) -> tuple:
+    """Value multiset signature of one column (used for name-insensitive matching)."""
+    return tuple(sorted(_sort_key(value) for value in series.tolist()))
+
+
+def _match_columns_by_values(
+    golden: pd.DataFrame, actual: pd.DataFrame
+) -> Optional[dict[str, str]]:
+    """Map actual columns to golden ones purely by their value multisets.
+
+    列别名（``cnt`` vs ``order_count``）不影响语义正确性，严格按名称比较会把
+    正确答案判错。这里用“整列取值集合相同”做确定性配对；匹配不上则返回 None。
+    """
+    unused = list(actual.columns)
+    mapping: dict[str, str] = {}
+    for column in golden.columns:
+        signature = _signature(golden[column])
+        for candidate in unused:
+            if _signature(actual[candidate]) == signature:
+                mapping[candidate] = column
+                unused.remove(candidate)
+                break
+        else:
+            return None
+    return mapping if not unused else None
+
+
 def _sorted(df: pd.DataFrame) -> pd.DataFrame:
     keys = [
         tuple(_sort_key(value) for value in row)
@@ -75,8 +102,14 @@ def results_equal(
     rel_tol: float = 1e-6,
     order_sensitive: bool = False,
     column_alias: Optional[Mapping[str, str]] = None,
+    column_match: str = "name",
 ) -> CompareResult:
-    """Compare two result sets with column/row/float tolerance rules."""
+    """Compare two result sets with column/row/float tolerance rules.
+
+    Args:
+        column_match: ``name`` 要求列名一致；``values`` 允许列别名不同，
+            改为按整列取值集合做确定性配对。
+    """
     g = normalize(golden)
     a = _apply_alias(normalize(actual), column_alias)
 
@@ -84,11 +117,20 @@ def results_equal(
         return CompareResult(False, "shape", f"golden={g.shape} actual={a.shape}")
 
     if set(g.columns) != set(a.columns):
-        return CompareResult(
-            False,
-            "columns",
-            f"golden={list(g.columns)} actual={list(a.columns)}",
-        )
+        if column_match != "values":
+            return CompareResult(
+                False,
+                "columns",
+                f"golden={list(g.columns)} actual={list(a.columns)}",
+            )
+        mapping = _match_columns_by_values(g, a)
+        if mapping is None:
+            return CompareResult(
+                False,
+                "columns",
+                f"golden={list(g.columns)} actual={list(a.columns)} (value mapping failed)",
+            )
+        a = a.rename(columns=mapping)
 
     a = a[list(g.columns)]
 

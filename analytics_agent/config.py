@@ -88,6 +88,9 @@ class Settings:
     llm_model: str = "qwen2.5:7b"
     ollama_host: str = "http://localhost:11434"
     llm_num_ctx: int = 8192
+    llm_timeout_s: int = 600
+    llm_max_predict: int = 512
+    agent_max_iterations: int = 5
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -109,6 +112,9 @@ class Settings:
             llm_model=_env("LLM_MODEL", "qwen2.5:7b"),
             ollama_host=_env("OLLAMA_HOST", "http://localhost:11434"),
             llm_num_ctx=_env_int("LLM_NUM_CTX", 8192),
+            llm_timeout_s=_env_int("LLM_TIMEOUT_S", 600),
+            llm_max_predict=_env_int("LLM_MAX_PREDICT", 512),
+            agent_max_iterations=_env_int("AGENT_MAX_ITERATIONS", 5),
         )
 
     @property

@@ -61,6 +61,9 @@ def build_llm_service(settings: Settings):
             host=settings.ollama_host,
             temperature=0.0,
             num_ctx=settings.llm_num_ctx,
+            timeout=float(settings.llm_timeout_s),
+            # 7B 在 CPU 上约 10 tok/s，必须给生成设上限，否则单次回答可能超时
+            num_predict=settings.llm_max_predict,
         )
 
     if provider == "openai":
@@ -79,11 +82,18 @@ def build_llm_service(settings: Settings):
 
 
 def build_tool_registry(
-    settings: Settings, sql_runner: Optional[ClickHouseRunner] = None
+    settings: Settings,
+    sql_runner: Optional[ClickHouseRunner] = None,
+    *,
+    enable_memory_tools: bool = False,
 ) -> ToolRegistry:
     """Register the tools available to the agent.
 
-    Stage 0 只保留最小集合：执行 SQL、可视化、检索记忆。
+    Stage 0 只保留最小集合（run_sql + visualize_data）：
+    - `DefaultSystemPromptBuilder` 只要发现记忆工具，就会强制“先检索再执行”，
+      在 CPU 推理下等于每次多一轮 LLM 调用；
+    - 记忆工具留到 Stage 3（检索层）再打开。
+
     保存类工具仅 admin 可用，避免评测期间污染记忆。
     """
     runner = sql_runner or ClickHouseRunner(
@@ -101,10 +111,13 @@ def build_tool_registry(
     registry.register_local_tool(
         VisualizeDataTool(), access_groups=["admin", "analyst"]
     )
-    registry.register_local_tool(
-        SearchSavedCorrectToolUsesTool(), access_groups=["admin", "analyst"]
-    )
-    registry.register_local_tool(SaveQuestionToolArgsTool(), access_groups=["admin"])
+    if enable_memory_tools:
+        registry.register_local_tool(
+            SearchSavedCorrectToolUsesTool(), access_groups=["admin", "analyst"]
+        )
+        registry.register_local_tool(
+            SaveQuestionToolArgsTool(), access_groups=["admin"]
+        )
     return registry
 
 
@@ -114,6 +127,7 @@ def build_agent(
     llm_service=None,
     agent_memory=None,
     stream_responses: bool = False,
+    enable_memory_tools: bool = False,
 ) -> Agent:
     """Build the tested agent.
 
@@ -122,17 +136,18 @@ def build_agent(
         llm_service: 可注入 mock/自定义 LLM（单元测试用）。
         agent_memory: 可注入记忆后端；Stage 3 会换成向量库实现。
         stream_responses: 评测时建议 False（少一层流式聚合）。
+        enable_memory_tools: 是否注册记忆检索/保存工具（Stage 3 再打开）。
     """
     s = settings or Settings.from_env()
 
     return Agent(
         llm_service=llm_service or build_llm_service(s),
-        tool_registry=build_tool_registry(s),
+        tool_registry=build_tool_registry(s, enable_memory_tools=enable_memory_tools),
         user_resolver=EvalUserResolver(),
         agent_memory=agent_memory or DemoAgentMemory(max_items=10_000),
         config=AgentConfig(
             temperature=0.0,
-            max_tool_iterations=8,
+            max_tool_iterations=s.agent_max_iterations,
             stream_responses=stream_responses,
         ),
     )

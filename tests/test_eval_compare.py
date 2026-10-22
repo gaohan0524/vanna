@@ -51,6 +51,26 @@ def test_column_alias():
     assert results_equal(golden, actual, column_alias={"gmv": "total_gmv"}).equal
 
 
+def test_column_match_by_values_allows_alias_and_reorder():
+    golden = pd.DataFrame({"status": ["paid", "pending"], "cnt": [2, 1]})
+    aliased = pd.DataFrame({"status": ["paid", "pending"], "order_count": [2, 1]})
+    reordered = pd.DataFrame({"order_count": [2, 1], "status": ["paid", "pending"]})
+
+    assert not results_equal(golden, aliased).equal
+    assert results_equal(golden, aliased, column_match="values").equal
+    assert results_equal(golden, reordered, column_match="values").equal
+
+
+def test_column_match_by_values_still_detects_wrong_values():
+    golden = pd.DataFrame({"status": ["paid", "pending"], "cnt": [2, 1]})
+    actual = pd.DataFrame({"status": ["paid", "pending"], "order_count": [2, 9]})
+
+    result = results_equal(golden, actual, column_match="values")
+
+    assert not result.equal
+    assert result.reason in {"values", "columns"}
+
+
 def test_normalize_handles_decimal_nan_and_datetime():
     frame = pd.DataFrame(
         {
