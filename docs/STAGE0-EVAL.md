@@ -25,12 +25,13 @@
 | T0-5 预检 | **完成** | `preflight.py`：连接、只读探针、12 表行数、数据锚点、用例合法性、golden 自检 |
 | T0-6 失败归因 | **规则完成**，未跑真实失败 | `labeling.py`：OK/AMBIGUOUS/NO_TOOL/SCHEMA_MISSING/DIALECT_ERROR/TIMEOUT/SHAPE_MISMATCH/FILTER_MISSING/METRIC_WRONG/UNKNOWN |
 | 目录与配置 | **完成** | `analytics_agent/evaluation/`；`pyproject.toml`（sdist 排除、`pythonpath`）、`tox.ini`（ruff 范围）、`.gitignore`（reports） |
+| 配置加载 | **完成** | `config.py` 内置 `.env` 解析（无 `python-dotenv` 依赖），环境变量优先 |
 
 ### 已验证
 
 | 验证项 | 结果 |
 |---|---|
-| `pytest tests/test_eval_compare.py` | **6 passed**（行序、容差、形状、列别名、NULL/Decimal/日期归一化） |
+| `pytest tests/test_eval_compare.py tests/test_eval_config.py` | **9 passed**（行序、容差、形状、列别名、NULL/Decimal/日期归一化、`.env` 解析） |
 | `ruff check analytics_agent tests/test_eval_compare.py` | **All checks passed** |
 | `ruff format --check` | 通过 |
 | `python -m analytics_agent.evaluation.cli --help` | 4 个子命令正常 |
@@ -854,15 +855,43 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 
 > 每天开始先 `python -m analytics_agent.evaluation.cli check`，结束前提交代码与报告。
 
-### D1：把数据和连接跑通
+### D1：把数据和连接跑通（代码已就绪，按顺序执行即可）
 
-1. 建只读账号（`scripts/clickhouse/init_ro_user.sql`），确认 `SELECT` 可用、`CREATE` 失败。
-2. 执行 `ddl.sql`，确认 12 张表创建成功。
-3. 实现 `generate.py`，先只生成 `users` + `orders`，跑通插入。
-4. 补全其余表，`--drop` 重建一次，记录总耗时。
-5. 写入 `meta_data_anchor`。
+> 不需要手工建库建表：`seed` 会在同一个进程里执行 `ddl.sql`（`CREATE DATABASE shop` + 12 张表），
+> 再灌入合成数据并写入 `meta_data_anchor`。
+> 唯一需要人工的是**创建只读账号**——授予权限属于 DBA 动作，不应藏进评测脚本。
 
-**DoD**：`python -m analytics_agent.evaluation.cli check` 中连接、表存在、行数、锚点四项通过。
+1. **配置环境变量**：`copy .env.example .env`，填 `CH_HOST`、`CH_PORT`、
+   `CH_WRITE_USER`、`CH_WRITE_PASSWORD`（灌数账号需要 `CREATE/INSERT/TRUNCATE`）。
+   `.env` 由 `analytics_agent/config.py` 自带的解析器加载（无 `python-dotenv` 依赖），
+   已存在的环境变量优先。
+2. **灌数**（默认锚点为昨天；先用 0.1 规模验证逻辑，约 30 秒）：
+   ```bash
+   python -m analytics_agent.evaluation.cli seed --scale 0.1
+   ```
+   输出每张表的行数；`--drop` 可重建，`--as-of YYYY-MM-DD` 可指定锚点。
+3. **创建只读账号**（必须在 seed 之后：`GRANT SELECT ON shop.*` 要求库已存在）：
+   用任意 ClickHouse 客户端执行 `scripts/clickhouse/init_ro_user.sql`，
+   把 `<password>` 换成真实口令；或手工执行等价的两条 SQL：
+   ```sql
+   CREATE USER IF NOT EXISTS readonly IDENTIFIED WITH sha256_password BY '<password>';
+   GRANT SELECT ON shop.* TO readonly;
+   ```
+   然后把 `CH_USER=readonly`、`CH_PASSWORD=<password>` 写回 `.env`。
+4. **预检**：
+   ```bash
+   python -m analytics_agent.evaluation.cli check --dataset analytics_agent/evaluation/datasets/smoke.yaml
+   ```
+   重点确认 `clickhouse.readonly`、`data.anchor`、各表行数、`golden.*` 全 PASS。
+5. **冒烟评测**（3 条，验证 LLM 链路）：
+   ```bash
+   python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/smoke.yaml
+   ```
+
+**DoD**：`check` 全 PASS；`run` 产出 `reports/<timestamp>/report.html`；单条用例可人工复盘。
+
+**备注**：如果暂时没有权限建只读账号，可临时把 `CH_USER` 设为灌数账号，此时
+`clickhouse.readonly` 会 FAIL（预期行为），但不要带着这个状态进入 G0 评审。
 
 ### D2：口径与 golden
 

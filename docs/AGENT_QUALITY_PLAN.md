@@ -609,7 +609,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [ ] T0-1 评测集：**6 / 30**（`v1_30.yaml` 目前 6 条，需业务专家补 24 条）
 - [ ] T0-0 运行时：`seed --scale 0.1` + `check` 实跑通过
 - [ ] 基线 EX 记录：`____%`（复跑波动 `____pt`）
-- 已验证：`pytest tests/test_eval_compare.py` 6 passed；ruff 全通过；CLI/YAML/报告生成均正常
+- 已验证：`pytest tests/test_eval_compare.py tests/test_eval_config.py` 9 passed；ruff 全通过；CLI/YAML/报告生成均正常；`.env` 可直接使用
 - 顺带修复：`vanna/core/evaluation/dataset.py` 补 `encoding="utf-8"`（Windows GBK 下中文用例无法解析）
 
 ### Stage 1

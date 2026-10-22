@@ -14,6 +14,35 @@ from typing import Optional
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
+def load_dotenv(path: Path) -> None:
+    """Load ``KEY=VALUE`` pairs from a .env file without extra dependencies.
+
+    已存在的环境变量优先（便于 CI / 临时覆盖）。文件不存在时静默跳过。
+    """
+    if not path.is_file():
+        return
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_DOTENV_LOADED = False
+
+
+def ensure_dotenv() -> None:
+    """Load `<repo>/.env` once per process (no-op when absent)."""
+    global _DOTENV_LOADED
+    if not _DOTENV_LOADED:
+        load_dotenv(PROJECT_ROOT / ".env")
+        _DOTENV_LOADED = True
+
+
 def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default).strip()
 
@@ -62,6 +91,7 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         """Build settings from environment variables (with safe defaults)."""
+        ensure_dotenv()
         user = _env("CH_USER", "readonly")
         password = _env("CH_PASSWORD")
         return cls(
