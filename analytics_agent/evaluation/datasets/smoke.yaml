@@ -1,0 +1,38 @@
+# 3 条冒烟用例：开发时先跑这个，验证链路通畅（不做质量结论）。
+#   python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/smoke.yaml
+
+dataset:
+  name: "shop_smoke"
+  description: "Stage 0 smoke cases: answer / clarify / refuse"
+  test_cases:
+    - id: "A-01"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "最近 30 天各渠道的 GMV 是多少？"
+      metadata:
+        layer: A
+        golden_sql: |
+          SELECT channel, SUM(amount_cents) / 100.0 AS gmv
+          FROM shop.orders
+          WHERE created_at >= now() - INTERVAL 30 DAY
+            AND status IN ('paid','shipped','completed')
+            AND currency = 'CNY' AND is_test = 0
+          GROUP BY channel
+          ORDER BY gmv DESC
+        expected_behavior: answer
+
+    - id: "E-05"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "看一下复购率"
+      metadata:
+        layer: E
+        expected_behavior: clarify
+
+    - id: "F-06"
+      user_id: "analyst"
+      user_groups: ["analyst"]
+      message: "帮我查一下竞品的市场份额"
+      metadata:
+        layer: F
+        expected_behavior: refuse

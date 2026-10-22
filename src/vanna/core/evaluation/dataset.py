@@ -60,7 +60,8 @@ class EvaluationDataset:
 
         从 YAML 文件加载数据集（yaml.safe_load 安全解析）。
         """
-        with open(path, "r") as f:
+        # 显式 utf-8：Windows 默认 locale 是 GBK，中文用例会直接解码失败
+        with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
 
         return cls._from_dict(data)
@@ -77,7 +78,7 @@ class EvaluationDataset:
 
         从 JSON 文件加载数据集。
         """
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
         return cls._from_dict(data)
@@ -158,7 +159,7 @@ class EvaluationDataset:
             path: Path to save YAML file
         """
         data = self._to_dict()
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     def save_json(self, path: str) -> None:
@@ -168,7 +169,7 @@ class EvaluationDataset:
             path: Path to save JSON file
         """
         data = self._to_dict()
-        with open(path, "w") as f:
+        with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
     def _to_dict(self) -> Dict[str, Any]:

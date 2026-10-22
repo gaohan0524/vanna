@@ -41,3 +41,7 @@ frontends/**/.mypy_cache/
 # RunSqlTool 会把查询结果写到 <sha256(user.id)[:16]>/query_results_<uuid8>.csv，
 # 属于本地运行时产物，不应进仓库
 query_results_*.csv
+
+# Analytics agent evaluation artifacts
+reports/
+analytics_agent/evaluation/golden/*.csv

@@ -1,0 +1,130 @@
+"""Agent assembly: the single place where the tested agent is built.
+
+评测与线上共用同一套组装逻辑，避免“评测的 agent 和上线的 agent 不是同一个东西”。
+"""
+
+from __future__ import annotations
+
+from typing import Optional, Union
+
+from vanna import Agent, AgentConfig
+from vanna.core.registry import ToolRegistry
+from vanna.core.user import RequestContext, User, UserResolver
+from vanna.integrations.clickhouse import ClickHouseRunner
+from vanna.integrations.local.agent_memory import DemoAgentMemory
+from vanna.tools import RunSqlTool, VisualizeDataTool
+from vanna.tools.agent_memory import (
+    SaveQuestionToolArgsTool,
+    SearchSavedCorrectToolUsesTool,
+)
+
+from .config import Settings
+
+
+class EvalUserResolver(UserResolver):
+    """Resolve the user for evaluation runs.
+
+    `EvaluationRunner` 会把 `TestCase.user` 放进
+    `RequestContext.metadata["test_case_user"]`，这里直接取用；
+    线上运行时再换成读取 cookie / JWT 的实现。
+    """
+
+    async def resolve_user(self, request_context: RequestContext) -> User:
+        injected = request_context.metadata.get("test_case_user")
+        if isinstance(injected, User):
+            return injected
+
+        user_id = request_context.get_cookie("user_id", "eval_user") or "eval_user"
+        return User(
+            id=user_id,
+            username=user_id,
+            email=f"{user_id}@example.com",
+            group_memberships=["analyst"],
+        )
+
+
+def build_llm_service(settings: Settings):
+    """Instantiate the configured LLM service.
+
+    只做惰性导入：没用到的供应商不会要求安装对应 extras。
+    """
+    provider = settings.llm_provider
+
+    if provider == "ollama":
+        from vanna.integrations.ollama import OllamaLlmService
+
+        return OllamaLlmService(model=settings.llm_model, host=settings.ollama_host)
+
+    if provider == "openai":
+        from vanna.integrations.openai import OpenAILlmService
+
+        return OpenAILlmService(model=settings.llm_model)
+
+    if provider == "anthropic":
+        from vanna.integrations.anthropic import AnthropicLlmService
+
+        return AnthropicLlmService(model=settings.llm_model)
+
+    raise ValueError(
+        f"Unsupported LLM provider: {provider!r} (expected ollama/openai/anthropic)"
+    )
+
+
+def build_tool_registry(
+    settings: Settings, sql_runner: Optional[ClickHouseRunner] = None
+) -> ToolRegistry:
+    """Register the tools available to the agent.
+
+    Stage 0 只保留最小集合：执行 SQL、可视化、检索记忆。
+    保存类工具仅 admin 可用，避免评测期间污染记忆。
+    """
+    runner = sql_runner or ClickHouseRunner(
+        host=settings.ch_host,
+        port=settings.ch_port,
+        database=settings.ch_database,
+        user=settings.ch_user,
+        password=settings.ch_password,
+    )
+
+    registry = ToolRegistry()
+    registry.register_local_tool(
+        RunSqlTool(sql_runner=runner), access_groups=["admin", "analyst"]
+    )
+    registry.register_local_tool(
+        VisualizeDataTool(), access_groups=["admin", "analyst"]
+    )
+    registry.register_local_tool(
+        SearchSavedCorrectToolUsesTool(), access_groups=["admin", "analyst"]
+    )
+    registry.register_local_tool(SaveQuestionToolArgsTool(), access_groups=["admin"])
+    return registry
+
+
+def build_agent(
+    settings: Optional[Settings] = None,
+    *,
+    llm_service=None,
+    agent_memory=None,
+    stream_responses: bool = False,
+) -> Agent:
+    """Build the tested agent.
+
+    Args:
+        settings: 运行时配置；缺省从环境变量读取。
+        llm_service: 可注入 mock/自定义 LLM（单元测试用）。
+        agent_memory: 可注入记忆后端；Stage 3 会换成向量库实现。
+        stream_responses: 评测时建议 False（少一层流式聚合）。
+    """
+    s = settings or Settings.from_env()
+
+    return Agent(
+        llm_service=llm_service or build_llm_service(s),
+        tool_registry=build_tool_registry(s),
+        user_resolver=EvalUserResolver(),
+        agent_memory=agent_memory or DemoAgentMemory(max_items=10_000),
+        config=AgentConfig(
+            temperature=0.0,
+            max_tool_iterations=8,
+            stream_responses=stream_responses,
+        ),
+    )

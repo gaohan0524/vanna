@@ -99,11 +99,16 @@ exclude = [
     "notebooks/",
     ".github/",
     "tox.ini",
+    "analytics_agent/",
+    "scripts/",
+    "reports/",
 ]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+# 业务包不在 src/ 下，需把仓库根加入 sys.path 才能 import analytics_agent
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
