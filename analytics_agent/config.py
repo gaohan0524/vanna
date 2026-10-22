@@ -69,9 +69,12 @@ class Settings:
         ch_write_user / ch_write_password: 建表与灌数账号，仅 seed 使用。
         ch_timeout_s: 单条 SQL 超时（秒），同时作为 `max_execution_time`。
         ch_max_rows: 单条 SQL 返回行数上限，防止评测打满内存。
-        llm_provider: `ollama` / `openai` / `anthropic`。
-        llm_model: 模型名。
+        llm_provider: `ollama` / `deepseek` / `openai` / `anthropic`。
+        llm_model: 模型名（DeepSeek 用 `deepseek-chat`）。
         ollama_host: Ollama 服务地址。
+        llm_timeout_s / llm_max_predict: 单次调用超时与生成上限。
+        agent_max_iterations: 单轮最多工具调用次数。
+        deepseek_api_key / deepseek_base_url: DeepSeek OpenAI 兼容端点配置。
     """
 
     ch_host: str = "localhost"
@@ -91,6 +94,9 @@ class Settings:
     llm_timeout_s: int = 600
     llm_max_predict: int = 512
     agent_max_iterations: int = 5
+
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -115,6 +121,8 @@ class Settings:
             llm_timeout_s=_env_int("LLM_TIMEOUT_S", 600),
             llm_max_predict=_env_int("LLM_MAX_PREDICT", 512),
             agent_max_iterations=_env_int("AGENT_MAX_ITERATIONS", 5),
+            deepseek_api_key=_env("DEEPSEEK_API_KEY"),
+            deepseek_base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
         )
 
     @property

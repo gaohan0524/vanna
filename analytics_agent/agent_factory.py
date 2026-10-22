@@ -66,6 +66,16 @@ def build_llm_service(settings: Settings):
             num_predict=settings.llm_max_predict,
         )
 
+    if provider == "deepseek":
+        from .llm.deepseek import DeepSeekLlmService
+
+        return DeepSeekLlmService(
+            model=settings.llm_model,
+            api_key=settings.deepseek_api_key or None,
+            base_url=settings.deepseek_base_url,
+            timeout=float(settings.llm_timeout_s),
+        )
+
     if provider == "openai":
         from vanna.integrations.openai import OpenAILlmService
 

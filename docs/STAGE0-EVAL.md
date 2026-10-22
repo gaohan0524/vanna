@@ -31,7 +31,7 @@
 
 | 验证项 | 结果 |
 |---|---|
-| `pytest tests/test_eval_compare.py tests/test_eval_config.py` | **9 passed**（行序、容差、形状、列别名、NULL/Decimal/日期归一化、`.env` 解析） |
+| `pytest tests/test_eval_compare.py tests/test_eval_config.py tests/test_eval_evaluators.py tests/test_deepseek_service.py` | **22 passed**（比较/归一化、`.env`、澄清与拒答、DeepSeek 适配器） |
 | `ruff check analytics_agent tests/test_eval_compare.py` | **All checks passed** |
 | `ruff format --check` | 通过 |
 | `python -m analytics_agent.evaluation.cli --help` | 4 个子命令正常 |
@@ -62,6 +62,8 @@
 `src/vanna/core/evaluation/dataset.py` 的 `from_yaml` / `from_json` / `save_yaml` / `save_json` 未指定编码，Windows 默认 GBK，中文用例会 `UnicodeDecodeError`。已统一为 `encoding="utf-8"`（提交 `1e1e565`）。
 
 `OllamaLlmService` 只使用构造参数里的 `temperature` / `num_ctx`，**不读取 `LlmRequest.temperature`**，导致 `AgentConfig(temperature=0.0)` 对 Ollama 形同虚设。已在 `agent_factory.build_llm_service()` 中显式传 `temperature=0.0`，并新增 `LLM_NUM_CTX` 环境变量（默认 8192）。
+
+框架的 `OpenAILlmService._build_payload()` 同样不透传 `LlmRequest.temperature`。为此新增 `analytics_agent/llm/deepseek.py`：复用 OpenAI 兼容客户端，覆盖 payload 注入 temperature，并对 model / API Key 做启动期校验（详见附录 F）。
 
 ### 提交记录
 
@@ -1138,6 +1140,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 | D2-0 | 5 项口径裁决 | 已确认 | 复购率 90 天 / 首触归因 / 退款按发生月 / 有效订单三态 / 仅 CNY |
 | 2026-10-22 | D2-1 | 产出 24 条用例并合并进 `v1_30.yaml` | 完成 | 21 条 golden 全部可执行；`C-16` 改写为自连接避免窗口类型问题 |
 | 2026-10-22 | D2-1 | `check --strict --dataset v1_30.yaml` | **41/41 PASS** | 30 条用例；golden 均 <0.1s；5 条 without_filter 结果均变化 |
+| 2026-10-22 | D2-3 | 新增 DeepSeek API 适配（OpenAI 兼容 + temperature 透传） | 代码完成，待配置 Key 后冒烟 | 切换步骤见附录 F；本地 Ollama 仍可回退 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
@@ -1188,7 +1191,7 @@ GRANT SELECT ON shop.* TO readonly;
 - 记忆工具默认关闭（`enable_memory_tools=False`），避免“强制先检索”多一轮 LLM 调用。
 - Ollama 增加 `LLM_TIMEOUT_S` / `LLM_MAX_PREDICT` / `AGENT_MAX_ITERATIONS` 配置。
 
-### E. D2 工作表（24 条，逐条勾选）
+### E. D2 工作表（30 条，逐条勾选）
 
 > 用法：`SQL` 列打勾表示已写并在只读账号执行通过；`核对` 表示人工看过行数与量级；
 > `入 YAML` 表示已合并进 `v1_30.yaml` 且该条 `check` 通过。
@@ -1228,3 +1231,49 @@ GRANT SELECT ON shop.* TO readonly;
 
 > `核对`：业务负责人逐条确认数值量级与口径后打 `x`。
 > `审核意见`：写“通过”，或“需调整：<具体原因>”；有调整时同步改 `v1_30.yaml` 并重跑 `check`。
+
+### F. 切换到 DeepSeek API（替代本地 Ollama）
+
+**为什么换**：本地 `qwen2.5-coder:7b` 是纯 CPU 推理（`size_vram=0`），约 10 tok/s；
+30 条基线预计 15~25 分钟，且长工具结果容易触发超时。DeepSeek 走 OpenAI 兼容接口，
+速度快、工具调用稳定，30 条基线通常只要几分钟。
+
+**步骤**
+
+1. 安装依赖（当前 venv 若未有 `openai`）：
+   ```bash
+   pip install "vanna[openai]"
+   ```
+2. 改 `.env` 的 4 行：
+   ```ini
+   LLM_PROVIDER=deepseek
+   LLM_MODEL=deepseek-chat
+   DEEPSEEK_API_KEY=sk-***
+   DEEPSEEK_BASE_URL=https://api.deepseek.com
+   ```
+3. 验证配置（不调用 LLM，只打印生效参数）：
+   ```bash
+   python -c "import dataclasses; from analytics_agent.config import Settings; from analytics_agent.agent_factory import build_llm_service; s=Settings.from_env(); svc=build_llm_service(s); print(type(svc).__name__, svc.model, svc._client.base_url)"
+   ```
+4. 冒烟验证工具调用（先 4 条，别直接跑 30 条）：
+   ```bash
+   python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/smoke.yaml
+   ```
+
+**为什么用 `deepseek-chat` 而不是 `deepseek-reasoner`**：Agent 依赖 function calling
+（`run_sql` 等），`deepseek-chat` 明确支持；`deepseek-reasoner` 在部分版本/场景下对工具调用
+支持不完整，先用 chat 跑通基线，再考虑推理模型。
+
+**实现说明**：`analytics_agent/llm/deepseek.py` 复用框架的 `OpenAILlmService`，只补两件事：
+
+- 校验 `model` 以 `deepseek` 开头、`DEEPSEEK_API_KEY` 非空（错误信息直接指向 `.env`）；
+- 覆盖 `_build_payload()`，把 `LlmRequest.temperature` 写进请求体。
+  框架的 OpenAI 实现目前**不透传 temperature**，若不补，Text2SQL 的 `temperature=0` 不生效，
+  同一问题重复评测结果不可比。
+
+**注意**
+
+- Key 只放 `.env`（已被 `.gitignore` 忽略），不要写进代码或提交。
+- 公司网络若走代理，需要让 `api.deepseek.com` 直连或配置 `HTTPS_PROXY` / `NO_PROXY`。
+- 切回本地模型只需把 `LLM_PROVIDER` 改回 `ollama`、`LLM_MODEL` 改回本地模型名，无需改代码。
+- 成本：30 条基线通常是“几分钱”量级；跑全量前先看一次 `report.json` 里的 token 估算。

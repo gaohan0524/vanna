@@ -613,7 +613,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [x] T0-5 运行时：`check --dataset smoke.yaml` **20/20 PASS**（2026-10-22；30 条齐备后跑 `--strict` 复检）
 - [ ] 基线 EX 记录：`____%`（复跑波动 `____pt`）
 - [x] **D1-5 冒烟 run**：4 条用例，EX 50%、首答 50%、behavior 0%、avg_tools 0.5；`A-02` 走通 `run_sql`（2026-10-22）
-- 已验证：`pytest tests/test_eval_compare.py tests/test_eval_config.py tests/test_eval_evaluators.py` 18 passed；ruff 全通过；CLI/YAML/报告生成均正常；`.env` 可直接使用
+- 已验证：`pytest tests/test_eval_*.py tests/test_deepseek_service.py` **22 passed**；ruff 全通过；CLI/YAML/报告生成均正常；`.env` 与 DeepSeek 适配器可用（待配 Key 实跑）
 - 顺带修复：`vanna/core/evaluation/dataset.py` 补 `encoding="utf-8"`（Windows GBK 下中文用例无法解析）
 
 ### Stage 1
