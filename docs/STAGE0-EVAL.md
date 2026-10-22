@@ -17,7 +17,7 @@
 
 | 任务 | 状态 | 产物 / 证据 |
 |---|---|---|
-| T0-0 合成业务库 | **代码完成**，未在真实实例执行 | `evaluation/seed/ddl.sql`（12 表）、`seed/generate.py`（确定性生成，支持 `--scale/--drop/--as-of`）、`scripts/clickhouse/init_ro_user.sql` |
+| T0-0 合成业务库 | **完成**（0.1 规模已在真实实例实跑，2026-10-22） | `evaluation/seed/ddl.sql`（12 表）、`seed/generate.py`、`scripts/clickhouse/init_ro_user.sql`；行数见附录 D |
 | T0-1 评测集 | **6 / 30**（骨架可跑） | `datasets/v1_30.yaml` 6 条、`datasets/smoke.yaml` 3 条 |
 | T0-2 golden 机制 | **完成** | golden 存 SQL、评测时现场执行；拒绝存 CSV 的过期问题 |
 | T0-3 评测器 | **完成** | `ResultSetEvaluator` / `ClarificationEvaluator` / `FirstTryEvaluator` |
@@ -37,14 +37,18 @@
 | `python -m analytics_agent.evaluation.cli --help` | 4 个子命令正常 |
 | `EvaluationDataset.from_yaml` 解析两套用例 | 3 条 / 6 条，正常 |
 | 报告生成（构造数据） | `report.json` / `report.html` / `failures.csv` 均可产出 |
+| `seed --scale 0.1` 实跑 | 成功：12 表共 312,569 行；锚点 `2026-10-21`；见附录 D |
+| 只读账号抽查数据 | 通过：测试账号 2.3%、USD 5.07%、重试流水 3.0%、GMV 非空且排序合理 |
 
 ### 未完成 / 待执行（下一步）
 
-- [ ] **D1** 在真实 ClickHouse 上执行 `seed --scale 0.1`，并跑通 `check`
+- [x] **D1-2** `seed --scale 0.1` 已实跑（2026-10-22，见附录 D）
+- [ ] **D1-4** `check --dataset smoke.yaml` 全 PASS
 - [ ] **D2** 补齐 24 条用例（A 4 / B 5 / C 4 / D 3 / E 4 / F 2 / G 3 / H 2 / I 3 的剩余配额）
 - [ ] **D3~D4** 首次 `run`，记录基线 EX / 首答命中 / 工具轮次 / P95
 - [ ] **D5** 复跑稳定性验证，勾选 G0
 - [ ] 待确认：`seed/generate.py` 的 1.0 规模（100 万 events）在本机耗时与内存
+- [ ] 安全收紧：`readonly_user` 当前为 `GRANT SELECT ON *.*`，建议改为 `GRANT SELECT ON shop.*`
 
 ### 顺带修复的框架问题
 
@@ -854,6 +858,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 ## 8. 每日工作步骤
 
 > 每天开始先 `python -m analytics_agent.evaluation.cli check`，结束前提交代码与报告。
+> **每完成一节的操作，必须在附录 D 追加一行执行记录**（命令、结果、关键数字、报告路径）。
 
 ### D1：把数据和连接跑通（代码已就绪，按顺序执行即可）
 
@@ -874,8 +879,8 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
    用任意 ClickHouse 客户端执行 `scripts/clickhouse/init_ro_user.sql`，
    把 `<password>` 换成真实口令；或手工执行等价的两条 SQL：
    ```sql
-   CREATE USER IF NOT EXISTS readonly IDENTIFIED WITH sha256_password BY '<password>';
-   GRANT SELECT ON shop.* TO readonly;
+   CREATE USER IF NOT EXISTS readonly_user IDENTIFIED WITH sha256_password BY 'hh000000';
+   GRANT SELECT ON *.* TO readonly_user;
    ```
    然后把 `CH_USER=readonly`、`CH_PASSWORD=<password>` 写回 `.env`。
 4. **预检**：
@@ -1007,3 +1012,34 @@ GRANT SELECT ON shop.* TO readonly;
 | T0-5 预检 | 7.1 |
 | T0-6 失败归因 | 7.6 |
 | G0 门禁 | 1.2 |
+
+### D. 执行日志（每完成一步追加一行）
+
+> 约定：每次配置变更、`seed`、`check`、`run`、复跑之后，都在本表追加记录。
+> **不记录口令与完整查询结果**，只记录可复核的事实（行数、耗时、通过/失败项、报告路径）。
+
+| 日期 | 步骤 | 操作 | 结果 | 备注 |
+|---|---|---|---|---|
+| 2026-10-22 | D1-0 | 配置 `.env`（`CH_HOST=192.168.0.193`、`CH_PORT=18123`、`CH_DATABASE=shop`） | 成功 | 查询账号 `readonly_user`；口令不入库 |
+| 2026-10-22 | D1-0 | 创建只读账号并授权 | 成功 | 当前为 `GRANT SELECT ON *.*`，建议收紧到 `shop.*` |
+| 2026-10-22 | D1-2 | `seed --scale 0.1` | 成功 | 12 表 312,569 行；明细见下 |
+| 2026-10-22 | D1-2 | 只读账号抽查（锚点/测试账号/币种/状态/重试/GMV） | 通过 | 锚点 `2026-10-21`，seed=42 |
+
+**2026-10-22 · D1-2 灌数明细（scale=0.1）**
+
+| 表 | 行数 | 表 | 行数 |
+|---|---|---|---|
+| dim_date | 1,201 | refunds | 1,101 |
+| users | 5,000 | sessions | 40,000 |
+| products | 200 | events | 100,000 |
+| campaigns | 200 | accounts | 800 |
+| orders | 36,000 | order_items | 89,916 |
+| payments | 34,160 | meta_data_anchor | 1 |
+
+**抽查结论**
+
+- 测试账号订单 837 / 36,000 ≈ 2.3%（预期 ~2%）
+- USD 订单 1,826 / 36,000 ≈ 5.07%（预期 5%）
+- 重试流水 1,029 / 34,160 ≈ 3.0%（预期 3%）
+- 近 30 天 GMV 按渠道非空且排序合理（organic > paid_search > social > referral）
+- 只读账号可查询，说明 `.env` 的 `CH_USER` / `CH_PASSWORD` 生效
