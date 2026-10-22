@@ -1252,6 +1252,10 @@ GRANT SELECT ON shop.* TO readonly;
    DEEPSEEK_API_KEY=sk-***
    DEEPSEEK_BASE_URL=https://api.deepseek.com
    ```
+
+   > **最少需要 3 项**：`LLM_PROVIDER`、`LLM_MODEL`、`DEEPSEEK_API_KEY`。
+   > `DEEPSEEK_BASE_URL` 有默认值（`https://api.deepseek.com`），可以省略；
+   > 只配 `DEEPSEEK_API_KEY` 不够——默认 provider 仍是 `ollama`。
 3. 验证配置（不调用 LLM，只打印生效参数）：
    ```bash
    python -c "import dataclasses; from analytics_agent.config import Settings; from analytics_agent.agent_factory import build_llm_service; s=Settings.from_env(); svc=build_llm_service(s); print(type(svc).__name__, svc.model, svc._client.base_url)"
