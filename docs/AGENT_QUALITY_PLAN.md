@@ -1,6 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
+- **当前进度**：Stage 0 代码骨架已完成（2026-10-22，`1e1e565`），待灌数与首次基线；详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -596,14 +597,20 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 > 开发时直接勾选并补充备注。
 
 ### Stage 0（执行细节见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md)）
-- [ ] T0-0 合成业务库（12 表 + 数据锚点 + 只读账号）
-- [ ] T0-1 评测集 30 条（分层；G0 后扩到 100）
-- [ ] T0-2 golden SQL（现场执行，不存 CSV）
-- [ ] T0-3 `ResultSetEvaluator` + `ClarificationEvaluator` + `FirstTryEvaluator`
-- [ ] T0-4 一键评测运行器 + HTML/JSON 报告
-- [ ] T0-5 预检（连接/只读/锚点/golden 自检）
-- [ ] T0-6 失败 taxonomy 归因（UNKNOWN < 10%）
+
+> 2026-10-22：代码骨架已完成（`1e1e565`），下表区分“代码就绪”与“运行时验证”。
+
+- [x] T0-0 合成业务库 **代码完成**（12 表 DDL + 生成脚本 + 只读账号脚本）；待真实实例执行
+- [x] T0-2 golden SQL 机制完成（现场执行，不存 CSV）
+- [x] T0-3 `ResultSetEvaluator` + `ClarificationEvaluator` + `FirstTryEvaluator`
+- [x] T0-4 一键评测运行器 + HTML/JSON 报告
+- [x] T0-5 预检（连接/只读/锚点/golden 自检）
+- [x] T0-6 失败 taxonomy **规则完成**；待真实失败样本验证
+- [ ] T0-1 评测集：**6 / 30**（`v1_30.yaml` 目前 6 条，需业务专家补 24 条）
+- [ ] T0-0 运行时：`seed --scale 0.1` + `check` 实跑通过
 - [ ] 基线 EX 记录：`____%`（复跑波动 `____pt`）
+- 已验证：`pytest tests/test_eval_compare.py` 6 passed；ruff 全通过；CLI/YAML/报告生成均正常
+- 顺带修复：`vanna/core/evaluation/dataset.py` 补 `encoding="utf-8"`（Windows GBK 下中文用例无法解析）
 
 ### Stage 1
 - [ ] T1-1 schema 目录生成脚本

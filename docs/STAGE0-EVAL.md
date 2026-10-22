@@ -1,9 +1,9 @@
 # Stage 0 执行手册：评测基线与 ClickHouse 合成业务库
 
-> 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 0 / T0-1 ~ T0-5** 的详细执行版。
+> 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 0 / T0-0 ~ T0-6** 的详细执行版。
 > 完成本文全部验收项（G0）后，才进入 Stage 1（静态上下文工程）。
 >
-> - 状态：未开始
+> - 状态：**代码骨架已完成，待灌数与首次基线**（见 0.1）
 > - 主评测库：自建 ClickHouse 合成业务库（`shop`）
 > - 方法论参考：`ClickHouse/data-agent-mnist`（Apache-2.0）
 > - 业务专家：项目负责人本人（负责口径与 golden SQL 审核）
@@ -11,7 +11,58 @@
 
 ---
 
-## 0. 前置阅读与关键决策
+## 0.1 实施状态（2026-10-22）
+
+### 已完成
+
+| 任务 | 状态 | 产物 / 证据 |
+|---|---|---|
+| T0-0 合成业务库 | **代码完成**，未在真实实例执行 | `evaluation/seed/ddl.sql`（12 表）、`seed/generate.py`（确定性生成，支持 `--scale/--drop/--as-of`）、`scripts/clickhouse/init_ro_user.sql` |
+| T0-1 评测集 | **6 / 30**（骨架可跑） | `datasets/v1_30.yaml` 6 条、`datasets/smoke.yaml` 3 条 |
+| T0-2 golden 机制 | **完成** | golden 存 SQL、评测时现场执行；拒绝存 CSV 的过期问题 |
+| T0-3 评测器 | **完成** | `ResultSetEvaluator` / `ClarificationEvaluator` / `FirstTryEvaluator` |
+| T0-4 运行器与报告 | **完成** | `cli.py`（check/seed/run/report）、`report.py`（JSON/HTML/CSV） |
+| T0-5 预检 | **完成** | `preflight.py`：连接、只读探针、12 表行数、数据锚点、用例合法性、golden 自检 |
+| T0-6 失败归因 | **规则完成**，未跑真实失败 | `labeling.py`：OK/AMBIGUOUS/NO_TOOL/SCHEMA_MISSING/DIALECT_ERROR/TIMEOUT/SHAPE_MISMATCH/FILTER_MISSING/METRIC_WRONG/UNKNOWN |
+| 目录与配置 | **完成** | `analytics_agent/evaluation/`；`pyproject.toml`（sdist 排除、`pythonpath`）、`tox.ini`（ruff 范围）、`.gitignore`（reports） |
+
+### 已验证
+
+| 验证项 | 结果 |
+|---|---|
+| `pytest tests/test_eval_compare.py` | **6 passed**（行序、容差、形状、列别名、NULL/Decimal/日期归一化） |
+| `ruff check analytics_agent tests/test_eval_compare.py` | **All checks passed** |
+| `ruff format --check` | 通过 |
+| `python -m analytics_agent.evaluation.cli --help` | 4 个子命令正常 |
+| `EvaluationDataset.from_yaml` 解析两套用例 | 3 条 / 6 条，正常 |
+| 报告生成（构造数据） | `report.json` / `report.html` / `failures.csv` 均可产出 |
+
+### 未完成 / 待执行（下一步）
+
+- [ ] **D1** 在真实 ClickHouse 上执行 `seed --scale 0.1`，并跑通 `check`
+- [ ] **D2** 补齐 24 条用例（A 4 / B 5 / C 4 / D 3 / E 4 / F 2 / G 3 / H 2 / I 3 的剩余配额）
+- [ ] **D3~D4** 首次 `run`，记录基线 EX / 首答命中 / 工具轮次 / P95
+- [ ] **D5** 复跑稳定性验证，勾选 G0
+- [ ] 待确认：`seed/generate.py` 的 1.0 规模（100 万 events）在本机耗时与内存
+
+### 顺带修复的框架问题
+
+`src/vanna/core/evaluation/dataset.py` 的 `from_yaml` / `from_json` / `save_yaml` / `save_json` 未指定编码，Windows 默认 GBK，中文用例会 `UnicodeDecodeError`。已统一为 `encoding="utf-8"`（提交 `1e1e565`）。
+
+### 提交记录
+
+| 提交 | 内容 |
+|---|---|
+| `a32b032` | 新增总计划 `AGENT_QUALITY_PLAN.md` |
+| `f8c0e05` | 新增本手册 `STAGE0-EVAL.md` |
+| `72d1633` | 评测目录统一为 `analytics_agent/evaluation` |
+| `c294065` | 删除失效的 `src/evals/` |
+| `685495b` | 文档与示例引用同步 |
+| `1e1e565` | Stage 0 评测骨架（24 文件，含框架编码修复） |
+
+---
+
+## 0.2 前置阅读与关键决策
 
 动手前先确认这三个决策，后面所有步骤都依赖它们：
 
@@ -40,10 +91,13 @@
 
 ### 1.2 G0 验收（全部满足才算通过）
 
+> 状态：代码侧已就绪（`[x]`），运行时验收项仍未开始（`[ ]`）。详见 0.1。
+
+- [x] **代码就绪**：`check` / `run` / `report` 三个命令已实现并通过静态检查与单元测试
 - [ ] `python -m analytics_agent.evaluation.cli check` 通过（数据锚点、连接、只读权限、golden SQL 全部可执行）
-- [ ] `python -m analytics_agent.evaluation.cli run` 一条命令跑完 30 题，产出 `report.json` + `report.html`
+- [ ] `python -m analytics_agent.evaluation.cli run` 一条命令跑完 30 题，产出 `report.json` + `report.html`（当前用例 6/30）
 - [ ] 连续两次运行，EX 差异 ≤ 2pt（评测稳定）
-- [ ] 100% 用例的失败都能落到 8 类 taxonomy 之一（`UNKNOWN` 占比 < 10%）
+- [ ] 100% 用例的失败都能落到 taxonomy 之一（`UNKNOWN` 占比 < 10%）
 - [ ] 基线 EX、平均工具轮次、P95 延迟、单题 token 四项数字写入本文第 9 节
 - [ ] 每个失败用例都有 `executed_sql` 与失败原因，可人工复盘
 
@@ -605,6 +659,8 @@ dataset:
 
 ## 7. 评测实现
 
+> 本章代码为设计骨架；**最终实现以 `analytics_agent/evaluation/` 下的代码为准**（已完成、通过 ruff 与单测）。主要差异：结果比较支持 `column_alias`；执行器统一走 `execute_safe()` 返回 `(df, error)`；未知错误按 taxonomy 回退。
+
 ### 7.1 预检（`analytics_agent/evaluation/preflight.py`）
 
 `python -m analytics_agent.evaluation.cli check` 依次检查：
@@ -851,6 +907,8 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 ---
 
 ## 9. 基线记录（跑完后填写）
+
+> 当前状态：**未测量**。评测代码已就绪，等待 D1 灌数、D2 补齐用例、D4 首跑。
 
 | 指标 | 数值 | 备注 |
 |---|---|---|
