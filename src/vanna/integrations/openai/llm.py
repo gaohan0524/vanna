@@ -32,8 +32,15 @@ class OpenAILlmService(LlmService):
         api_key: API key; falls back to env `OPENAI_API_KEY`.
         organization: Optional org; env `OPENAI_ORG` if unset.
         base_url: Optional custom base URL; env `OPENAI_BASE_URL` if unset.
+        temperature: Optional sampling temperature. ``None`` (default) means
+            "do not send the parameter", which keeps compatibility with models
+            that reject it (e.g. o1/o3 series). Text2SQL callers that need
+            deterministic output should explicitly pass ``0.0``.
         extra_client_kwargs: Extra kwargs forwarded to `openai.AsyncOpenAI()`.
     """
+
+    # 类级默认值：允许测试或子类通过 __new__ 构造实例时也能安全读取
+    temperature: Optional[float] = None
 
     def __init__(
         self,
@@ -41,6 +48,7 @@ class OpenAILlmService(LlmService):
         api_key: Optional[str] = None,
         organization: Optional[str] = None,
         base_url: Optional[str] = None,
+        temperature: Optional[float] = None,
         **extra_client_kwargs: Any,
     ) -> None:
         try:
@@ -51,6 +59,7 @@ class OpenAILlmService(LlmService):
             ) from e
 
         self.model = model or os.getenv("OPENAI_MODEL", "gpt-5")
+        self.temperature = temperature
         api_key = api_key or os.getenv("OPENAI_API_KEY")
         organization = organization or os.getenv("OPENAI_ORG")
         base_url = base_url or os.getenv("OPENAI_BASE_URL")
@@ -251,6 +260,9 @@ class OpenAILlmService(LlmService):
             "model": self.model,
             "messages": messages,
         }
+        # 仅在显式配置时发送，避免让 o1/o3 等不接受该参数的模型报错
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
         if request.max_tokens is not None:
             payload["max_tokens"] = request.max_tokens
         if tools_payload:

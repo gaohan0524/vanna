@@ -67,7 +67,7 @@ def build_llm_service(settings: Settings):
         )
 
     if provider == "deepseek":
-        from .llm.deepseek import DeepSeekLlmService
+        from vanna.integrations.deepseek import DeepSeekLlmService
 
         return DeepSeekLlmService(
             model=settings.llm_model,

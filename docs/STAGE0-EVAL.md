@@ -31,7 +31,7 @@
 
 | 验证项 | 结果 |
 |---|---|
-| `pytest tests/test_eval_compare.py tests/test_eval_config.py tests/test_eval_evaluators.py tests/test_deepseek_service.py` | **22 passed**（比较/归一化、`.env`、澄清与拒答、DeepSeek 适配器） |
+| `pytest tests/test_eval_compare.py tests/test_eval_config.py tests/test_eval_evaluators.py tests/test_deepseek_integration.py` | **25 passed**（比较/归一化、`.env`、澄清与拒答、DeepSeek 集成与 temperature 透传） |
 | `ruff check analytics_agent tests/test_eval_compare.py` | **All checks passed** |
 | `ruff format --check` | 通过 |
 | `python -m analytics_agent.evaluation.cli --help` | 4 个子命令正常 |
@@ -63,7 +63,7 @@
 
 `OllamaLlmService` 只使用构造参数里的 `temperature` / `num_ctx`，**不读取 `LlmRequest.temperature`**，导致 `AgentConfig(temperature=0.0)` 对 Ollama 形同虚设。已在 `agent_factory.build_llm_service()` 中显式传 `temperature=0.0`，并新增 `LLM_NUM_CTX` 环境变量（默认 8192）。
 
-框架的 `OpenAILlmService._build_payload()` 同样不透传 `LlmRequest.temperature`。为此新增 `analytics_agent/llm/deepseek.py`：复用 OpenAI 兼容客户端，覆盖 payload 注入 temperature，并对 model / API Key 做启动期校验（详见附录 F）。
+框架的 `OpenAILlmService._build_payload()` 原本也不透传 temperature。已改为：`OpenAILlmService` 增加可选构造参数 `temperature`（默认 `None` 不发送，保持 o1/o3 兼容），DeepSeek 集成默认 `0.0`。DeepSeek 本体放在 `src/vanna/integrations/deepseek/`，业务侧只保留工厂分支（详见附录 F）。
 
 ### 提交记录
 
@@ -1141,6 +1141,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 | D2-1 | 产出 24 条用例并合并进 `v1_30.yaml` | 完成 | 21 条 golden 全部可执行；`C-16` 改写为自连接避免窗口类型问题 |
 | 2026-10-22 | D2-1 | `check --strict --dataset v1_30.yaml` | **41/41 PASS** | 30 条用例；golden 均 <0.1s；5 条 without_filter 结果均变化 |
 | 2026-10-22 | D2-3 | 新增 DeepSeek API 适配（OpenAI 兼容 + temperature 透传） | 代码完成，待配置 Key 后冒烟 | 切换步骤见附录 F；本地 Ollama 仍可回退 |
+| 2026-10-22 | D2-3 | 重构：DeepSeek 移入 `vanna.integrations.deepseek`，OpenAI 增加可选 `temperature` | 完成 | 删除 `analytics_agent/llm/`；模型名不再白名单；相关单测 40 passed |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
@@ -1264,12 +1265,16 @@ GRANT SELECT ON shop.* TO readonly;
 （`run_sql` 等），`deepseek-chat` 明确支持；`deepseek-reasoner` 在部分版本/场景下对工具调用
 支持不完整，先用 chat 跑通基线，再考虑推理模型。
 
-**实现说明**：`analytics_agent/llm/deepseek.py` 复用框架的 `OpenAILlmService`，只补两件事：
+**实现说明**：DeepSeek 集成位于框架侧 `src/vanna/integrations/deepseek/`，与 openai / anthropic 同级：
 
-- 校验 `model` 以 `deepseek` 开头、`DEEPSEEK_API_KEY` 非空（错误信息直接指向 `.env`）；
-- 覆盖 `_build_payload()`，把 `LlmRequest.temperature` 写进请求体。
-  框架的 OpenAI 实现目前**不透传 temperature**，若不补，Text2SQL 的 `temperature=0` 不生效，
-  同一问题重复评测结果不可比。
+- `llm.py` 复用 `OpenAILlmService`，默认 `base_url=https://api.deepseek.com`、`temperature=0.0`；
+- **模型名不做白名单**，`deepseek-flash` 等自定义 ID 可直接填；只拦截含 `:` 的 Ollama 标签（如 `qwen2.5:7b`），避免配置串台；
+- `DEEPSEEK_API_KEY` 为空时启动即报错；也可从环境变量自动读取；
+- 框架 `OpenAILlmService` 新增可选构造参数 `temperature`（`None` 表示不发送），
+  因此不再需要覆盖私有方法 `_build_payload()`，框架升级不会失效。
+
+配套改动：`pyproject.toml` 新增 extra `deepseek = ["openai"]`；业务侧 `analytics_agent/config.py`
+只保留 `DEEPSEEK_API_KEY` / `DEEPSEEK_BASE_URL` 两个配置项与工厂分支。
 
 **注意**
 

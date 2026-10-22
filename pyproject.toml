@@ -62,6 +62,7 @@ test = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0", "pytest-mock>=3.10.0", "pytes
 dev = ["pytest>=7.0.0", "pytest-asyncio>=0.21.0", "pytest-mock>=3.10.0", "pytest-cov>=4.0.0", "tox>=4.0.0", "mypy", "ruff", "pandas-stubs", "plotly-stubs", "types-PyYAML", "types-requests", "types-tabulate"]
 chromadb = ["chromadb>=1.1.0"]
 openai = ["openai"]
+deepseek = ["openai"]
 azureopenai = ["openai", "azure-identity"]
 qianfan = ["qianfan"]
 mistralai = ["mistralai>=1.0.0"]
