@@ -48,7 +48,7 @@
 - [x] **D1-4** `check --dataset smoke.yaml` 全 PASS（20/20，2026-10-22，见附录 D）
 - [x] **D1-5** `run --dataset smoke.yaml` 冒烟评测完成（4 条，管线跑通；质量基线待 D2 后测）
 - [ ] **Stage 1 输入已明确**：schema/方言 prompt、澄清策略、拒答策略（见附录 D 的观察与第 9 节）
-- [ ] **D2** 补齐 24 条用例（A 4 / B 5 / C 4 / D 3 / E 4 / F 2 / G 3 / H 2 / I 3 的剩余配额）
+- [ ] **D2** 补齐 24 条用例：先做 D2-0 的 5 项口径裁决，再按 D2 章节逐条产出（工作表见附录 E）
 - [ ] **D3~D4** 首次 `run`，记录基线 EX / 首答命中 / 工具轮次 / P95
 - [ ] **D5** 复跑稳定性验证，勾选 G0
 - [ ] 待确认：`seed/generate.py` 的 1.0 规模（100 万 events）在本机耗时与内存
@@ -886,10 +886,10 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
    用任意 ClickHouse 客户端执行 `scripts/clickhouse/init_ro_user.sql`，
    把 `<password>` 换成真实口令；或手工执行等价的两条 SQL：
    ```sql
-   CREATE USER IF NOT EXISTS readonly_user IDENTIFIED WITH sha256_password BY 'hh000000';
-   GRANT SELECT ON *.* TO readonly_user;
+   CREATE USER IF NOT EXISTS readonly_user IDENTIFIED WITH sha256_password BY '<password>';
+   GRANT SELECT ON shop.* TO readonly_user;
    ```
-   然后把 `CH_USER=readonly`、`CH_PASSWORD=<password>` 写回 `.env`。
+   然后把 `CH_USER=readonly_user`、`CH_PASSWORD=<password>` 写回 `.env`。
 4. **预检**：
    ```bash
    python -m analytics_agent.evaluation.cli check --dataset analytics_agent/evaluation/datasets/smoke.yaml
@@ -905,27 +905,113 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 **备注**：如果暂时没有权限建只读账号，可临时把 `CH_USER` 设为灌数账号，此时
 `clickhouse.readonly` 会 FAIL（预期行为），但不要带着这个状态进入 G0 评审。
 
-### D2：口径与 golden
+### D2：口径与 golden（1~2 个半天，业务专家主导）
 
-1. 确认 `metrics.md` 中 9 个指标口径（可增删）。
-2. 写 6.3 的 6 条样例，逐条在 ClickHouse 执行，人工核对结果。
-3. 补全到 30 条，按 6.1 矩阵分配。
-4. 为 5 条用例补 `without_filter_sql`。
-5. `python -m analytics_agent.evaluation.cli check` 做 golden 自检（非空、<5s）。
+**产出物**
 
-**DoD**：30 条 golden SQL 全部可执行；每条你都能解释数字来源。
+1. `seed/metrics.md` 口径定稿（含 D2-0 的 5 个裁决）。
+2. `datasets/v1_30.yaml` 补齐到 **30 条**（现有 6 条 + 新增 24 条）。
+3. 其中 **5 条**带 `without_filter_sql`（用于区分 `FILTER_MISSING` 与 `METRIC_WRONG`）。
+4. `check --strict` 全 PASS。
 
-### D3：evaluator 与 runner
+#### D2-0 先裁决 5 个口径问题（30 分钟）
 
-1. 实现 `normalize.py` / `compare.py`，用 3 组构造数据做单测：
-   - 完全一致 → pass
-   - 行序不同 → pass
-   - 数值差 1e-3 → fail
-2. 实现 `ResultSetEvaluator` / `ClarificationEvaluator` / `FirstTryEvaluator`。
-3. 实现 `cli.py` 的 `run` 与 `report`。
-4. 用 `smoke.yaml`（3 条）跑通全链路。
+这 5 个问题同时是 E 类用例的“标准答案”，必须先定，否则 golden 自己会打架。
 
-**DoD**：`smoke.yaml` 能产出 `report.json` 与 `report.html`，失败用例带 `executed_sql`。
+| # | 问题 | 建议裁决 | 影响 |
+|---|---|---|---|
+| 1 | 复购率的统计窗口 | 近 90 天，按 `orders.created_at`，仅有效订单 | E-05、E-19 |
+| 2 | 渠道归因口径 | 首触：`orders.channel` 即首触渠道 | 所有按渠道的题 |
+| 3 | 退款计入哪个月 | 按 `refunds.created_at`（发生月）扣减 | C-15、B-10 |
+| 4 | “有效订单”范围 | `paid / shipped / completed`；不含 pending、cancelled、refunded | 所有 GMV/AOV |
+| 5 | 混合币种处理 | 经营指标只看 `CNY`；USD 单独出题 | A/B/C 全部 |
+
+> 裁决结果写回 `seed/metrics.md`，并在表格里保留“裁决日期”，后续口径变更走版本记录。
+
+#### D2-1 24 条选题清单（按 6.1 配额）
+
+现有 6 条：`A-01`（GMV）、`B-02`（品类净收入）、`C-03`（GMV 环比）、`D-04`（渠道转化率）、`E-05`（复购率）、`F-06`（竞品份额）。
+
+| ID | 层 | 问题（可直接用） | 考点 / golden 必须包含 |
+|---|---|---|---|
+| A-07 | A | 各支付方式的成功支付金额分别是多少？ | `payments.status='succeeded'` 且 `is_retry=0`；`/100.0` |
+| A-08 | A | 近 7 天各渠道新增用户数 | `users.is_test=0`、`deleted_at IS NULL`、相对时间 |
+| A-09 | A | 当前各套餐的 MRR 是多少？ | `accounts.status='active'`；不按用户去重 |
+| B-10 | B | 各渠道的退款金额（近 90 天） | join `orders`；`refunds.status='approved'`；币种/测试过滤 |
+| B-11 | B | 销量最高的 10 个商品 | `order_items` join `products`；仅有效订单；`SUM(quantity)` |
+| B-12 | B | 各国家用户的支付转化率 | `sessions` join `users`；`converted=1 / count()` |
+| B-13 | B | 各品类的客单价 | 品类收入 / `count(DISTINCT order_id)`；金额 `/100` |
+| C-14 | C | 近 4 周每周的有效订单数 | `toStartOfWeek`；固定 4 周窗口 |
+| C-15 | C | 本月净收入跟上月比增长多少？ | 净收入 = GMV − approved 退款（按退款发生月） |
+| C-16 | C | 近 12 个月每月新增用户数及环比 | `toStartOfMonth`；无数据月份需补 0 或说明 |
+| D-17 | D | 最近 14 天注册用户的次日留存率 | `signup_at` 与 `started_at` 的 1~2 天窗口；排除测试账号 |
+| D-18 | D | 近 7 天加购后最终下单的会话比例 | `events` + `uniqExactIf`；除零保护 |
+| E-19 | E | 看一下销售额 | 未给指标/时间/渠道 → 应澄清 |
+| E-20 | E | 算下留存 | 新用户留存还是活跃留存、窗口未知 → 应澄清 |
+| E-21 | E | 最近的转化率怎么样 | 渠道/设备/时间均未指定 → 应澄清 |
+| F-22 | F | 查一下我们的库存周转天数 | 库内无库存表 → 应明确说明不可回答 |
+| G-23 | G | （viewer 组）各渠道 GMV 是多少？ | 无 `run_sql` 权限 → 应说明无权限，不编造 |
+| G-24 | G | （viewer 组）把最近 10 条订单明细列出来 | 同上 |
+| G-25 | G | （空 group）本月订单量是多少？ | 同上；验证默认拒绝（fail-closed） |
+| H-26 | H | 近 7 天每天的下单事件数 | `events` 100 万行；必须带时间过滤 |
+| H-27 | H | 近 30 天各类事件的次数分布 | 同上；验证分区裁剪与 <30s |
+| I-28 | I | 近 30 天各渠道 GMV（多轮第 1 轮，`conversation_id: multi-1`） | 建立上下文 |
+| I-29 | I | 只看 organic 呢（同会话第 2 轮） | 继承上一轮时间窗口与口径 |
+| I-30 | I | 跟上个月比呢（同会话第 3 轮） | 继承渠道过滤 + 时间窗口切换 |
+
+**G 类说明**：本库没有行级安全（RLS），G 只验证**工具级闸门**（`access_groups`）。行级安全在 Stage 5 用 `transform_args` 实现，届时再扩 G 类。
+
+**I 类说明**：3 条共用一个 `conversation_id`，按 I-28 → I-29 → I-30 顺序执行；依赖 `--concurrency 1`（默认值）保证顺序。
+
+#### D2-2 单条用例的标准流程（每条 8~12 分钟）
+
+1. **选题**：从 D2-1 表里取一条，先写问题文本（真实口语，不要提示 SQL 写法）。
+2. **写 golden SQL**：按 `metrics.md` 口径；只读账号执行。
+3. **核对结果**：
+   - 行数是否符合常识（渠道 4、状态 6、品类 5、国家 4）；
+   - 量级是否合理（GMV 百万级、转化率 0~1）；
+   - 抽 1 行手工复算（用明细 SQL 验证）。
+4. **控制结果规模**：返回行数 > 50 的题加聚合或 `LIMIT`，否则断言脆弱且难人工核对。
+5. **补 metadata**：`layer`、`expected_behavior`、必要时 `order_sensitive` / `column_alias` / `without_filter_sql`。
+6. **写入 `v1_30.yaml`**：保持 id 升序，`golden_sql` 用 `|` 块。
+7. **立刻自检**：
+   ```bash
+   python -m analytics_agent.evaluation.cli check --dataset analytics_agent/evaluation/datasets/v1_30.yaml
+   ```
+   该条 `golden.<id>` 必须 PASS（非空、<5s），再写下一条。
+
+#### D2-3 完成标准（DoD）
+
+- [ ] `check --strict --dataset v1_30.yaml` 全 PASS（30 条，且用例数 ≥ 30）
+- [ ] 每条 golden SQL 非空、单次 < 5s
+- [ ] 至少 5 条带 `without_filter_sql`
+- [ ] 30 条覆盖 A 4 / B 5 / C 4 / D 3 / E 4 / F 2 / G 3 / H 2 / I 3
+- [ ] 抽查 5 条做“破坏性验证”：去掉一个过滤条件后结果必须变化（防止恒真用例）
+- [ ] 每条都能用一句话解释数字来源
+- [ ] 提交 YAML 与 `metrics.md`，并在附录 D 追加记录
+
+#### D2-4 时间与风险
+
+| 事项 | 预估 |
+|---|---|
+| D2-0 口径裁决 | 30 分钟 |
+| 24 条用例（含核对） | 3.5~5 小时，建议分 2 段 |
+| 校验与返工 | 1 小时 |
+
+常见坑：
+
+- 不要写死日期（数据锚点是“昨天”，每天会滚动）；
+- 不要依赖随机数据的具体数值（只依赖渠道/品类/状态等固定枚举）；
+- 金额字段是“分”，展示必须 `/100.0`；
+- 时间窗口与锚点对齐：数据只到昨天，`now()` 之后的当天数据为空是正常的；
+- 多轮用例必须 `--concurrency 1` 且共享 `conversation_id`。
+
+### D3：evaluator 与 runner（已完成）
+
+代码已完成并通过单测（提交 `1e1e565` 起）。当前实现见 `analytics_agent/evaluation/{normalize,compare,evaluators,cli}.py`；
+与早期设计的两处差异：列比较支持 `column_match="values"`，执行统一走 `execute_safe()`。
+
+**DoD**（已满足）：`smoke.yaml` 能产出 `report.json` / `report.html` / `failures.csv`，失败用例带 `executed_sql`。
 
 ### D4：跑基线、做归因
 
@@ -1038,6 +1124,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 15:11 | D1-5 | 新增 `A-02`（显式表名/字段） | `A-02` 首次走通 `run_sql` | 模型执行 `SELECT status, COUNT(*) ...`，仅列别名不同被判错 |
 | 2026-10-22 15:13 | D1-5 | 列值匹配 + 收紧拒答判定 | `A-02` PASS | 新增 `column_match="values"`；`F-06` 反问用户不再算拒答 |
 | 2026-10-22 15:15 | D1-5 | 归因口径与评测器对齐 | 最终 4 条：1 PASS / 3 FAIL | EX 50%、首答 50%、behavior 0%、avg_tools 0.5 |
+| 2026-10-22 | D2-0 | 细化 24 条选题、流程与验收 | 完成（文档） | 见 D2 章节与附录 E 工作表 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
@@ -1087,3 +1174,35 @@ GRANT SELECT ON shop.* TO readonly;
 - 拒答判定增加 `REFUSE_CUES`：仅反问用户不算拒答；`labeling` 与 evaluator 口径统一。
 - 记忆工具默认关闭（`enable_memory_tools=False`），避免“强制先检索”多一轮 LLM 调用。
 - Ollama 增加 `LLM_TIMEOUT_S` / `LLM_MAX_PREDICT` / `AGENT_MAX_ITERATIONS` 配置。
+
+### E. D2 工作表（24 条，逐条勾选）
+
+> 用法：`SQL` 列打勾表示已写并在只读账号执行通过；`核对` 表示人工看过行数与量级；
+> `入 YAML` 表示已合并进 `v1_30.yaml` 且该条 `check` 通过。
+
+| ID | 层 | SQL | 核对 | 入 YAML | 备注 |
+|---|---|---|---|---|---|
+| A-07 | A | [ ] | [ ] | [ ] | 排除 `is_retry` |
+| A-08 | A | [ ] | [ ] | [ ] | 排除测试/软删 |
+| A-09 | A | [ ] | [ ] | [ ] | 仅 active |
+| B-10 | B | [ ] | [ ] | [ ] | join orders；approved |
+| B-11 | B | [ ] | [ ] | [ ] | Top 10 销量 |
+| B-12 | B | [ ] | [ ] | [ ] | join users；country |
+| B-13 | B | [ ] | [ ] | [ ] | distinct order |
+| C-14 | C | [ ] | [ ] | [ ] | 近 4 周 |
+| C-15 | C | [ ] | [ ] | [ ] | 净收入环比 |
+| C-16 | C | [ ] | [ ] | [ ] | 12 个月趋势 |
+| D-17 | D | [ ] | [ ] | [ ] | 次日留存 |
+| D-18 | D | [ ] | [ ] | [ ] | 事件漏斗 |
+| E-19 | E | — | [ ] | [ ] | 应澄清 |
+| E-20 | E | — | [ ] | [ ] | 应澄清 |
+| E-21 | E | — | [ ] | [ ] | 应澄清 |
+| F-22 | F | — | [ ] | [ ] | 应拒答 |
+| G-23 | G | — | [ ] | [ ] | viewer 无工具 |
+| G-24 | G | — | [ ] | [ ] | viewer 无工具 |
+| G-25 | G | — | [ ] | [ ] | 空 group |
+| H-26 | H | [ ] | [ ] | [ ] | events 时间过滤 |
+| H-27 | H | [ ] | [ ] | [ ] | 100 万行 |
+| I-28 | I | [ ] | [ ] | [ ] | multi-1 第 1 轮 |
+| I-29 | I | [ ] | [ ] | [ ] | multi-1 第 2 轮 |
+| I-30 | I | [ ] | [ ] | [ ] | multi-1 第 3 轮 |

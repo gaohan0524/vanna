@@ -15,6 +15,18 @@
 | MRR | 月度经常性收入 | `accounts.status='active'` 的 `mrr_cents` 之和 | 含 paused/churned |
 | 渠道归因 | 订单归因到首触渠道 | 本库 `orders.channel` 即首触渠道 | 误用 `events` 做末触归因 |
 
+## D2-0 待裁决项（确认后删除本节）
+
+| # | 问题 | 建议口径 | 状态 |
+|---|---|---|---|
+| 1 | 复购率的统计窗口 | 近 90 天，按 `orders.created_at`，仅有效订单 | 待确认 |
+| 2 | 渠道归因 | 首触：`orders.channel` 即首触渠道 | 待确认 |
+| 3 | 退款计入哪个月 | 按 `refunds.created_at`（发生月）扣减 | 待确认 |
+| 4 | “有效订单”范围 | `paid / shipped / completed` | 待确认 |
+| 5 | 混合币种 | 经营指标只看 `CNY` | 待确认 |
+
+> 这 5 项同时决定 E 类用例的标准答案，确认后请更新上表并在 `docs/STAGE0-EVAL.md` 附录 D 记录。
+
 ## 全局约定
 
 1. 金额源字段单位是「分」，展示时 `/100.0`，保留 2 位小数。
