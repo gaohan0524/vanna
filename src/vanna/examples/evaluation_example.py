@@ -261,7 +261,7 @@ async def main():
     print("  3. Agent comparison is a first-class use case")
     print("  4. Multiple evaluators can be composed for comprehensive testing")
     print("  5. Reports can be exported to HTML, CSV, or printed to console")
-    print("\nFor LLM comparison, see: evals/benchmarks/llm_comparison.py")
+    print("\nFor LLM comparison, see: EvaluationRunner.compare_agents (demo 2 above)")
     print()
 
 

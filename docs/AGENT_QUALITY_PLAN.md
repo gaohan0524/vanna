@@ -133,7 +133,7 @@
 
 ## 4. 代码结构规划
 
-在仓库根新增**一个**业务包 `analytics_agent/`，评测作为其子包 `analytics_agent.eval`（不要改 `src/vanna/` 框架代码，也不要放根目录 `eval/`——`eval` 与内置函数同名且过于通用）：
+在仓库根新增**一个**业务包 `analytics_agent/`，评测作为其子包 `analytics_agent.evaluation`（不要改 `src/vanna/` 框架代码；也不要单开根目录 `eval/`——命名与框架 `core/evaluation` 不一致，且过于通用）：
 
 ```
 analytics_agent/
@@ -160,7 +160,7 @@ analytics_agent/
   sql/
     guardrails.py      # AST 级只读校验、LIMIT 注入、超时
     result_norm.py     # 结果集归一化
-  eval/                # 子包：python -m analytics_agent.eval.cli
+  evaluation/          # 子包：python -m analytics_agent.evaluation.cli
     cli.py             # check / seed / run / report
     preflight.py       # 锚点、连接、只读、golden 自检
     executor.py        # 只读执行（重放 + golden）
@@ -213,7 +213,7 @@ analytics_agent/
 #### 代码骨架
 
 ```python
-# analytics_agent/eval/evaluators.py
+# analytics_agent/evaluation/evaluators.py
 import pandas as pd
 
 from vanna.core.evaluation import (
@@ -262,7 +262,7 @@ class ResultSetEvaluator(Evaluator):
 
 #### 验收
 
-- `python -m analytics_agent.eval.cli run` 一条命令跑完全部用例，产出 HTML/JSON。
+- `python -m analytics_agent.evaluation.cli run` 一条命令跑完全部用例，产出 HTML/JSON。
 - 基线 EX 有明确数字，失败按 taxonomy 分类统计。
 - 同一份代码连跑两次，EX 波动 ≤ 2pt（否则说明评测不稳定，先修评测）。
 

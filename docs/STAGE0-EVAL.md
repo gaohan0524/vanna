@@ -40,8 +40,8 @@
 
 ### 1.2 G0 验收（全部满足才算通过）
 
-- [ ] `python -m analytics_agent.eval.cli check` 通过（数据锚点、连接、只读权限、golden SQL 全部可执行）
-- [ ] `python -m analytics_agent.eval.cli run` 一条命令跑完 30 题，产出 `report.json` + `report.html`
+- [ ] `python -m analytics_agent.evaluation.cli check` 通过（数据锚点、连接、只读权限、golden SQL 全部可执行）
+- [ ] `python -m analytics_agent.evaluation.cli run` 一条命令跑完 30 题，产出 `report.json` + `report.html`
 - [ ] 连续两次运行，EX 差异 ≤ 2pt（评测稳定）
 - [ ] 100% 用例的失败都能落到 8 类 taxonomy 之一（`UNKNOWN` 占比 < 10%）
 - [ ] 基线 EX、平均工具轮次、P95 延迟、单题 token 四项数字写入本文第 9 节
@@ -56,7 +56,7 @@
           12 表 + shop.meta_data_anchor + 埋设的真实陷阱
               ▲ seed（幂等，固定 seed）
               │
-[用例层]  analytics_agent/eval/datasets/*.yaml
+[用例层]  analytics_agent/evaluation/datasets/*.yaml
           问题 + 分层 + golden_sql + 期望行为（澄清/拒答/权限）
               ▲ 读取
               │
@@ -96,7 +96,7 @@
 
 ## 4. 目录结构
 
-### 4.1 放在哪里：根目录 `analytics_agent/`（单包，`eval/` 作为子包）
+### 4.1 放在哪里：根目录 `analytics_agent/`（单包，`evaluation/` 作为子包）
 
 ```
 vanna/                              # 仓库根
@@ -113,7 +113,7 @@ vanna/                              # 仓库根
 │   ├── context/                    # schema catalog、enricher
 │   ├── tools/                      # search_columns 等
 │   ├── sql/                        # guardrails、结果归一化
-│   └── eval/                       # ← 评测代码，业务包内的子包
+│   └── evaluation/                 # ← 评测代码，业务包内的子包
 │       ├── __init__.py
 │       ├── cli.py                  # check / seed / run / report 子命令
 │       ├── preflight.py            # 数据锚点、连接、权限、golden 自检
@@ -136,11 +136,13 @@ vanna/                              # 仓库根
     └── healthcheck.sh
 ```
 
-**为什么不放根目录 `eval/`**：
+**为什么是 `evaluation/` 而不是 `eval/`**：
 
-1. `eval` 与内置函数 `eval` 同名，`import eval` / `python -m eval.cli` 可读性差，也容易和第三方包重名。
-2. 根目录散落 `agent_app/` + `eval/` 两个顶层包，后续 Stage 1~5 每加一个模块都要往根目录塞东西。
-3. `python -m eval.cli` 依赖 cwd 在仓库根；以子包方式运行（`python -m analytics_agent.eval.cli`）语义更明确，也不会与框架的 `vanna` 混淆。
+1. 与框架自身命名对齐（`vanna/core/evaluation/`），读代码时不会出现两套叫法。
+2. 子包名 `eval` 虽然在全限定导入下**不会**遮蔽内置 `eval()`（内置函数在 `builtins`，不在模块命名空间），但 `import eval`、`python -m eval.cli` 这类写法容易被误读，也容易和第三方包重名。
+3. 统一用 `python -m analytics_agent.evaluation.cli`，命令虽长一点，但语义明确；嫌长可加一个 `scripts/eval.py` 薄包装。
+
+**为什么不放在根目录单开 `eval/`**：根目录会散落多个顶层包（`analytics_agent/` + `eval/`），Stage 1~5 每加一个模块都要往根目录塞东西；而且从根目录跑 `python -m eval.cli` 依赖 cwd，容易与框架的 `vanna` 混淆。
 
 **为什么不放 `src/`**：`pyproject.toml` 里 `[tool.flit.module] path = "src/vanna"` 只发布 `vanna` 一个包；把业务代码放进 `src/` 会诱导你改打包配置，而这个项目短期内不需要被发布成 PyPI 包。
 
@@ -167,10 +169,28 @@ vanna/                              # 仓库根
 3. **`.gitignore` 增加运行产物**：
    ```gitignore
    reports/
-   analytics_agent/eval/golden/*.csv
+   analytics_agent/evaluation/golden/*.csv
    ```
 
 **测试放哪**：`normalize.py` / `compare.py` 这类纯函数测试放 `tests/test_eval_compare.py`（`pytest` 的 `testpaths=["tests"]` 会自动收集）；需要 ClickHouse 的测试加 `@pytest.mark.integration`，避免在无库环境失败。
+
+### 4.3 存量 `src/evals/` 的处置：废弃，不迁移
+
+仓库里已有 `src/evals/`（初始提交带入，两个文件）：
+
+| 文件 | 现状 | 结论 |
+|---|---|---|
+| `src/evals/benchmarks/llm_comparison.py` | `get_sql_tools()` 返回空 `ToolRegistry`（注释写着 TODO）；`Agent(...)` 未传 `user_resolver` / `agent_memory`，按 2.0 的必填参数**直接跑不起来** | 废弃 |
+| `src/evals/datasets/sql_generation/basic.yaml` | 8 条用例断言 `tools_called: ["generate_sql","execute_query"]`，这两个工具名在 2.0 中不存在（实际是 `run_sql`）；断言 `final_answer_contains: ["SELECT","GROUP BY"]` 与默认提示词“不要重复原始结果”冲突 | 废弃 |
+
+它还是典型的“孤儿代码”：不在 `src/vanna`（flit 不打包）、不在 `tests/`（pytest 不收集）、不在 `tox` 的 ruff/mypy 范围，只会持续腐烂。
+
+**可保留的两点精华**（已各有替代，不需要搬文件）：
+
+1. `compare_agents` + `AgentVariant` + `save_html/save_csv` 的用法 → 见可运行的 `src/vanna/examples/evaluation_example.py`；Stage 5 的模型 A/B 直接照它写。
+2. 8 条用例的“问题意图”（聚合、排名、时间序列、过滤、同环比、流失、CLV）→ 已并入本文 6.1 的分层矩阵，作为出题灵感。
+
+**执行动作**：已执行 `git rm -r src/evals`（2026-10-22），并修正 `src/vanna/examples/evaluation_example.py` 末尾指向该文件的失效引用。若需找回，可用 `git log -- src/evals` 定位删除前的提交。
 
 ---
 
@@ -200,7 +220,7 @@ vanna/                              # 仓库根
 | `accounts` | 订阅账户 | 8,000 | MRR、流失 |
 | `meta_data_anchor` | 单行 | 1 | 数据锚点（预检用，`shop.meta_data_anchor`） |
 
-### 5.3 DDL（`analytics_agent/eval/seed/ddl.sql`）
+### 5.3 DDL（`analytics_agent/evaluation/seed/ddl.sql`）
 
 ```sql
 CREATE DATABASE IF NOT EXISTS shop;
@@ -375,7 +395,7 @@ ORDER BY anchor_date;
 | ⑨ | 指标“复购率”定义不唯一 | 各写各的 | `AMBIGUOUS` |
 | ⑩ | `events` 100 万行，无时间过滤会全表扫 | 超时 | `TIMEOUT` |
 
-### 5.5 数据生成规则（`analytics_agent/eval/seed/generate.py`）
+### 5.5 数据生成规则（`analytics_agent/evaluation/seed/generate.py`）
 
 ```python
 # 核心约束（伪代码，实现时补全）
@@ -402,7 +422,7 @@ anchor = date.today() - timedelta(days=1) # 数据截止到昨天
 - 生成结束写入 `shop.meta_data_anchor`：`(anchor, seed, now())`。
 - 支持 `--drop`（重建）与 `--as-of YYYY-MM-DD`（补历史），默认不允许 `as-of` 早于今天 400 天。
 
-### 5.6 指标口径卡片（`analytics_agent/eval/seed/metrics.md`）
+### 5.6 指标口径卡片（`analytics_agent/evaluation/seed/metrics.md`）
 
 这是“业务专家输入”的核心产物，也是 Stage 1/3 的术语表来源。**先写口径，再写 golden SQL**。
 
@@ -585,9 +605,9 @@ dataset:
 
 ## 7. 评测实现
 
-### 7.1 预检（`analytics_agent/eval/preflight.py`）
+### 7.1 预检（`analytics_agent/evaluation/preflight.py`）
 
-`python -m analytics_agent.eval.cli check` 依次检查：
+`python -m analytics_agent.evaluation.cli check` 依次检查：
 
 1. ClickHouse 可连接；账号为只读（尝试 `CREATE TABLE` 必须失败）。
 2. `shop.meta_data_anchor.anchor_date == today - 1`（防止数据过期导致时间类用例失真）。
@@ -598,7 +618,7 @@ dataset:
 
 任一项失败则退出码非 0。
 
-### 7.2 只读执行器（`eval/executor.py`）
+### 7.2 只读执行器（`analytics_agent/evaluation/executor.py`）
 
 ```python
 import clickhouse_connect
@@ -629,7 +649,7 @@ async def execute_readonly(sql: str, timeout_s: int = 30) -> pd.DataFrame:
 - 重放 agent 的 SQL 时必须限制 `max_rows`（建议 10,000），防止评测把集群拖垮。
 - 记录每条 SQL 的耗时与返回行数。
 
-### 7.3 归一化（`eval/normalize.py`）
+### 7.3 归一化（`analytics_agent/evaluation/normalize.py`）
 
 ```python
 def normalize(df: pd.DataFrame) -> pd.DataFrame:
@@ -651,7 +671,7 @@ def normalize(df: pd.DataFrame) -> pd.DataFrame:
 - `Decimal` 与 `float` 都转 `float` 后 round(6)。
 - 布尔值统一为 `0/1`。
 
-### 7.4 结果比较（`eval/compare.py`）
+### 7.4 结果比较（`analytics_agent/evaluation/compare.py`）
 
 ```python
 from dataclasses import dataclass
@@ -690,7 +710,7 @@ def results_equal(golden, actual, *, rel_tol=1e-6, order_sensitive=False) -> Com
 
 **列名不匹配怎么办**：Stage 0 采用严格匹配（列名必须一致）。如果 agent 用了不同别名导致 `columns` 失败，先看是“模型没按要求命名”还是“业务上等价”。前者计入失败并进 taxonomy；后者在用例里加 `column_alias`。不要一上来就做模糊列匹配，否则会把错误判成通过。
 
-### 7.5 Evaluator（`eval/evaluators.py`）
+### 7.5 Evaluator（`analytics_agent/evaluation/evaluators.py`）
 
 ```python
 class ResultSetEvaluator(Evaluator):
@@ -722,7 +742,7 @@ class ResultSetEvaluator(Evaluator):
 
 效率类直接用仓库内置 `EfficiencyEvaluator`；口径主观项留到 Stage 4 再接 `LLMAsJudgeEvaluator`。
 
-### 7.6 失败分类（`eval/labeling.py`）
+### 7.6 失败分类（`analytics_agent/evaluation/labeling.py`）
 
 优先级从上到下匹配，命中即停：
 
@@ -740,14 +760,14 @@ class ResultSetEvaluator(Evaluator):
 
 `FILTER_MISSING` 的判定是可选的进阶项：用例里可提供 `metadata.without_filter_sql`（例如去掉 `is_test=0`），若 agent 结果恰好匹配它，就能精准归因。**建议至少 5 条用例配此字段**，否则 7 与 8 难区分。
 
-### 7.7 CLI（`eval/cli.py`）
+### 7.7 CLI（`analytics_agent/evaluation/cli.py`）
 
 ```bash
-python -m analytics_agent.eval.cli check                       # 预检 + golden 自检
-python -m analytics_agent.eval.cli seed --drop --as-of 2026-10-21
-python -m analytics_agent.eval.cli run --dataset analytics_agent/eval/datasets/smoke.yaml      # 3 条，开发用
-python -m analytics_agent.eval.cli run --dataset analytics_agent/eval/datasets/v1_30.yaml --out reports/2026-10-22
-python -m analytics_agent.eval.cli report --run reports/2026-10-22             # 生成 html
+python -m analytics_agent.evaluation.cli check                       # 预检 + golden 自检
+python -m analytics_agent.evaluation.cli seed --drop --as-of 2026-10-21
+python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/smoke.yaml      # 3 条，开发用
+python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/v1_30.yaml --out reports/2026-10-22
+python -m analytics_agent.evaluation.cli report --run reports/2026-10-22             # 生成 html
 ```
 
 `run` 的职责：
@@ -776,7 +796,7 @@ python -m analytics_agent.eval.cli report --run reports/2026-10-22             #
 
 ## 8. 每日工作步骤
 
-> 每天开始先 `python -m analytics_agent.eval.cli check`，结束前提交代码与报告。
+> 每天开始先 `python -m analytics_agent.evaluation.cli check`，结束前提交代码与报告。
 
 ### D1：把数据和连接跑通
 
@@ -786,7 +806,7 @@ python -m analytics_agent.eval.cli report --run reports/2026-10-22             #
 4. 补全其余表，`--drop` 重建一次，记录总耗时。
 5. 写入 `meta_data_anchor`。
 
-**DoD**：`python -m analytics_agent.eval.cli check` 中连接、表存在、行数、锚点四项通过。
+**DoD**：`python -m analytics_agent.evaluation.cli check` 中连接、表存在、行数、锚点四项通过。
 
 ### D2：口径与 golden
 
@@ -794,7 +814,7 @@ python -m analytics_agent.eval.cli report --run reports/2026-10-22             #
 2. 写 6.3 的 6 条样例，逐条在 ClickHouse 执行，人工核对结果。
 3. 补全到 30 条，按 6.1 矩阵分配。
 4. 为 5 条用例补 `without_filter_sql`。
-5. `python -m analytics_agent.eval.cli check` 做 golden 自检（非空、<5s）。
+5. `python -m analytics_agent.evaluation.cli check` 做 golden 自检（非空、<5s）。
 
 **DoD**：30 条 golden SQL 全部可执行；每条你都能解释数字来源。
 
