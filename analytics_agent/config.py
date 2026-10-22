@@ -87,6 +87,7 @@ class Settings:
     llm_provider: str = "ollama"
     llm_model: str = "qwen2.5:7b"
     ollama_host: str = "http://localhost:11434"
+    llm_num_ctx: int = 8192
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -107,6 +108,7 @@ class Settings:
             llm_provider=_env("LLM_PROVIDER", "ollama").lower(),
             llm_model=_env("LLM_MODEL", "qwen2.5:7b"),
             ollama_host=_env("OLLAMA_HOST", "http://localhost:11434"),
+            llm_num_ctx=_env_int("LLM_NUM_CTX", 8192),
         )
 
     @property

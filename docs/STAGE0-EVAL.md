@@ -56,6 +56,8 @@
 
 `src/vanna/core/evaluation/dataset.py` 的 `from_yaml` / `from_json` / `save_yaml` / `save_json` 未指定编码，Windows 默认 GBK，中文用例会 `UnicodeDecodeError`。已统一为 `encoding="utf-8"`（提交 `1e1e565`）。
 
+`OllamaLlmService` 只使用构造参数里的 `temperature` / `num_ctx`，**不读取 `LlmRequest.temperature`**，导致 `AgentConfig(temperature=0.0)` 对 Ollama 形同虚设。已在 `agent_factory.build_llm_service()` 中显式传 `temperature=0.0`，并新增 `LLM_NUM_CTX` 环境变量（默认 8192）。
+
 ### 提交记录
 
 | 提交 | 内容 |
@@ -1028,6 +1030,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 | D1-2 | `seed --scale 0.1` | 成功 | 12 表 312,569 行；明细见下 |
 | 2026-10-22 | D1-2 | 只读账号抽查（锚点/测试账号/币种/状态/重试/GMV） | 通过 | 锚点 `2026-10-21`，seed=42 |
 | 2026-10-22 | D1-4 | `check --dataset smoke.yaml` | **20/20 PASS** | 只读探针生效；golden `A-01` 4 行 / 0.02s |
+| 2026-10-22 | D1-0 | 模型选择与采样参数 | 选定 `qwen2.5-coder:7b`，`temperature=0.0`、`num_ctx=8192` | 修复 Ollama 忽略 `LlmRequest.temperature` 的问题；`qwen2.5:7b` 留作对照 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 

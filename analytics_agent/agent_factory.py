@@ -53,7 +53,15 @@ def build_llm_service(settings: Settings):
     if provider == "ollama":
         from vanna.integrations.ollama import OllamaLlmService
 
-        return OllamaLlmService(model=settings.llm_model, host=settings.ollama_host)
+        # 注意：OllamaLlmService 使用的是自身构造参数里的 temperature / num_ctx，
+        # 不会读 LlmRequest.temperature（见 integrations/ollama/llm.py）。
+        # 因此必须在这里显式传 temperature=0，否则 AgentConfig.temperature 形同虚设。
+        return OllamaLlmService(
+            model=settings.llm_model,
+            host=settings.ollama_host,
+            temperature=0.0,
+            num_ctx=settings.llm_num_ctx,
+        )
 
     if provider == "openai":
         from vanna.integrations.openai import OpenAILlmService
