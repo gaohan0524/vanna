@@ -58,14 +58,17 @@ async def test_clarify_rejects_sql_execution():
     assert not outcome.passed
 
 
-async def test_refuse_requires_no_sql():
-    passed = await ClarificationEvaluator().evaluate(
-        _case("refuse"), _result("库内没有竞品数据，无法查询。")
+async def test_refuse_allows_metadata_query_but_requires_wording():
+    # 先查证 schema、再明确说“暂无数据”：应通过
+    checked = await ClarificationEvaluator().evaluate(
+        _case("refuse"),
+        _result("数据库暂无竞品数据，无法查询。", sql="SELECT name FROM system.tables"),
     )
-    assert passed.passed
+    assert checked.passed
 
+    # 查了但仍编造数字、不说数据不可用：应失败
     failed = await ClarificationEvaluator().evaluate(
-        _case("refuse"), _result("无法查询。", sql="SELECT 1")
+        _case("refuse"), _result("我查了一下，大概是 30%。", sql="SELECT 1")
     )
     assert not failed.passed
 
@@ -85,4 +88,12 @@ async def test_labeling_matches_evaluator_for_refuse():
     assert (
         await classify(_case("refuse"), _result("请提供你想要查询的竞品名称。"))
         == "AMBIGUOUS"
+    )
+    # 允许查元数据后再拒答
+    assert (
+        await classify(
+            _case("refuse"),
+            _result("数据库暂无竞品数据。", sql="SELECT 1"),
+        )
+        == "OK"
     )

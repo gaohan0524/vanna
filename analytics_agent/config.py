@@ -93,7 +93,7 @@ class Settings:
     llm_num_ctx: int = 8192
     llm_timeout_s: int = 600
     llm_max_predict: int = 512
-    agent_max_iterations: int = 5
+    agent_max_iterations: int = 8
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"

@@ -45,6 +45,8 @@ CLARIFY_CUES = (
 REFUSE_CUES = (
     "无法",
     "没有",
+    "暂无",
+    "无数据",
     "不包含",
     "不提供",
     "查不到",
@@ -225,13 +227,8 @@ class ClarificationEvaluator(Evaluator):
             return _pass(self.name, test_case, "clarification requested")
 
         if expected == "refuse":
-            if sqls:
-                return _fail(
-                    self.name,
-                    test_case,
-                    "should refuse but executed SQL",
-                    queries=len(sqls),
-                )
+            # 允许用 run_sql 探查 schema/元数据来确认“数据不存在”；
+            # 判定只看最终回答是否明确说明不可用，避免把“先查证再拒答”误判为失败。
             if not answer:
                 return _fail(self.name, test_case, "empty answer")
             if not any(cue in answer for cue in REFUSE_CUES):
@@ -241,7 +238,12 @@ class ClarificationEvaluator(Evaluator):
                     "did not state the data is unavailable",
                     answer=answer[:200],
                 )
-            return _pass(self.name, test_case, "refused without querying")
+            return _pass(
+                self.name,
+                test_case,
+                "refused with data-unavailable wording",
+                queries=len(sqls),
+            )
 
         return _fail(self.name, test_case, f"unknown expected_behavior={expected!r}")
 

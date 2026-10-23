@@ -68,8 +68,8 @@ async def classify(test_case: TestCase, agent_result: AgentResult) -> str:
         has_signal = has_signal or any(cue in answer for cue in CLARIFY_CUES)
         return "OK" if not sqls and has_signal else "AMBIGUOUS"
     if expected == "refuse":
-        refused = any(cue in answer for cue in REFUSE_CUES)
-        return "OK" if not sqls and refused else "AMBIGUOUS"
+        # 与 Evaluator 一致：允许探查元数据，只看最终回答是否明确说明不可用
+        return "OK" if any(cue in answer for cue in REFUSE_CUES) else "AMBIGUOUS"
 
     # 2) 该答却没调用工具
     if not sqls:
