@@ -518,7 +518,9 @@ dataset:
         golden_sql: |
           SELECT toDate(event_time) AS day, count() AS purchase_events
           FROM shop.events
-          WHERE event_name = 'purchase' AND event_time >= now() - INTERVAL 7 DAY
+          WHERE event_name = 'purchase'
+            AND event_time >= toStartOfDay(now()) - INTERVAL 7 DAY
+            AND event_time <  toStartOfDay(now())
           GROUP BY day
           ORDER BY day
         expected_behavior: answer

@@ -16,7 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -131,6 +131,13 @@ def generate(
     rng = random.Random(seed)
     client = _connect(s)
 
+    # 锚点日 23:59:59：事实表时间戳一律不得越过它，否则会出现“未来数据”，
+    # 让 now() 相关窗口把明天/下周的数据算进来。
+    anchor_end = datetime.combine(anchor, time(23, 59, 59))
+
+    def clamp(moment: datetime) -> datetime:
+        return moment if moment <= anchor_end else anchor_end
+
     if drop:
         _drop(client, TABLES)
     _execute_ddl(client, SEED_DIR / "ddl.sql")
@@ -174,6 +181,9 @@ def generate(
             if rng.random() < 0.01
             else None
         )
+        # 软删日期不能晚于锚点（未来的“已删除”没有意义）
+        if deleted_at is not None and deleted_at > anchor_end:
+            deleted_at = None
         users.append(
             (
                 user_id,
@@ -265,12 +275,14 @@ def generate(
         user = users[rng.randrange(len(users))]
         plan = _weighted(rng, plans)
         status = "active" if rng.random() < 0.85 else rng.choice(("paused", "churned"))
-        started_at = user[1] + timedelta(days=rng.randint(0, 30))
+        started_at = clamp(user[1] + timedelta(days=rng.randint(0, 30)))
         churned_at = (
             started_at + timedelta(days=rng.randint(30, 400))
             if status == "churned"
             else None
         )
+        if churned_at is not None and churned_at > anchor_end:
+            churned_at = None
         accounts.append(
             (
                 account_id,
@@ -318,6 +330,7 @@ def generate(
             created_at = _ts(rng, day)
             if created_at < user[1]:
                 created_at = user[1] + timedelta(minutes=rng.randint(1, 600))
+            created_at = clamp(created_at)
             status = _weighted(rng, ORDER_STATUS)
             currency = "USD" if rng.random() < 0.05 else "CNY"
             channel = _weighted(rng, CHANNELS)
@@ -361,7 +374,7 @@ def generate(
                     (
                         payment_id,
                         order_id,
-                        created_at + timedelta(minutes=rng.randint(0, 30)),
+                        clamp(created_at + timedelta(minutes=rng.randint(0, 30))),
                         _weighted(rng, PAY_METHODS),
                         amount,
                         "succeeded",
@@ -374,7 +387,7 @@ def generate(
                         (
                             payment_id,
                             order_id,
-                            created_at + timedelta(minutes=rng.randint(31, 90)),
+                            clamp(created_at + timedelta(minutes=rng.randint(31, 90))),
                             _weighted(rng, PAY_METHODS),
                             amount,
                             "succeeded",
@@ -388,7 +401,7 @@ def generate(
                     (
                         refund_id,
                         order_id,
-                        created_at + timedelta(days=rng.randint(1, 20)),
+                        clamp(created_at + timedelta(days=rng.randint(1, 20))),
                         int(amount * rng.uniform(0.3, 1.0)),
                         rng.choice(("quality", "late_delivery", "wrong_item", "other")),
                         "approved" if rng.random() < 0.8 else "pending",
@@ -474,6 +487,7 @@ def generate(
         started_at = _ts(rng, day)
         if started_at < user[1]:
             started_at = user[1] + timedelta(minutes=rng.randint(1, 600))
+        started_at = clamp(started_at)
         session_rows.append(
             (
                 session_id,
@@ -515,7 +529,7 @@ def generate(
         session_id, user_id, started_at = session_index[
             rng.randrange(len(session_index))
         ]
-        event_time = started_at + timedelta(seconds=rng.randint(0, 3_600))
+        event_time = clamp(started_at + timedelta(seconds=rng.randint(0, 3_600)))
         name = _weighted(rng, EVENT_NAMES)
         if name == "page_view" and rng.random() < 0.1:
             properties = json.dumps({"event": "PageView"})

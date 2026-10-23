@@ -53,7 +53,9 @@
 - [ ] **Stage 1 输入已明确**：schema/方言 prompt、澄清策略、拒答策略（见附录 D 的观察与第 9 节）
 - [x] **D2-0** 5 项口径已裁决（2026-10-22，写入 `seed/metrics.md`）
 - [x] **D2-1** 24 条用例已产出并合并进 `v1_30.yaml`（golden 逐条执行验证）
-- [ ] **D2-2 业务核对**：逐条确认数值量级与口径（附录 E 的“核对”列留空待确认）
+- [x] **D2-2 业务核对**：A~H 已核对；I 类设计已审、问题待改
+- [ ] **重新 seed**：生成器已加时间戳封顶（2026-10-23），但尚未执行；下次 seed 后需复核 A~D 数值
+- [ ] **I 类问题文案修改**：I-28~I-30 待定稿，改完再跑多轮验证
 - [ ] **D3~D4** 首次 `run`，记录基线 EX / 首答命中 / 工具轮次 / P95
 - [ ] **D5** 复跑稳定性验证，勾选 G0
 - [ ] 待确认：`seed/generate.py` 的 1.0 规模（100 万 events）在本机耗时与内存
@@ -494,6 +496,9 @@ anchor = date.today() - timedelta(days=1) # 数据截止到昨天
 - 批量写入用 `clickhouse_connect` 的 `client.insert(...)`，每批 5 万行。
 - 生成结束写入 `shop.meta_data_anchor`：`(anchor, seed, now())`。
 - 支持 `--drop`（重建）与 `--as-of YYYY-MM-DD`（补历史），默认不允许 `as-of` 早于今天 400 天。
+- **时间戳必须封顶**：`orders` / `payments` / `refunds` / `sessions` / `events` 的所有时间字段 `clamp` 到 `anchor 23:59:59`；`users.deleted_at`、`accounts.churned_at` 若晚于锚点则置 `NULL`。
+  否则会出现“未来数据”（例如退款日期到 anchor+20 天、事件溢出到次日），`now()` 窗口会把它们算进来，评测结果与锚点语义不一致。
+  该修正于 2026-10-23 落地，**尚未重新 seed**。
 
 ### 5.6 指标口径卡片（`analytics_agent/evaluation/seed/metrics.md`）
 
@@ -1159,6 +1164,10 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-23 | D2-2 | C-14 周起点改为周一 | 已调整 | `toStartOfWeek(..., 1)`（含 WHERE 边界）；4 行：09-21/09-28/10-05/10-12 |
 | 2026-10-23 | D2-2 | C-15 改写为 CTE + `ifNull`/`nullIf` + 显式上界 | 已调整 | 结果 `1.57%` 与旧写法一致；`check --strict` 41/41 |
 | 2026-10-23 | D2-2 | C-03 / C-15 的 3 处“上月同期”上界加 `least` 封顶 | 已加固 | 月末验证：`2026-12-31` 场景 raw=`12-02` → capped=`12-01`；结果不变 |
+| 2026-10-23 | D2-2 | E / F / G 三层审核（4+2+3） | **通过** | E 确需澄清；F 确需拒答；G 应回答无权限 |
+| 2026-10-23 | D2-2 | H-26 改为“最近 7 个完整自然日” | 已调整 | `toStartOfDay(now())` 左闭右开；7 行（10-16~10-22） |
+| 2026-10-23 | 生成器 | 事实表时间戳 clamp 到锚点 23:59:59 | 已修改，**未重新 seed** | 修复 events 溢出到 10-23；下次 seed 生效 |
+| 2026-10-23 | D2-2 | I 类审核 | 设计通过；问题待改 | 暂不跑多轮验证（I-28~30 文案待定） |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
@@ -1221,31 +1230,31 @@ GRANT SELECT ON shop.* TO readonly;
 | A-08 | A | answer | [x] | [x] | [x] | |
 | A-09 | A | answer | [x] | [x] | [x] | |
 | B-02 | B | answer | [x] | [x] | [x] | 通过（2026-10-23）：退款按商品金额占比分摊；订单 cohort 口径已确认 |
-| B-10 | B | answer | [x] | [ ] | [x] | |
-| B-11 | B | answer | [x] | [ ] | [x] | |
-| B-12 | B | answer | [x] | [ ] | [x] | |
-| B-13 | B | answer | [x] | [ ] | [x] | |
-| C-03 | C | answer | [x] | [ ] | [x] | 已加固：上月同期上界 `least(...)`（2026-10-23） |
-| C-14 | C | answer | [x] | [ ] | [x] | 已调整：周起点改为周一（`toStartOfWeek(..., 1)`，2026-10-23） |
-| C-15 | C | answer | [x] | [ ] | [x] | 已调整：CTE + `ifNull`/`nullIf` + `least` 封顶（2026-10-23） |
-| C-16 | C | answer | [x] | [ ] | [x] | |
-| D-04 | D | answer | [x] | [ ] | [x] | |
-| D-17 | D | answer | [x] | [ ] | [x] | |
-| D-18 | D | answer | [x] | [ ] | [x] | |
-| E-05 | E | clarify | — | [ ] | [x] | |
-| E-19 | E | clarify | — | [ ] | [x] | |
-| E-20 | E | clarify | — | [ ] | [x] | |
-| E-21 | E | clarify | — | [ ] | [x] | |
-| F-06 | F | refuse | — | [ ] | [x] | |
-| F-22 | F | refuse | — | [ ] | [x] | |
-| G-23 | G | refuse | — | [ ] | [x] | |
-| G-24 | G | refuse | — | [ ] | [x] | |
-| G-25 | G | refuse | — | [ ] | [x] | |
-| H-26 | H | answer | [x] | [ ] | [x] | |
-| H-27 | H | answer | [x] | [ ] | [x] | |
-| I-28 | I | answer | [x] | [ ] | [x] | |
-| I-29 | I | answer | [x] | [ ] | [x] | |
-| I-30 | I | answer | [x] | [ ] | [x] | |
+| B-10 | B | answer | [x] | [x] | [x] | |
+| B-11 | B | answer | [x] | [x] | [x] | |
+| B-12 | B | answer | [x] | [x] | [x] | |
+| B-13 | B | answer | [x] | [x] | [x] | |
+| C-03 | C | answer | [x] | [x] | [x] | 已加固：上月同期上界 `least(...)`（2026-10-23） |
+| C-14 | C | answer | [x] | [x] | [x] | 已调整：周起点改为周一（`toStartOfWeek(..., 1)`，2026-10-23） |
+| C-15 | C | answer | [x] | [x] | [x] | 已调整：CTE + `ifNull`/`nullIf` + `least` 封顶（2026-10-23） |
+| C-16 | C | answer | [x] | [x] | [x] | |
+| D-04 | D | answer | [x] | [x] | [x] | |
+| D-17 | D | answer | [x] | [x] | [x] | |
+| D-18 | D | answer | [x] | [x] | [x] | |
+| E-05 | E | clarify | — | [x] | [x] | 通过：缺时间窗口与“复购”定义 |
+| E-19 | E | clarify | — | [x] | [x] | 通过：缺指标/时间/渠道 |
+| E-20 | E | clarify | — | [x] | [x] | 通过：留存类型与窗口未定 |
+| E-21 | E | clarify | — | [x] | [x] | 通过：渠道/设备/时间未定 |
+| F-06 | F | refuse | — | [x] | [x] | 通过：库内无竞品数据，应明确说明不可回答 |
+| F-22 | F | refuse | — | [x] | [x] | 通过：库内无库存表 |
+| G-23 | G | refuse | — | [x] | [x] | 通过：viewer 无 `run_sql`，应回答无权限 |
+| G-24 | G | refuse | — | [x] | [x] | 通过：同上 |
+| G-25 | G | refuse | — | [x] | [x] | 通过：空组默认拒绝 |
+| H-26 | H | answer | [x] | [x] | [x] | 已改为最近 7 个完整自然日（10-16~10-22，7 行） |
+| H-27 | H | answer | [x] | [x] | [x] | 通过：4 类事件，近 30 天 |
+| I-28 | I | answer | [x] | [x] | [x] | 已审；问题待改（暂不跑多轮验证） |
+| I-29 | I | answer | [x] | [x] | [x] | 已审；问题待改 |
+| I-30 | I | answer | [x] | [x] | [x] | 已审；问题待改 |
 
 > `核对`：业务负责人逐条确认数值量级与口径后打 `x`。
 > `审核意见`：写“通过”，或“需调整：<具体原因>”；有调整时同步改 `v1_30.yaml` 并重跑 `check`。
