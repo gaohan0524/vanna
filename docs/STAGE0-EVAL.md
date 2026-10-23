@@ -953,7 +953,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | B-11 | B | analyst | 销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；`LIMIT 10` |
 | B-12 | B | analyst | 各国家用户的支付转化率是多少？ | answer | sessions join users；`countIf(converted=1)/count()` |
 | B-13 | B | analyst | 各品类的客单价是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；金额 `/100` |
-| C-03 | C | analyst | 本月至今的 GMV，跟上月同期比增长了多少？ | answer | MTD vs 上月 1 日至同日；`nullIf` 防除零 |
+| C-03 | C | analyst | 本月至今的 GMV，跟上月同期比增长了多少？ | answer | MTD vs 上月 1 日至同日；`least` 封顶 + `nullIf` 防除零 |
 | C-14 | C | analyst | 近 4 周每周的有效订单数是多少？ | answer | 周一为周起点（`toStartOfWeek(..., 1)`）；4 个完整周（不含本周） |
 | C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？ | answer | GMV − approved 退款；按退款发生月；MTD 对比 |
 | C-16 | C | analyst | 近 12 个月每月新增用户数及环比是多少？ | answer | 无数据月份补 0；首月环比为 `NULL` |
@@ -1158,6 +1158,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-23 | D2-2 | B-02 修复后复核 | **通过** | 确认退款分摊规则；订单 cohort（B-02）与退款发生月（C-15）两套口径并存已确认 |
 | 2026-10-23 | D2-2 | C-14 周起点改为周一 | 已调整 | `toStartOfWeek(..., 1)`（含 WHERE 边界）；4 行：09-21/09-28/10-05/10-12 |
 | 2026-10-23 | D2-2 | C-15 改写为 CTE + `ifNull`/`nullIf` + 显式上界 | 已调整 | 结果 `1.57%` 与旧写法一致；`check --strict` 41/41 |
+| 2026-10-23 | D2-2 | C-03 / C-15 的 3 处“上月同期”上界加 `least` 封顶 | 已加固 | 月末验证：`2016-12-31` 场景 raw=`12-02` → capped=`12-01`；结果不变 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
@@ -1224,9 +1225,9 @@ GRANT SELECT ON shop.* TO readonly;
 | B-11 | B | answer | [x] | [ ] | [x] | |
 | B-12 | B | answer | [x] | [ ] | [x] | |
 | B-13 | B | answer | [x] | [ ] | [x] | |
-| C-03 | C | answer | [x] | [ ] | [x] | |
+| C-03 | C | answer | [x] | [ ] | [x] | 已加固：上月同期上界 `least(...)`（2026-10-23） |
 | C-14 | C | answer | [x] | [ ] | [x] | 已调整：周起点改为周一（`toStartOfWeek(..., 1)`，2026-10-23） |
-| C-15 | C | answer | [x] | [ ] | [x] | 已调整：CTE + `ifNull`/`nullIf` + 显式上界（2026-10-23） |
+| C-15 | C | answer | [x] | [ ] | [x] | 已调整：CTE + `ifNull`/`nullIf` + `least` 封顶（2026-10-23） |
 | C-16 | C | answer | [x] | [ ] | [x] | |
 | D-04 | D | answer | [x] | [ ] | [x] | |
 | D-17 | D | answer | [x] | [ ] | [x] | |

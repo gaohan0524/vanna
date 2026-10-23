@@ -244,7 +244,10 @@ dataset:
             prev AS (
               SELECT SUM(amount_cents) AS v FROM shop.orders
               WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
-                AND created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
+                AND created_at < least(
+                    addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today())),
+                    toStartOfMonth(today())
+                )
                 AND status IN ('paid','shipped','completed')
                 AND currency = 'CNY' AND is_test = 0
             )
@@ -299,12 +302,18 @@ dataset:
               SELECT
                   (SELECT ifNull(SUM(amount_cents), 0) FROM shop.orders
                    WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
-                     AND created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
+                     AND created_at < least(
+                         addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today())),
+                         toStartOfMonth(today())
+                     )
                      AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0) AS rev,
                   (SELECT ifNull(SUM(r.amount_cents), 0) FROM shop.refunds r
                    JOIN shop.orders o ON o.order_id = r.order_id
                    WHERE r.created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
-                     AND r.created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
+                     AND r.created_at < least(
+                         addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today())),
+                         toStartOfMonth(today())
+                     )
                      AND r.status='approved' AND o.currency='CNY' AND o.is_test=0) AS ref
           )
           SELECT
