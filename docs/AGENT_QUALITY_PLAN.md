@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 0 完成**（2026-10-23；G0 有条件通过，仅“稳定性复跑”延后）；基线按 15% 估算记录，已进入 Stage 1。详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
+- **当前进度**：**Stage 0 完成**（2026-10-23；G0 有条件通过，仅“稳定性复跑”延后）；Stage 1 执行手册已就绪（[`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md)），待开始 T1-1。详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -270,6 +270,9 @@ class ResultSetEvaluator(Evaluator):
 ---
 
 ### Stage 1：静态上下文工程（P1，3~5 天）
+
+> **详细执行步骤见 [`docs/STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md)**（含 schema 抽取 SQL、JSON 结构、
+> 注释规范、L0/L1/L2 提示词全文、接线代码、D1~D5 每日任务与 G1 验收）。本章只保留总体要求。
 
 **目标**：消除 `SCHEMA_MISSING` 与 `DIALECT_ERROR` 两类错误。
 
@@ -616,13 +619,14 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - 已验证：`pytest tests/test_eval_*.py tests/test_deepseek_integration.py` **25 passed**；ruff 全通过；CLI/YAML/报告生成均正常；`.env` 可用，DeepSeek 集成已就位（待配 Key 实跑）
 - 顺带修复：`vanna/core/evaluation/dataset.py` 补 `encoding="utf-8"`（Windows GBK 下中文用例无法解析）
 
-### Stage 1
-- [ ] T1-1 schema 目录生成脚本
-- [ ] T1-2 L1 稳定指令
-- [ ] T1-3 L2 常驻事实
-- [ ] T1-4 业务术语表
-- [ ] T1-5 temperature / iterations 配置
-- [ ] EX：`____%`
+### Stage 1（执行细节见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md)）
+- [ ] T1-1 schema 目录（`context/schema_catalog.json` + 注释合并）
+- [ ] T1-2 L0 稳定指令（方言/时间窗口/硬约束/行为规则）
+- [ ] T1-3 L1 常驻 schema 渲染（12 表，≤2,200 tokens）
+- [ ] T1-4 术语表与行为规则（`glossary.yaml`，对应 E/F/G）
+- [ ] T1-5 接线与 prompt 版本（`system_prompt_builder` + `prompt_version`）
+- [ ] G1：EX ≥ 25%、behavior ≥ 70%、平均轮次 ≤ 5、两次差异 ≤ 5pt
+- [ ] EX：`____%`（基线 15% 估算）
 
 ### Stage 2
 - [ ] T2-1 `search_columns` / `describe_table`
