@@ -954,7 +954,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | B-12 | B | analyst | 各国家用户的支付转化率是多少？ | answer | sessions join users；`countIf(converted=1)/count()` |
 | B-13 | B | analyst | 各品类的客单价是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；金额 `/100` |
 | C-03 | C | analyst | 本月至今的 GMV，跟上月同期比增长了多少？ | answer | MTD vs 上月 1 日至同日；`nullIf` 防除零 |
-| C-14 | C | analyst | 近 4 周每周的有效订单数是多少？ | answer | `toStartOfWeek`；4 个完整周（不含本周） |
+| C-14 | C | analyst | 近 4 周每周的有效订单数是多少？ | answer | 周一为周起点（`toStartOfWeek(..., 1)`）；4 个完整周（不含本周） |
 | C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？ | answer | GMV − approved 退款；按退款发生月；MTD 对比 |
 | C-16 | C | analyst | 近 12 个月每月新增用户数及环比是多少？ | answer | 无数据月份补 0；首月环比为 `NULL` |
 | D-04 | D | analyst | 上周各渠道的支付转化率 | answer | 上周完整窗口；`converted=1` 占比 |
@@ -1156,6 +1156,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-23 | D2-2 | 新增 `preview` 子命令 | 完成 | 支持 `--case` 过滤、`--rows` 控制行数；用于逐条审核 |
 | 2026-10-23 | D2-2 | B-02 审核发现退款重复计算（1:N join 放大） | 已修复 | 改为按商品金额占比分摊；校验 `16,800,867.37 − 67,056.56 = 16,733,810.81` 与分品类求和一致 |
 | 2026-10-23 | D2-2 | B-02 修复后复核 | **通过** | 确认退款分摊规则；订单 cohort（B-02）与退款发生月（C-15）两套口径并存已确认 |
+| 2026-10-23 | D2-2 | C-14 周起点改为周一 | 已调整 | `toStartOfWeek(..., 1)`（含 WHERE 边界）；4 行：09-21/09-28/10-05/10-12 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
@@ -1223,7 +1224,7 @@ GRANT SELECT ON shop.* TO readonly;
 | B-12 | B | answer | [x] | [ ] | [x] | |
 | B-13 | B | answer | [x] | [ ] | [x] | |
 | C-03 | C | answer | [x] | [ ] | [x] | |
-| C-14 | C | answer | [x] | [ ] | [x] | |
+| C-14 | C | answer | [x] | [ ] | [x] | 已调整：周起点改为周一（`toStartOfWeek(..., 1)`，2026-10-23） |
 | C-15 | C | answer | [x] | [ ] | [x] | |
 | C-16 | C | answer | [x] | [ ] | [x] | |
 | D-04 | D | answer | [x] | [ ] | [x] | |

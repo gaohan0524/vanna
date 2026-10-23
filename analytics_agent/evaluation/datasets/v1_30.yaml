@@ -264,10 +264,10 @@ dataset:
         difficulty: medium
         order_sensitive: true
         golden_sql: |
-          SELECT toStartOfWeek(created_at) AS week_start, count() AS orders
+          SELECT toStartOfWeek(created_at, 1) AS week_start, count() AS orders
           FROM shop.orders
-          WHERE created_at >= toStartOfWeek(today()) - INTERVAL 4 WEEK
-            AND created_at < toStartOfWeek(today())
+          WHERE created_at >= toStartOfWeek(today(), 1) - INTERVAL 4 WEEK
+            AND created_at < toStartOfWeek(today(), 1)
             AND status IN ('paid','shipped','completed')
             AND currency = 'CNY' AND is_test = 0
           GROUP BY week_start
