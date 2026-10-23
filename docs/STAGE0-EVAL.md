@@ -3,7 +3,7 @@
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 0 / T0-0 ~ T0-6** 的详细执行版。
 > 完成本文全部验收项（G0）后，才进入 Stage 1（静态上下文工程）。
 >
-> - 状态：**D1 完成；2026-10-23 ClickHouse 端口不可达，待恢复后重灌数据并跑首次基线**（见 0.1）
+> - 状态：**D1 完成（灌数 + 预检 20/20），待冒烟 run 与首次基线**（见 0.1）
 > - 主评测库：自建 ClickHouse 合成业务库（`shop`）
 > - 方法论参考：`ClickHouse/data-agent-mnist`（Apache-2.0）
 > - 业务专家：项目负责人本人（负责口径与 golden SQL 审核）
@@ -42,6 +42,8 @@
 | `check --dataset smoke.yaml` | **20/20 PASS**：连接、只读探针、12 表行数、数据锚点、3 条用例、golden `A-01`（4 行 / 0.02s） |
 | `run --dataset smoke.yaml`（4 条） | 管线验证通过：EX 50%、首答 50%、behavior 0%、avg_tools 0.5；`A-02` 走通 `run_sql` 并命中（详见附录 D） |
 | `check --strict --dataset v1_30.yaml` | **41/41 PASS**：30 条用例、21 条 golden（各 <0.1s）、5 条 `without_filter_sql` 破坏性验证全部“结果有变化” |
+| `seed` 重建（2026-10-23） | 锚点更新为 `2026-10-22`，12 表行数与 10-22 一致；重建后 `check --strict` 仍 41/41 |
+| `preview` 子命令 | 逐条打印问题/期望/golden 结果，供 D2-2 审核使用 |
 
 ### 未完成 / 待执行（下一步）
 
@@ -52,7 +54,6 @@
 - [x] **D2-0** 5 项口径已裁决（2026-10-22，写入 `seed/metrics.md`）
 - [x] **D2-1** 24 条用例已产出并合并进 `v1_30.yaml`（golden 逐条执行验证）
 - [ ] **D2-2 业务核对**：逐条确认数值量级与口径（附录 E 的“核对”列留空待确认）
-- [ ] **2026-10-23 数据重建**：`seed` 失败——主机 `192.168.0.193` ping 通，但 TCP `18123` 不接受连接（ClickHouse 未启动/端口变化）；锚点仍为 `2026-10-21`，需先恢复服务
 - [ ] **D3~D4** 首次 `run`，记录基线 EX / 首答命中 / 工具轮次 / P95
 - [ ] **D5** 复跑稳定性验证，勾选 G0
 - [ ] 待确认：`seed/generate.py` 的 1.0 规模（100 万 events）在本机耗时与内存
@@ -839,6 +840,7 @@ class ResultSetEvaluator(Evaluator):
 ```bash
 python -m analytics_agent.evaluation.cli check                       # 预检 + golden 自检
 python -m analytics_agent.evaluation.cli seed --drop --as-of 2026-10-21
+python -m analytics_agent.evaluation.cli preview --case A-07,C-15   # 审核：看 golden 结果
 python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/smoke.yaml      # 3 条，开发用
 python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/v1_30.yaml --out reports/2026-10-22
 python -m analytics_agent.evaluation.cli report --run reports/2026-10-22             # 生成 html
@@ -978,6 +980,11 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 
 #### D2-2 单条用例的标准流程（每条 8~12 分钟）
 
+0. **预览**（审核阶段用）：逐条打印问题、期望与 golden 结果，避免在客户端里反复贴 SQL。
+   ```bash
+   python -m analytics_agent.evaluation.cli preview --case A-07,C-15
+   python -m analytics_agent.evaluation.cli preview            # 全部 30 条
+   ```
 1. **选题**：从 D2-1 表里取一条，先写问题文本（真实口语，不要提示 SQL 写法）。
 2. **写 golden SQL**：按 `metrics.md` 口径；只读账号执行。
 3. **核对结果**：
@@ -1143,7 +1150,8 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 | D2-1 | `check --strict --dataset v1_30.yaml` | **41/41 PASS** | 30 条用例；golden 均 <0.1s；5 条 without_filter 结果均变化 |
 | 2026-10-22 | D2-3 | 新增 DeepSeek API 适配（OpenAI 兼容 + temperature 透传） | 代码完成，待配置 Key 后冒烟 | 切换步骤见附录 F；本地 Ollama 仍可回退 |
 | 2026-10-22 | D2-3 | 重构：DeepSeek 移入 `vanna.integrations.deepseek`，OpenAI 增加可选 `temperature` | 完成 | 删除 `analytics_agent/llm/`；模型名不再白名单；相关单测 40 passed |
-| 2026-10-23 | D1-2 复跑 | `seed --scale 0.1` | **失败** | 主机 ping 通（3ms），TCP `18123` 拒绝连接；ClickHouse 未启动或端口变化 |
+| 2026-10-23 | D1-2 | 跨天后重新 `seed --scale 0.1` | 成功 | 锚点 `2026-10-22`；12 表行数不变；`check --strict` 41/41 |
+| 2026-10-23 | D2-2 | 新增 `preview` 子命令 | 完成 | 支持 `--case` 过滤、`--rows` 控制行数；用于逐条审核 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 

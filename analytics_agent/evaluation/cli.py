@@ -2,6 +2,7 @@
 
 python -m analytics_agent.evaluation.cli check
 python -m analytics_agent.evaluation.cli seed --scale 0.1
+python -m analytics_agent.evaluation.cli preview --case A-01,C-15
 python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/smoke.yaml
 python -m analytics_agent.evaluation.cli report --run reports/20261022-101500
 """
@@ -12,6 +13,7 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -27,7 +29,9 @@ from .evaluators import (
     ResultSetEvaluator,
     behavior_of,
     extract_sqls,
+    golden_sql_of,
 )
+from .executor import execute_safe
 from .labeling import classify
 from .preflight import run_checks
 from .report import build_payload, write_reports
@@ -65,6 +69,56 @@ async def _cmd_check(args: argparse.Namespace) -> int:
 
     print(f"\n{len(results) - failures}/{len(results)} checks passed")
     return 0 if failures == 0 else 1
+
+
+async def _cmd_preview(args: argparse.Namespace) -> int:
+    """Print question + golden SQL result for manual review (D2-2)."""
+    settings = Settings.from_env()
+    dataset_path = args.dataset or _default_dataset(settings)
+    dataset = EvaluationDataset.from_yaml(dataset_path)
+
+    wanted = None
+    if args.case:
+        wanted = {item.strip().upper() for item in args.case.split(",") if item.strip()}
+
+    cases = [
+        case
+        for case in dataset.test_cases
+        if wanted is None or case.id.upper() in wanted
+    ]
+    if wanted is not None:
+        missing = wanted - {case.id.upper() for case in cases}
+        if missing:
+            print(f"unknown case id(s): {', '.join(sorted(missing))}", file=sys.stderr)
+            return 1
+
+    rows = max(1, args.rows)
+    for case in cases:
+        meta = case.metadata or {}
+        print("=" * 78)
+        print(
+            f"{case.id}  layer={meta.get('layer', '-')}  expected={behavior_of(case)}"
+        )
+        print(f"Q: {case.message}")
+
+        sql = golden_sql_of(case) if behavior_of(case) == "answer" else None
+        if sql is None:
+            print("(no golden_sql: should clarify or refuse)")
+            continue
+
+        started = time.perf_counter()
+        frame, error = await execute_safe(sql)
+        elapsed = time.perf_counter() - started
+        if frame is None:
+            print(f"ERROR: {error}")
+            continue
+
+        print(f"rows={len(frame)} cols={frame.shape[1]} time={elapsed:.2f}s")
+        print(frame.head(rows).to_string(index=False))
+
+    print("=" * 78)
+    print(f"{len(cases)} case(s) previewed")
+    return 0
 
 
 def _cmd_seed(args: argparse.Namespace) -> int:
@@ -212,6 +266,16 @@ def build_parser() -> argparse.ArgumentParser:
     check.add_argument("--skip-golden", action="store_true")
     check.add_argument("--strict", action="store_true", help="require >= 30 cases")
     check.set_defaults(func=lambda args: _cmd_check(args))
+
+    preview = sub.add_parser(
+        "preview", help="print question + golden result for manual review"
+    )
+    preview.add_argument("--dataset", help="path to the dataset yaml")
+    preview.add_argument("--case", help="comma separated ids, e.g. A-01,C-15")
+    preview.add_argument(
+        "--rows", type=int, default=5, help="rows to print (default 5)"
+    )
+    preview.set_defaults(func=lambda args: _run_sync(_cmd_preview, args))
 
     seed = sub.add_parser("seed", help="(re)generate the synthetic warehouse")
     seed.add_argument("--as-of", help="anchor date YYYY-MM-DD (default: yesterday)")
