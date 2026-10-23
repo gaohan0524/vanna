@@ -42,3 +42,4 @@
      `refund_share = order_refund * item_amount / order_item_total`；
    - 禁止把订单级退款直接 JOIN 到多行商品上再 `SUM`——一个订单有 N 个商品，退款会被放大 N 倍并错分到多个品类。
 7. 校验恒等式：`Σ 品类净收入 = 窗口内商品总额 − 这些订单的 approved 退款总额`（四舍五入误差 ≤ 0.1 元）。
+8. 时间窗口统一左闭右开（`>= start AND < end`），并显式写出上界；聚合前用 `ifNull(SUM(...), 0)` 兜住空区间，除法用 `nullIf` 防零。

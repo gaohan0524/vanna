@@ -282,48 +282,38 @@ dataset:
         layer: C
         difficulty: hard
         golden_sql: |
-          SELECT round(
-              (
-                  (
-                      (SELECT SUM(amount_cents) FROM shop.orders
-                       WHERE toStartOfMonth(created_at) = toStartOfMonth(today())
-                         AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
-                      -
-                      (SELECT SUM(r.amount_cents) FROM shop.refunds r
-                       JOIN shop.orders o ON o.order_id = r.order_id
-                       WHERE toStartOfMonth(r.created_at) = toStartOfMonth(today())
-                         AND r.status='approved' AND o.currency='CNY' AND o.is_test=0)
-                  )
-                  -
-                  (
-                      (SELECT SUM(amount_cents) FROM shop.orders
-                       WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
-                         AND created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
-                         AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
-                      -
-                      (SELECT SUM(r.amount_cents) FROM shop.refunds r
-                       JOIN shop.orders o ON o.order_id = r.order_id
-                       WHERE r.created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
-                         AND r.created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
-                         AND r.status='approved' AND o.currency='CNY' AND o.is_test=0)
-                  )
-              )
-              / nullIf(
-                  (
-                      (SELECT SUM(amount_cents) FROM shop.orders
-                       WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
-                         AND created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
-                         AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
-                      -
-                      (SELECT SUM(r.amount_cents) FROM shop.refunds r
-                       JOIN shop.orders o ON o.order_id = r.order_id
-                       WHERE r.created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
-                         AND r.created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
-                         AND r.status='approved' AND o.currency='CNY' AND o.is_test=0)
-                  ), 0
-              ) * 100,
-              2
-          ) AS net_mom_pct
+          WITH
+          this_month AS (
+              SELECT
+                  (SELECT ifNull(SUM(amount_cents), 0) FROM shop.orders
+                   WHERE created_at >= toStartOfMonth(today())
+                     AND created_at < toStartOfMonth(today() + INTERVAL 1 MONTH)
+                     AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0) AS rev,
+                  (SELECT ifNull(SUM(r.amount_cents), 0) FROM shop.refunds r
+                   JOIN shop.orders o ON o.order_id = r.order_id
+                   WHERE r.created_at >= toStartOfMonth(today())
+                     AND r.created_at < toStartOfMonth(today() + INTERVAL 1 MONTH)
+                     AND r.status='approved' AND o.currency='CNY' AND o.is_test=0) AS ref
+          ),
+          last_month AS (
+              SELECT
+                  (SELECT ifNull(SUM(amount_cents), 0) FROM shop.orders
+                   WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+                     AND created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
+                     AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0) AS rev,
+                  (SELECT ifNull(SUM(r.amount_cents), 0) FROM shop.refunds r
+                   JOIN shop.orders o ON o.order_id = r.order_id
+                   WHERE r.created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+                     AND r.created_at < addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today()))
+                     AND r.status='approved' AND o.currency='CNY' AND o.is_test=0) AS ref
+          )
+          SELECT
+              round(
+                  ((this_month.rev - this_month.ref) - (last_month.rev - last_month.ref))
+                  / nullIf((last_month.rev - last_month.ref), 0) * 100,
+                  2
+              ) AS net_mom_pct
+          FROM this_month, last_month
         expected_behavior: answer
 
     - id: "C-16"
