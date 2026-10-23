@@ -24,6 +24,8 @@
 | 3 | 退款计入哪个月 | 按 `refunds.created_at`（发生月）扣减，不按原订单月份 | 已确认 |
 | 4 | “有效订单”范围 | `paid / shipped / completed`；不含 pending / cancelled / refunded | 已确认 |
 | 5 | 混合币种 | 经营指标只看 `CNY`；USD 单独出题 | 已确认 |
+| 6 | 品类净收入（B-02）退款归属 | 订单 cohort：按 `orders.created_at` 圈定窗口，退款回溯到该订单所属期间；按商品金额占比分摊 | 已确认（2026-10-23） |
+| 7 | 公司级净收入（C-15）退款归属 | 按 `refunds.created_at` 发生月扣减 | 已确认（2026-10-22） |
 
 > 这 5 项同时决定 E 类用例的标准答案；变更需记录日期并触发 golden 复核。
 
