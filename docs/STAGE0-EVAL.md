@@ -673,6 +673,7 @@ dataset:
 3. 不要出“golden 有多种合理答案”的题；若口径确实不唯一，归入 E 类（应澄清）。
 4. F 类必须是**数据上真的无法回答**，而不是“模型不会”。
 5. 每道题的 golden 结果必须你本人看过，确认“这就是我要的数字”。
+6. **多表聚合先确认粒度**：订单级字段（退款、支付）不能直接 JOIN 到商品行后 `SUM`；先聚合到同粒度，或按金额占比分摊。B-02 就是反例（已修复）。
 
 ---
 
@@ -947,7 +948,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | A-07 | A | analyst | 各支付方式的成功支付金额分别是多少？ | answer | `status='succeeded' AND is_retry=0`；金额 `/100` |
 | A-08 | A | analyst | 近 7 天各渠道新增用户数是多少？ | answer | `is_test=0`、`deleted_at IS NULL`、相对时间 |
 | A-09 | A | analyst | 当前各套餐的 MRR 是多少？ | answer | 仅 `accounts.status='active'`；不按用户去重 |
-| B-02 | B | analyst | 按品类看最近一个月的净收入 | answer | items+orders+products+refunds；仅 approved 退款 |
+| B-02 | B | analyst | 按品类看最近一个月的净收入 | answer | 订单 cohort；approved 退款**按商品金额占比分摊**到 items，禁止直接 SUM 订单级退款 |
 | B-10 | B | analyst | 近 90 天各渠道的退款金额是多少？ | answer | 退款 approved；币种/测试过滤；按订单渠道归因 |
 | B-11 | B | analyst | 销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；`LIMIT 10` |
 | B-12 | B | analyst | 各国家用户的支付转化率是多少？ | answer | sessions join users；`countIf(converted=1)/count()` |
@@ -1090,6 +1091,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | 只读账号没验证 | 评测期误写库 | 预检尝试建表必须失败 |
 | 时间函数依赖 `now()` | 跨零点跑出差异 | 数据集锚点 `today-1`；评测在单日内完成，或记录 `run_at` 并接受微小差异 |
 | 用模型生成 golden | 口径漂移且不可解释 | 只由业务专家产出；模型仅用于交叉检查 |
+| 1:N join 后直接 SUM 订单级字段 | 退款/金额被放大 N 倍并错分到多个品类 | 先聚合到同一粒度，或按金额占比分摊（见 B-02、`metrics.md` 第 6 条） |
 
 ---
 
@@ -1152,6 +1154,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 | D2-3 | 重构：DeepSeek 移入 `vanna.integrations.deepseek`，OpenAI 增加可选 `temperature` | 完成 | 删除 `analytics_agent/llm/`；模型名不再白名单；相关单测 40 passed |
 | 2026-10-23 | D1-2 | 跨天后重新 `seed --scale 0.1` | 成功 | 锚点 `2026-10-22`；12 表行数不变；`check --strict` 41/41 |
 | 2026-10-23 | D2-2 | 新增 `preview` 子命令 | 完成 | 支持 `--case` 过滤、`--rows` 控制行数；用于逐条审核 |
+| 2026-10-23 | D2-2 | B-02 审核发现退款重复计算（1:N join 放大） | 已修复 | 改为按商品金额占比分摊；校验 `16,800,867.37 − 67,056.56 = 16,733,810.81` 与分品类求和一致 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
@@ -1209,11 +1212,11 @@ GRANT SELECT ON shop.* TO readonly;
 
 | ID | 层 | 期望 | SQL | 核对 | 入 YAML | 审核意见 |
 |---|---|---|---|---|---|---|
-| A-01 | A | answer | [x] | [ ] | [x] | |
-| A-07 | A | answer | [x] | [ ] | [x] | |
-| A-08 | A | answer | [x] | [ ] | [x] | |
-| A-09 | A | answer | [x] | [ ] | [x] | |
-| B-02 | B | answer | [x] | [ ] | [x] | |
+| A-01 | A | answer | [x] | [x] | [x] | |
+| A-07 | A | answer | [x] | [x] | [x] | |
+| A-08 | A | answer | [x] | [x] | [x] | |
+| A-09 | A | answer | [x] | [x] | [x] | |
+| B-02 | B | answer | [x] | [ ] | [x] | 需调整：退款粒度（2026-10-23 已修复，待复核） |
 | B-10 | B | answer | [x] | [ ] | [x] | |
 | B-11 | B | answer | [x] | [ ] | [x] | |
 | B-12 | B | answer | [x] | [ ] | [x] | |

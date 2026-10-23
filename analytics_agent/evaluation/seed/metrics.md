@@ -6,7 +6,7 @@
 | 指标 | 定义 | 计算口径（针对本库） | 易错点 |
 |---|---|---|---|
 | GMV | 成交总额 | `orders` 中 `status IN ('paid','shipped','completed')` 且 `currency='CNY'`、`is_test=0` 的 `amount_cents` 之和，**不扣退款** | 含 USD、含取消单、含测试账号 |
-| 净收入 | GMV − 退款 | 减去 `refunds.status='approved'` 的金额；**按退款发生月**归属 | 忘记退款状态过滤；按原订单月份归属 |
+| 净收入 | GMV − 退款 | 减去 `refunds.status='approved'` 的金额；公司级同环比按退款发生月归属，品类级按订单 cohort（见下） | 忘记退款状态过滤；粒度不一致导致退款重复计 |
 | 客单价 AOV | GMV / 有效订单数 | 分母与 GMV 同口径 | 分母用了全量订单 |
 | 支付金额 | 实际到账 | `payments.status='succeeded' AND is_retry=0` 的 `amount_cents` 之和 | 重复流水 |
 | 复购率 | 近 90 天下单 ≥ 2 次的用户占比 | 按 `orders.created_at` 圈定窗口，去重用户后统计 | 只统计首单用户；未限定时间范围 |
@@ -34,3 +34,9 @@
 3. 时间统一按 `Asia/Shanghai` 解释；分区字段为 `event_date`/`toDate(created_at)` 等。
 4. 口径不唯一时（如“复购率”未给时间窗口），应先澄清而不是猜。
 5. 同环比默认「本月至今 vs 上月 1 日至同日」（MTD），不是整月对比整月。
+6. **品类净收入（B-02）的口径**：
+   - 以 `orders.created_at` 圈定时间窗口（订单 cohort），退款回溯到该订单所属期间；
+   - 订单级 `refunds.amount_cents` 没有 `product_id`，必须**按商品金额占比**分摊到 `order_items`：
+     `refund_share = order_refund * item_amount / order_item_total`；
+   - 禁止把订单级退款直接 JOIN 到多行商品上再 `SUM`——一个订单有 N 个商品，退款会被放大 N 倍并错分到多个品类。
+7. 校验恒等式：`Σ 品类净收入 = 窗口内商品总额 − 这些订单的 approved 退款总额`（四舍五入误差 ≤ 0.1 元）。

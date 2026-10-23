@@ -99,20 +99,38 @@ dataset:
         layer: B
         difficulty: medium
         golden_sql: |
-          SELECT p.category,
-                 (SUM(oi.item_amount_cents) - SUM(ifNull(r.amount_cents, 0))) / 100.0 AS net_revenue
-          FROM shop.order_items oi
-          JOIN shop.orders o ON o.order_id = oi.order_id
-          JOIN shop.products p ON p.product_id = oi.product_id
-          LEFT JOIN (
-              SELECT order_id, SUM(amount_cents) AS amount_cents
+          WITH order_item_sum AS (
+              SELECT order_id, SUM(item_amount_cents) AS total_order_item_amount
+              FROM shop.order_items
+              GROUP BY order_id
+          ),
+          order_refund_sum AS (
+              SELECT order_id, SUM(amount_cents) AS total_refund_amount
               FROM shop.refunds
               WHERE status = 'approved'
               GROUP BY order_id
-          ) r ON r.order_id = o.order_id
+          )
+          SELECT
+              p.category,
+              round(
+                  SUM(
+                      oi.item_amount_cents -
+                      (
+                          ifNull(r.total_refund_amount, 0)
+                          * (oi.item_amount_cents / NULLIF(ois.total_order_item_amount, 0))
+                      )
+                  ) / 100.0,
+                  2
+              ) AS net_revenue
+          FROM shop.order_items oi
+          JOIN shop.orders o ON o.order_id = oi.order_id
+          JOIN shop.products p ON p.product_id = oi.product_id
+          JOIN order_item_sum ois ON ois.order_id = oi.order_id
+          LEFT JOIN order_refund_sum r ON r.order_id = o.order_id
           WHERE o.created_at >= now() - INTERVAL 30 DAY
             AND o.status IN ('paid','shipped','completed')
-            AND o.currency = 'CNY' AND o.is_test = 0
+            AND o.currency = 'CNY'
+            AND o.is_test = 0
           GROUP BY p.category
           ORDER BY net_revenue DESC
         expected_behavior: answer
