@@ -101,7 +101,9 @@ async def classify(test_case: TestCase, agent_result: AgentResult) -> str:
                 actual,
                 order_sensitive=order_sensitive,
                 column_alias=column_alias,
-                column_match=(test_case.metadata or {}).get("column_match", "values"),
+                column_match=(test_case.metadata or {}).get(
+                    "column_match", "projection"
+                ),
             )
         )
 
@@ -136,7 +138,7 @@ async def classify(test_case: TestCase, agent_result: AgentResult) -> str:
                     actual,
                     column_alias=column_alias,
                     column_match=(test_case.metadata or {}).get(
-                        "column_match", "values"
+                        "column_match", "projection"
                     ),
                 ).equal:
                     return "FILTER_MISSING"

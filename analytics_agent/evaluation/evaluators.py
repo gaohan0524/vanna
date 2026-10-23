@@ -160,7 +160,9 @@ class ResultSetEvaluator(Evaluator):
                 actual,
                 order_sensitive=order_sensitive,
                 column_alias=column_alias,
-                column_match=(test_case.metadata or {}).get("column_match", "values"),
+                column_match=(test_case.metadata or {}).get(
+                    "column_match", "projection"
+                ),
             )
             if comparison.equal:
                 return _pass(
@@ -288,7 +290,7 @@ class FirstTryEvaluator(Evaluator):
                 (test_case.metadata or {}).get("order_sensitive", False)
             ),
             column_alias=(test_case.metadata or {}).get("column_alias") or None,
-            column_match=(test_case.metadata or {}).get("column_match", "values"),
+            column_match=(test_case.metadata or {}).get("column_match", "projection"),
         )
         if comparison.equal:
             return _pass(self.name, test_case, "first query matched")

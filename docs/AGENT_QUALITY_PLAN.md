@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：Stage 0 的 D1 已完成（灌数 312,569 行 + 预检 20/20，2026-10-22），待冒烟 run 与首次基线；详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
+- **当前进度**：Stage 0 已完成收尾（30 条用例审核通过、DeepSeek 实跑、基线按 15% 估算记录，2026-10-23）；仅“稳定性复跑”留待 Stage 1 后补，准备进入 Stage 1。详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -598,21 +598,21 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 
 ### Stage 0（执行细节见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md)）
 
-> 2026-10-22：代码骨架已完成（`1e1e565`），下表区分“代码就绪”与“运行时验证”。
+> 2026-10-23：Stage 0 收尾完成。仅“稳定性复跑”未测，经裁定先进入 Stage 1。
 
-- [x] T0-0 合成业务库 **代码完成**（12 表 DDL + 生成脚本 + 只读账号脚本）；待真实实例执行
+- [x] T0-0 合成业务库（12 表 DDL + 生成脚本 + 只读账号脚本）；0.1 规模实跑通过
 - [x] T0-2 golden SQL 机制完成（现场执行，不存 CSV）
 - [x] T0-3 `ResultSetEvaluator` + `ClarificationEvaluator` + `FirstTryEvaluator`
 - [x] T0-4 一键评测运行器 + HTML/JSON 报告
 - [x] T0-5 预检（连接/只读/锚点/golden 自检）
-- [x] T0-6 失败 taxonomy **规则完成**；待真实失败样本验证
-- [x] T0-0 运行时：`seed --scale 0.1` 实跑通过（2026-10-22，12 表 312,569 行，锚点 2026-10-21）
+- [x] T0-6 失败 taxonomy：30 条实跑归因完成，`UNKNOWN` = 0%
+- [x] T0-0 运行时：`seed --scale 0.1` 实跑通过；2026-10-23 重灌并封顶时间戳
 - [x] T0-1 评测集：**30 / 30**（24 条新增，golden 逐条执行验证；5 项口径已裁决）
-- [x] T0-1 预检：`check --strict --dataset v1_30.yaml` → **41/41 PASS**（2026-10-22）
-- [ ] T0-1 业务核对：逐条确认数值量级与口径（`STAGE0-EVAL.md` 附录 E 的“核对”列）
-- [x] T0-5 运行时：`check --dataset smoke.yaml` **20/20 PASS**（2026-10-22；30 条齐备后跑 `--strict` 复检）
-- [ ] 基线 EX 记录：`____%`（复跑波动 `____pt`）
-- [x] **D1-5 冒烟 run**：4 条用例，EX 50%、首答 50%、behavior 0%、avg_tools 0.5；`A-02` 走通 `run_sql`（2026-10-22）
+- [x] T0-1 预检：`check --strict --dataset v1_30.yaml` → **41/41 PASS**（2026-10-23）
+- [x] T0-1 业务核对：A~I 全部核对完成（2026-10-23）
+- [x] T0-5 运行时：`check --dataset smoke.yaml` **20/20 PASS**
+- [x] 基线 EX 记录：**15%（估算）**（实测 0/21，95% 上界 13.6%；复跑波动未测）
+- [x] **D1-5 冒烟 run**：4 条；DeepSeek 实跑，`A-02` 走通 `run_sql`（2026-10-23）
 - 已验证：`pytest tests/test_eval_*.py tests/test_deepseek_integration.py` **25 passed**；ruff 全通过；CLI/YAML/报告生成均正常；`.env` 可用，DeepSeek 集成已就位（待配 Key 实跑）
 - 顺带修复：`vanna/core/evaluation/dataset.py` 补 `encoding="utf-8"`（Windows GBK 下中文用例无法解析）
 

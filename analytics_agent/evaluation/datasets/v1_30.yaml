@@ -20,7 +20,8 @@ dataset:
         golden_sql: |
           SELECT channel, SUM(amount_cents) / 100.0 AS gmv
           FROM shop.orders
-          WHERE created_at >= now() - INTERVAL 30 DAY
+          WHERE created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND created_at <  toStartOfDay(now())
             AND status IN ('paid','shipped','completed')
             AND currency = 'CNY' AND is_test = 0
           GROUP BY channel
@@ -28,7 +29,8 @@ dataset:
         without_filter_sql: |
           SELECT channel, SUM(amount_cents) / 100.0 AS gmv
           FROM shop.orders
-          WHERE created_at >= now() - INTERVAL 30 DAY
+          WHERE created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND created_at <  toStartOfDay(now())
           GROUP BY channel
           ORDER BY gmv DESC
         expected_behavior: answer
@@ -64,7 +66,8 @@ dataset:
         golden_sql: |
           SELECT channel, count() AS new_users
           FROM shop.users
-          WHERE signup_at >= now() - INTERVAL 7 DAY
+          WHERE signup_at >= toStartOfDay(now()) - INTERVAL 7 DAY
+            AND signup_at <  toStartOfDay(now())
             AND is_test = 0 AND deleted_at IS NULL
           GROUP BY channel
           ORDER BY new_users DESC
@@ -127,7 +130,8 @@ dataset:
           JOIN shop.products p ON p.product_id = oi.product_id
           JOIN order_item_sum ois ON ois.order_id = oi.order_id
           LEFT JOIN order_refund_sum r ON r.order_id = o.order_id
-          WHERE o.created_at >= now() - INTERVAL 30 DAY
+          WHERE o.created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND o.created_at <  toStartOfDay(now())
             AND o.status IN ('paid','shipped','completed')
             AND o.currency = 'CNY'
             AND o.is_test = 0
@@ -147,7 +151,8 @@ dataset:
           FROM shop.refunds r
           JOIN shop.orders o ON o.order_id = r.order_id
           WHERE r.status = 'approved'
-            AND r.created_at >= now() - INTERVAL 90 DAY
+            AND r.created_at >= toStartOfDay(now()) - INTERVAL 90 DAY
+            AND r.created_at <  toStartOfDay(now())
             AND o.currency = 'CNY' AND o.is_test = 0
           GROUP BY o.channel
           ORDER BY refund_amount DESC
@@ -155,7 +160,8 @@ dataset:
           SELECT o.channel, SUM(r.amount_cents) / 100.0 AS refund_amount
           FROM shop.refunds r
           JOIN shop.orders o ON o.order_id = r.order_id
-          WHERE r.created_at >= now() - INTERVAL 90 DAY
+          WHERE r.created_at >= toStartOfDay(now()) - INTERVAL 90 DAY
+            AND r.created_at <  toStartOfDay(now())
             AND o.currency = 'CNY' AND o.is_test = 0
           GROUP BY o.channel
           ORDER BY refund_amount DESC
@@ -418,7 +424,8 @@ dataset:
               SELECT uniqExactIf(session_id, event_name = 'add_to_cart') AS cart_sessions,
                      uniqExactIf(session_id, event_name = 'purchase') AS purchase_sessions
               FROM shop.events
-              WHERE event_time >= now() - INTERVAL 7 DAY
+              WHERE event_time >= toStartOfDay(now()) - INTERVAL 7 DAY
+                AND event_time <  toStartOfDay(now())
           )
         expected_behavior: answer
 
@@ -535,7 +542,8 @@ dataset:
         golden_sql: |
           SELECT event_name, count() AS events
           FROM shop.events
-          WHERE event_time >= now() - INTERVAL 30 DAY
+          WHERE event_time >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND event_time <  toStartOfDay(now())
           GROUP BY event_name
           ORDER BY events DESC
         expected_behavior: answer
@@ -552,7 +560,8 @@ dataset:
         golden_sql: |
           SELECT channel, SUM(amount_cents) / 100.0 AS gmv
           FROM shop.orders
-          WHERE created_at >= now() - INTERVAL 30 DAY
+          WHERE created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND created_at <  toStartOfDay(now())
             AND status IN ('paid','shipped','completed')
             AND currency = 'CNY' AND is_test = 0
           GROUP BY channel
@@ -571,7 +580,8 @@ dataset:
           SELECT SUM(amount_cents) / 100.0 AS organic_gmv
           FROM shop.orders
           WHERE channel = 'organic'
-            AND created_at >= now() - INTERVAL 30 DAY
+            AND created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND created_at <  toStartOfDay(now())
             AND status IN ('paid','shipped','completed')
             AND currency = 'CNY' AND is_test = 0
         expected_behavior: answer
@@ -588,18 +598,19 @@ dataset:
           SELECT round(
               (
                   (SELECT SUM(amount_cents) FROM shop.orders
-                   WHERE channel='organic' AND created_at >= now() - INTERVAL 30 DAY
+                   WHERE channel='organic' AND created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+                     AND created_at < toStartOfDay(now())
                      AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
                   -
                   (SELECT SUM(amount_cents) FROM shop.orders
-                   WHERE channel='organic' AND created_at >= now() - INTERVAL 60 DAY
-                     AND created_at < now() - INTERVAL 30 DAY
+                   WHERE channel='organic' AND created_at >= toStartOfDay(now()) - INTERVAL 60 DAY
+                     AND created_at < toStartOfDay(now()) - INTERVAL 30 DAY
                      AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
               )
               / nullIf(
                   (SELECT SUM(amount_cents) FROM shop.orders
-                   WHERE channel='organic' AND created_at >= now() - INTERVAL 60 DAY
-                     AND created_at < now() - INTERVAL 30 DAY
+                   WHERE channel='organic' AND created_at >= toStartOfDay(now()) - INTERVAL 60 DAY
+                     AND created_at < toStartOfDay(now()) - INTERVAL 30 DAY
                      AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0),
                   0
               ) * 100,

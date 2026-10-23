@@ -37,10 +37,35 @@ def test_numeric_tolerance():
 
 
 def test_shape_and_column_mismatch():
-    golden = pd.DataFrame({"a": [1], "b": [2]})
+    golden = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
 
-    assert results_equal(golden, pd.DataFrame({"a": [1]})).reason == "shape"
-    assert results_equal(golden, pd.DataFrame({"a": [1], "c": [2]})).reason == "columns"
+    # 行数不同 → shape
+    assert results_equal(golden, pd.DataFrame({"a": [1], "b": [3]})).reason == "shape"
+    # 列缺失 / 列名不同 → columns
+    assert results_equal(golden, pd.DataFrame({"a": [1, 2]})).reason == "columns"
+    assert (
+        results_equal(golden, pd.DataFrame({"a": [1, 2], "c": [3, 4]})).reason
+        == "columns"
+    )
+
+
+def test_projection_allows_extra_columns_and_value_alias():
+    golden = pd.DataFrame({"status": ["paid", "pending"], "cnt": [2, 1]})
+    actual = pd.DataFrame(
+        {
+            "status": ["paid", "pending"],
+            "order_count": [2, 1],
+            "pct": [66.7, 33.3],
+        }
+    )
+
+    comparison = results_equal(golden, actual, column_match="projection")
+    assert comparison.equal, comparison.detail
+
+    wrong = pd.DataFrame(
+        {"status": ["paid", "pending"], "order_count": [2, 9], "pct": [1, 2]}
+    )
+    assert not results_equal(golden, wrong, column_match="projection").equal
 
 
 def test_column_alias():

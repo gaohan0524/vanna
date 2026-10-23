@@ -53,12 +53,15 @@ def _signature(series: pd.Series) -> tuple:
 
 
 def _match_columns_by_values(
-    golden: pd.DataFrame, actual: pd.DataFrame
+    golden: pd.DataFrame, actual: pd.DataFrame, *, allow_extra: bool = False
 ) -> Optional[dict[str, str]]:
     """Map actual columns to golden ones purely by their value multisets.
 
     列别名（``cnt`` vs ``order_count``）不影响语义正确性，严格按名称比较会把
     正确答案判错。这里用“整列取值集合相同”做确定性配对；匹配不上则返回 None。
+
+    ``allow_extra=True`` 时允许 actual 含额外列（如笔数、占比），仅要求 golden
+    的每一列都能找到对应的 actual 列——用于“结果投影”评分。
     """
     unused = list(actual.columns)
     mapping: dict[str, str] = {}
@@ -71,7 +74,9 @@ def _match_columns_by_values(
                 break
         else:
             return None
-    return mapping if not unused else None
+    if unused and not allow_extra:
+        return None
+    return mapping
 
 
 def _sorted(df: pd.DataFrame) -> pd.DataFrame:
@@ -113,10 +118,23 @@ def results_equal(
     g = normalize(golden)
     a = _apply_alias(normalize(actual), column_alias)
 
-    if g.shape != a.shape:
+    # 行数必须一致；列数可以不同（projection 模式允许 actual 多返回列）
+    if len(g) != len(a):
         return CompareResult(False, "shape", f"golden={g.shape} actual={a.shape}")
 
-    if set(g.columns) != set(a.columns):
+    if column_match == "projection":
+        missing = [column for column in g.columns if column not in a.columns]
+        if missing:
+            # 列名不一致时退化为“按值签名配对”，仍允许 actual 有额外列
+            mapping = _match_columns_by_values(g, a, allow_extra=True)
+            if mapping is None:
+                return CompareResult(
+                    False,
+                    "columns",
+                    f"golden={list(g.columns)} actual={list(a.columns)} (projection failed)",
+                )
+            a = a.rename(columns=mapping)
+    elif set(g.columns) != set(a.columns):
         if column_match != "values":
             return CompareResult(
                 False,
