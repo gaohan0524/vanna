@@ -72,8 +72,11 @@
 |---|---|---|---|
 | L0 | 角色、ClickHouse 方言、硬约束、行为规则、工作流 | `prompts/templates.py` → 系统提示词 | ≤ 900 |
 | L1 | 12 张表的紧凑 schema（表用途 + 字段 + 枚举） | `context/render.py` 渲染 | ≤ 2,200 |
-| L2 | 指标定义与业务术语 | `context/glossary.yaml` 渲染 | ≤ 300 |
-| L3 | 按需探查（`describe_table` / `sample_rows`） | Stage 2 才做 | 0 |
+| L2 | 指标定义与业务术语（GMV、净收入、有效订单……） | `context/glossary.yaml` 渲染 | ≤ 300 |
+| L3 | 按需事实（`describe_table` / `sample_rows` / golden SQL） | Stage 2/3 才做 | 0 |
+| L4 | 运行时状态（用户、时区、权限） | `ToolContextEnricher` → `metadata`，**不进 prompt** | 0 |
+
+> 命名与总计划一致（L0~L4）。Stage 1 只实现 L0/L1/L2；L3 留给 Stage 2，L4 只对工具可见。
 
 **关键决策**：
 
@@ -382,7 +385,7 @@ class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
 
 ---
 
-## 7. T1-4：术语表与行为规则
+## 7. T1-4：L2 指标与术语 + 行为规则
 
 ### 7.1 `glossary.yaml`（单一事实源）
 

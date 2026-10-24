@@ -100,9 +100,10 @@
 
 | 层 | 内容 | 放哪 | 更新频率 |
 |---|---|---|---|
-| L1 稳定指令 | 角色、方言、硬约束、输出格式 | `SystemPromptBuilder` 子类 | 周级 |
-| L2 常驻事实 | 库名、核心表清单、指标名列表、同义词 | `SystemPromptBuilder`（编译期注入） | 天级 |
-| L3 按需事实 | 字段级 schema、枚举取值、指标公式、golden SQL | 工具 / `AgentMemory` | 实时 |
+| L0 稳定指令 | 角色、方言、硬约束、行为规则、输出格式 | `SystemPromptBuilder` 子类 | 周级 |
+| L1 常驻 schema | 库名、表清单、字段与枚举、命名约定 | `SystemPromptBuilder`（启动时从 catalog 加载） | DDL 变更时 |
+| L2 指标与术语 | 指标名、公式、同义词、易错点 | `SystemPromptBuilder`（`glossary.yaml`） | 周级 |
+| L3 按需事实 | 字段级探查、样例数据、golden SQL | 工具 / `AgentMemory` | 实时 |
 | L4 运行时状态 | 用户、时区、权限、当前会话选中的表 | `ToolContextEnricher` → `metadata` | 每请求 |
 
 **关键认知**：`ToolContextEnricher` 写入的 `metadata` **不会进入 prompt**（见 `core/enricher/base.py`、`core/agent/agent.py` 中构造 `ToolContext` 的位置），它只供工具读取。要让模型看到，必须走 `SystemPromptBuilder`、`LlmContextEnhancer` 或工具返回值。
@@ -111,7 +112,7 @@
 
 | 扩展点 | 本项目用途 | 注意事项 |
 |---|---|---|
-| `system_prompt_builder` | L1 + L2 上下文 | 每条消息只构建一次；入参只有 `user` 和 `tools`，拿不到请求上下文 |
+| `system_prompt_builder` | L0 + L1 + L2 上下文 | 每条消息只构建一次；入参只有 `user` 和 `tools`，拿不到请求上下文 |
 | `llm_context_enhancer.enhance_system_prompt` | 会话级检索（选候选表、注入相关口径） | 每条消息执行一次 |
 | `llm_context_enhancer.enhance_user_messages` | 每步按需注入（不污染历史） | 每次重建 LLM 请求都会执行（含每轮工具迭代） |
 | `context_enrichers` | 用户时区、权限、默认库 | 只对工具可见 |
@@ -142,7 +143,7 @@ analytics_agent/
   config.py            # 环境变量、连接配置、开关
   agent_factory.py     # 组装 Agent（唯一入口，示例 test.py 收敛到这里）
   prompts/
-    builder.py         # L1+L2 SystemPromptBuilder
+    builder.py         # L0+L1+L2 SystemPromptBuilder
     templates.py       # 提示词片段（方言、约束、输出格式）
   context/
     schema_catalog.py  # 启动时加载 schema 目录
@@ -282,13 +283,13 @@ class ResultSetEvaluator(Evaluator):
   - 从 `system.columns` + `system.tables` 抽出：库、表、字段、类型、注释、默认值、引擎、行数。
   - 落成 JSON（`analytics_agent/context/schema_catalog.json`），启动时加载；提供刷新脚本，建议每天或 DDL 变更时跑。
   - 对每个字段补一句“口语化说明”（可用强模型批量生成，人工抽检 20%）。
-- **T1-2 L1 稳定指令**
-  - 方言规则、硬约束、输出格式、工作流，写进 `prompts/templates.py`。
+- **T1-2 L0 稳定指令**
+  - 方言规则、硬约束、时间窗口、行为规则、输出格式、工作流，写进 `prompts/templates.py`。
   - 通过 `DefaultSystemPromptBuilder` 子类追加，**不要用 `base_prompt`**（会覆盖默认的记忆工作流段落）。
-- **T1-3 L2 常驻事实**
-  - 只放“路由信息”：核心 10~20 张表的一句话用途、指标名称列表、库名、命名约定。
-  - 表数超过 20 张时，L2 只放“领域分组”，具体表交给检索。
-- **T1-4 业务术语表**
+- **T1-3 L1 常驻 schema**
+  - 12 张表的紧凑 schema：表用途、字段、类型、注释、枚举取值。
+  - 表数超过 20 张时，L1 只放“领域分组 + 核心表”，具体表交给 Stage 2 的检索工具。
+- **T1-4 L2 指标与术语**
   - 每条：术语、定义、计算公式、易混淆项、权威来源。
   - 与 T3 的指标工具共用同一份数据源，避免两处维护。
 - **T1-5 采样温度与循环上限**
@@ -300,48 +301,43 @@ class ResultSetEvaluator(Evaluator):
 # analytics_agent/prompts/builder.py
 from vanna.core.system_prompt import DefaultSystemPromptBuilder
 
-from .templates import L1_RULES, L2_FACTS
+from .templates import L0_RULES
 
 
 class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
-    def __init__(self, schema_catalog, glossary):
-        super().__init__()  # 保留默认角色与记忆工作流
-        self._schema = schema_catalog
-        self._glossary = glossary
+    def __init__(self, schema_text: str, glossary_text: str):
+        super().__init__()  # 保留默认角色与工具清单
+        self._schema_text = schema_text
+        self._glossary_text = glossary_text
 
     async def build_system_prompt(self, user, tools):
         base = await super().build_system_prompt(user, tools) or ""
         return "\n\n".join([
             base,
-            L1_RULES,
-            self._render_facts(user),
+            L0_RULES,
+            self._schema_text,      # L1：12 张表的紧凑 schema
+            self._glossary_text,    # L2：指标与术语
         ])
-
-    def _render_facts(self, user) -> str:
-        tables = self._schema.core_tables(user)   # 按用户权限过滤
-        lines = [f"- {t.name}: {t.summary}" for t in tables]
-        metrics = [f"- {m.name}: {m.short}" for m in self._glossary.visible_to(user)]
-        return "## 可用数据域\n" + "\n".join(lines) + "\n\n## 指标\n" + "\n".join(metrics)
 ```
 
 ```python
 # prompts/templates.py（节选）
-L1_RULES = """
+L0_RULES = """
 ## 数据库与方言
-- 数据库：ClickHouse（库名 default），引擎 MergeTree
-- 时间：用 toDate()/toStartOfMonth()/today()，禁止 DATE_TRUNC/EXTRACT
-- 聚合：用 count()，禁止 count(1)；禁止 SELECT *，必须显式列名并带 LIMIT 200
-- 分区字段 event_date 为 Date；过滤使用 event_date >= today() - 30
+- 数据库：ClickHouse，库名 shop，引擎 MergeTree
+- 时间：用 toStartOfDay()/toStartOfMonth()/today()，禁止 DATE_TRUNC/EXTRACT
+- 聚合：用 count()，禁止 count(1)；禁止 SELECT *，明细必须带 LIMIT
+- 金额：源字段为“分”，输出时 /100.0
 
 ## 硬约束
 1. 只生成只读 SQL（SELECT / WITH / EXPLAIN）
-2. 涉及金额时统一按“元”输出，源字段为“分”需 /100
-3. 所有经营类查询默认排除测试账号：accounts.is_test = 0
-4. 不确定字段或取值时，先调用 search_columns / sample_rows，不要猜
+2. 经营指标排除测试与软删：is_test = 0；users.deleted_at IS NULL
+3. 有效订单：status IN ('paid','shipped','completed')
+4. schema 已在下方给出，不要查询 system.* 元数据表
 
 ## 工作流
 1) 识别指标与时间范围；歧义时先澄清（最多 2 个问题）
-2) 定位候选表与字段；必要时 sample_rows 确认取值格式
+2) 定位候选表与字段（schema 已在上下文中）
 3) 生成一条 SQL 并执行
 4) 执行失败则读错误信息修正，禁止原样重试
 5) 结论先行 + 展示数据 + 说明口径假设
@@ -746,6 +742,6 @@ LIMIT 20;
 |---|---|
 | EX | 执行准确率，结果集与 golden 一致的比例 |
 | Gate | 阶段门禁，未达标不进入下一阶段 |
-| L1~L4 | 四层上下文：稳定指令 / 常驻事实 / 按需事实 / 运行时状态 |
+| L0~L4 | 五层上下文：稳定指令 / 常驻 schema / 指标术语 / 按需事实 / 运行时状态 |
 | taxonomy | 失败分类法，见 2.3 |
 | 候选表预筛 | 先用检索把大 schema 缩到 5~15 张表，再让模型写 SQL |
