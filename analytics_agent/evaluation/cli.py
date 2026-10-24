@@ -126,13 +126,19 @@ def _cmd_seed(args: argparse.Namespace) -> int:
 
     settings = Settings.from_env()
     as_of = datetime.strptime(args.as_of, "%Y-%m-%d").date() if args.as_of else None
+    # 只重建表结构时必须 drop，否则 CREATE IF NOT EXISTS 不会更新已有表的 COMMENT
+    drop = args.drop or args.schema_only
     counts = generate(
         settings,
         as_of=as_of,
         seed=args.seed,
         scale=args.scale,
-        drop=args.drop,
+        drop=drop,
+        schema_only=args.schema_only,
     )
+    if args.schema_only:
+        print("schema rebuilt (no rows inserted, anchor not written)")
+        return 0
     for table, rows in counts.items():
         print(f"{table:20s} {rows:>10,d}")
     return 0
@@ -282,6 +288,11 @@ def build_parser() -> argparse.ArgumentParser:
     seed.add_argument("--seed", type=int, default=42)
     seed.add_argument("--scale", type=float, default=1.0)
     seed.add_argument("--drop", action="store_true")
+    seed.add_argument(
+        "--schema-only",
+        action="store_true",
+        help="drop & recreate tables with comments, insert no rows",
+    )
     seed.set_defaults(func=lambda args: _cmd_seed(args))
 
     run = sub.add_parser("run", help="run the agent on a dataset")

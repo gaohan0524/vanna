@@ -44,10 +44,13 @@
 | `check --strict --dataset v1_30.yaml` | **41/41 PASS**：30 条用例、21 条 golden（各 <0.1s）、5 条 `without_filter_sql` 破坏性验证全部“结果有变化” |
 | `seed` 重建（2026-10-23） | 锚点更新为 `2026-10-22`，12 表行数与 10-22 一致；重建后 `check --strict` 仍 41/41 |
 | `seed` 重灌（时间戳封顶） | 各事实表 `max(时间戳)` 均为 `2026-10-22 23:59:59`，无未来数据；`check --strict` 41/41 |
+| DDL 注释与 `--schema-only` 重建（2026-10-24） | 12 张表、77 个字段 **100% 有 COMMENT**；表已重建为空，锚点未写，跑评测前需重新灌数 |
 | `preview` 子命令 | 逐条打印问题/期望/golden 结果，供 D2-2 审核使用 |
 | `run --dataset smoke.yaml`（DeepSeek） | 4 条：EX 50%、首答 50%、behavior 0%、avg_tools 5.5；`A-02` 1 次 `run_sql` 命中；3 条触发 5 轮上限 |
 
 ### 未完成 / 待执行（下一步）
+
+- [ ] **重新灌数**：2026-10-24 只重建了表结构（`--schema-only`），数据为空；跑 `check` / `run` 前先执行 `seed --scale 0.1`
 
 - [x] **D1-2** `seed --scale 0.1` 已实跑（2026-10-22，见附录 D）
 - [x] **D1-4** `check --dataset smoke.yaml` 全 PASS（20/20，2026-10-22，见附录 D）
@@ -301,162 +304,182 @@ vanna/                              # 仓库根
 ### 5.3 DDL（`analytics_agent/evaluation/seed/ddl.sql`）
 
 ```sql
+-- Stage 0 合成业务库 DDL（ClickHouse）
+-- 金额一律用 Int64 存“分”，避免浮点误差污染评测比较。
+-- 所有表与字段都带 COMMENT：Stage 1 的 schema 目录直接读 system.columns.comment。
+
 CREATE DATABASE IF NOT EXISTS shop;
 
 CREATE TABLE IF NOT EXISTS shop.dim_date
 (
-    date_key       Date,
-    year           UInt16,
-    month          UInt8,
-    day_of_week    UInt8,   -- 1=周一
-    is_weekend     UInt8,
-    is_holiday     UInt8
+    date_key     Date COMMENT '日期主键，格式 YYYY-MM-DD',
+    year         UInt16 COMMENT '年份，如 2026',
+    month        UInt8 COMMENT '月份，1-12',
+    day_of_week  UInt8 COMMENT '星期几，1=周一 ... 7=周日',
+    is_weekend   UInt8 COMMENT '是否周末，1=是，0=否',
+    is_holiday   UInt8 COMMENT '是否法定节假日，1=是，0=否'
 )
 ENGINE = MergeTree
-ORDER BY date_key;
+ORDER BY date_key
+COMMENT '日期维度表，用于关联时间属性';
 
 CREATE TABLE IF NOT EXISTS shop.users
 (
-    user_id     UInt64,
-    email       String,
-    signup_at   DateTime('Asia/Shanghai'),
-    channel     LowCardinality(String),   -- organic/paid_search/social/referral
-    country     LowCardinality(String),
-    is_test     UInt8 DEFAULT 0,          -- 陷阱①：测试账号
-    deleted_at  Nullable(DateTime)        -- 陷阱②：软删
+    user_id     UInt64 COMMENT '用户唯一 ID',
+    email       String COMMENT '注册邮箱',
+    signup_at   DateTime('Asia/Shanghai') COMMENT '注册时间（Asia/Shanghai）',
+    channel     LowCardinality(String) COMMENT '注册渠道（首触）；取值 organic/paid_search/social/referral',
+    country     LowCardinality(String) COMMENT '注册国家；取值 CN/US/JP/SG',
+    is_test     UInt8 DEFAULT 0 COMMENT '测试账号标记，1=测试；经营指标必须排除',
+    deleted_at  Nullable(DateTime) COMMENT '软删时间；非空表示已注销，经营指标需排除'
 )
 ENGINE = MergeTree
-ORDER BY user_id;
+ORDER BY user_id
+COMMENT '用户表，一行一个注册用户';
 
 CREATE TABLE IF NOT EXISTS shop.products
 (
-    product_id        UInt64,
-    sku               String,
-    name              String,
-    category          LowCardinality(String),
-    subcategory       Nullable(String),   -- 陷阱③：2% 为空，left join 易丢行
-    unit_price_cents  Int64,
-    cost_cents        Int64,
-    is_active         UInt8
+    product_id        UInt64 COMMENT '商品唯一 ID',
+    sku               String COMMENT '商品编码',
+    name              String COMMENT '商品名称',
+    category          LowCardinality(String) COMMENT '商品品类；取值 electronics/apparel/grocery/home/beauty',
+    subcategory       Nullable(String) COMMENT '二级品类；约 2% 为空，left join 时注意 NULL 丢行',
+    unit_price_cents  Int64 COMMENT '售价（分）',
+    cost_cents        Int64 COMMENT '成本（分）',
+    is_active         UInt8 COMMENT '是否在售，1=是，0=否'
 )
 ENGINE = MergeTree
-ORDER BY product_id;
+ORDER BY product_id
+COMMENT '商品维表，含品类与成本';
 
 CREATE TABLE IF NOT EXISTS shop.orders
 (
-    order_id        UInt64,
-    user_id         UInt64,
-    created_at      DateTime('Asia/Shanghai'),
-    status          LowCardinality(String),  -- pending/paid/shipped/completed/cancelled/refunded
-    currency        LowCardinality(String),  -- 陷阱④：95% CNY，5% USD（用 String 而非 FixedString，避免补零比较的坑）
-    amount_cents    Int64,
-    discount_cents  Int64,
-    channel         LowCardinality(String),
-    campaign_id     Nullable(UInt64),
-    is_test         UInt8 DEFAULT 0
+    order_id        UInt64 COMMENT '订单唯一 ID',
+    user_id         UInt64 COMMENT '下单用户 ID',
+    created_at      DateTime('Asia/Shanghai') COMMENT '下单时间（Asia/Shanghai）',
+    status          LowCardinality(String) COMMENT '订单状态；有效订单=paid/shipped/completed；另有 pending/cancelled/refunded',
+    currency        LowCardinality(String) COMMENT '币种；95% CNY，5% USD；经营指标默认只看 CNY',
+    amount_cents    Int64 COMMENT '订单金额（分），已扣 discount_cents；不含退款',
+    discount_cents  Int64 COMMENT '优惠金额（分）',
+    channel         LowCardinality(String) COMMENT '首触渠道；取值 organic/paid_search/social/referral',
+    campaign_id     Nullable(UInt64) COMMENT '关联营销活动 ID；可为空',
+    is_test         UInt8 DEFAULT 0 COMMENT '测试订单标记，1=测试；经营指标必须排除'
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(created_at)
-ORDER BY (toDate(created_at), order_id);
+ORDER BY (toDate(created_at), order_id)
+COMMENT '订单主表，一单一行；金额单位为分';
 
 CREATE TABLE IF NOT EXISTS shop.order_items
 (
-    order_id          UInt64,
-    product_id        UInt64,
-    quantity          UInt32,
-    unit_price_cents  Int64,
-    item_amount_cents Int64
+    order_id          UInt64 COMMENT '所属订单 ID',
+    product_id        UInt64 COMMENT '商品 ID',
+    quantity          UInt32 COMMENT '购买数量',
+    unit_price_cents  Int64 COMMENT '成交单价（分）',
+    item_amount_cents Int64 COMMENT '明细金额（分）= quantity * unit_price_cents - 分摊优惠'
 )
 ENGINE = MergeTree
-ORDER BY (order_id, product_id);
+ORDER BY (order_id, product_id)
+COMMENT '订单明细表，一单多行；金额单位为分';
 
 CREATE TABLE IF NOT EXISTS shop.payments
 (
-    payment_id  UInt64,
-    order_id    UInt64,
-    paid_at     DateTime('Asia/Shanghai'),
-    method      LowCardinality(String),   -- alipay/wechat/card
-    amount_cents Int64,
-    status      LowCardinality(String),   -- succeeded/failed
-    is_retry    UInt8                     -- 陷阱⑤：重试流水，直接 sum 会重复计
+    payment_id   UInt64 COMMENT '支付流水 ID',
+    order_id     UInt64 COMMENT '所属订单 ID',
+    paid_at      DateTime('Asia/Shanghai') COMMENT '支付时间（Asia/Shanghai）',
+    method       LowCardinality(String) COMMENT '支付方式；取值 alipay/wechat/card',
+    amount_cents Int64 COMMENT '支付金额（分）',
+    status       LowCardinality(String) COMMENT '支付状态；当前数据只生成 succeeded',
+    is_retry     UInt8 COMMENT '重试流水标记，1=重试；统计金额必须排除 is_retry=1'
 )
 ENGINE = MergeTree
-ORDER BY (toDate(paid_at), payment_id);
+ORDER BY (toDate(paid_at), payment_id)
+COMMENT '支付流水表；含 3% 重复扣款重试流水';
 
 CREATE TABLE IF NOT EXISTS shop.refunds
 (
-    refund_id     UInt64,
-    order_id      UInt64,
-    created_at    DateTime('Asia/Shanghai'),
-    amount_cents  Int64,
-    reason        LowCardinality(String),
-    status        LowCardinality(String)  -- approved/rejected/pending
+    refund_id     UInt64 COMMENT '退款单 ID',
+    order_id      UInt64 COMMENT '所属订单 ID；退款是订单级，没有 product_id',
+    created_at    DateTime('Asia/Shanghai') COMMENT '退款发起时间（Asia/Shanghai）',
+    amount_cents  Int64 COMMENT '退款金额（分）',
+    reason        LowCardinality(String) COMMENT '退款原因；取值 quality/late_delivery/wrong_item/other',
+    status        LowCardinality(String) COMMENT '退款状态；当前数据只有 approved/pending，统计只算 approved'
 )
 ENGINE = MergeTree
-ORDER BY (toDate(created_at), refund_id);
+ORDER BY (toDate(created_at), refund_id)
+COMMENT '退款表，订单级（无 product_id）；金额单位为分';
 
 CREATE TABLE IF NOT EXISTS shop.sessions
 (
-    session_id  UInt64,
-    user_id     UInt64,
-    started_at  DateTime('Asia/Shanghai'),
-    channel     LowCardinality(String),
-    device      LowCardinality(String),   -- ios/android/web
-    converted   UInt8
+    session_id  UInt64 COMMENT '会话 ID',
+    user_id     UInt64 COMMENT '用户 ID',
+    started_at  DateTime('Asia/Shanghai') COMMENT '会话开始时间（Asia/Shanghai）',
+    channel     LowCardinality(String) COMMENT '本次会话渠道；与 orders.channel（首触）不同',
+    device      LowCardinality(String) COMMENT '设备类型；取值 ios/android/web',
+    converted   UInt8 COMMENT '是否转化（下单），1=是，0=否'
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(started_at)
-ORDER BY (toDate(started_at), session_id);
+ORDER BY (toDate(started_at), session_id)
+COMMENT '会话表，一行一次访问，用于转化率与漏斗';
 
 CREATE TABLE IF NOT EXISTS shop.events
 (
-    event_id    UInt64,
-    user_id     UInt64,
-    session_id  UInt64,
-    event_time  DateTime('Asia/Shanghai'),
-    event_name  LowCardinality(String),   -- page_view/add_to_cart/checkout/purchase
-    properties  String                    -- JSON 字符串，陷阱⑥：大小写不统一
+    event_id    UInt64 COMMENT '事件 ID',
+    user_id     UInt64 COMMENT '用户 ID',
+    session_id  UInt64 COMMENT '所属会话 ID',
+    event_time  DateTime('Asia/Shanghai') COMMENT '事件时间（Asia/Shanghai）',
+    event_name  LowCardinality(String) COMMENT '事件名；取值 page_view/add_to_cart/checkout/purchase',
+    properties  String COMMENT '事件属性 JSON 字符串；键名大小写不统一（如 event/Event），解析时需兼容'
 )
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(event_time)
-ORDER BY (toDate(event_time), user_id, event_time);
+ORDER BY (toDate(event_time), user_id, event_time)
+COMMENT '行为事件明细表，一行一个事件；100 万行，查询必须带时间过滤';
 
 CREATE TABLE IF NOT EXISTS shop.campaigns
 (
-    campaign_id  UInt64,
-    name         String,
-    channel      LowCardinality(String),
-    start_date   Date,
-    end_date     Date,
-    budget_cents Int64
+    campaign_id  UInt64 COMMENT '活动 ID',
+    name         String COMMENT '活动名称',
+    channel      LowCardinality(String) COMMENT '投放渠道',
+    start_date   Date COMMENT '开始日期',
+    end_date     Date COMMENT '结束日期；可能晚于数据锚点（活动排期）',
+    budget_cents Int64 COMMENT '预算（分）'
 )
 ENGINE = MergeTree
-ORDER BY campaign_id;
+ORDER BY campaign_id
+COMMENT '营销活动表，一行一个投放计划';
 
 CREATE TABLE IF NOT EXISTS shop.accounts
 (
-    account_id  UInt64,
-    user_id     UInt64,
-    plan        LowCardinality(String),   -- starter/pro/enterprise
-    mrr_cents   Int64,
-    status      LowCardinality(String),   -- active/paused/churned
-    started_at  DateTime('Asia/Shanghai'),
-    churned_at  Nullable(DateTime)
+    account_id  UInt64 COMMENT '订阅账户 ID',
+    user_id     UInt64 COMMENT '所属用户 ID',
+    plan        LowCardinality(String) COMMENT '套餐；取值 starter/pro/enterprise',
+    mrr_cents   Int64 COMMENT '月度经常性收入（分）',
+    status      LowCardinality(String) COMMENT '订阅状态；active/paused/churned；MRR 只统计 active',
+    started_at  DateTime('Asia/Shanghai') COMMENT '订阅开始时间（Asia/Shanghai）',
+    churned_at  Nullable(DateTime) COMMENT '流失时间；非空表示已流失'
 )
 ENGINE = MergeTree
-ORDER BY account_id;
+ORDER BY account_id
+COMMENT '订阅账户表，一行一个订阅；用于 MRR 与流失';
 
 CREATE TABLE IF NOT EXISTS shop.meta_data_anchor
 (
-    anchor_date  Date,
-    seed         UInt64,
-    generated_at DateTime
+    anchor_date  Date COMMENT '数据截止日期（通常为昨天）',
+    seed         UInt64 COMMENT '生成用随机种子',
+    generated_at DateTime COMMENT '生成时间'
 )
 ENGINE = MergeTree
-ORDER BY anchor_date;
+ORDER BY anchor_date
+COMMENT '数据锚点表，单行；预检据此判断数据是否过期';
 ```
 
 > 用 `Int64` 存“分”，不用 Float，避免浮点误差污染结果比较。展示层统一 `/100.0`。
+>
+> **所有表和字段都带 `COMMENT`**（12 表 / 77 字段，2026-10-24）：Stage 1 的 schema 目录直接读
+> `system.tables.comment` 与 `system.columns.comment`，不再依赖外部注释文件。
+> 结构变更后必须用 `seed --schema-only` 重建——`CREATE TABLE IF NOT EXISTS` 不会更新已有表的注释。
 
 ### 5.4 埋设的陷阱清单（每个都必须有对应用例）
 
@@ -1183,6 +1206,9 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-23 | B2-1 | 列投影评分（golden 列 ⊆ actual） | 已修改 | 默认 `column_match="projection"`；按值签名兼容列别名；新增单测 |
 | 2026-10-23 | B2-2 | “近 N 天”改自然日窗口 | 已修改 | 9 条 golden；`metrics.md` 第 10 条；`check --strict` 41/41 |
 | 2026-10-23 | B2-3 | 记录估算基线 | 已记录 | 第 9 节：实测 0/21，95% 上界 13.6%，保守记 15%；未重跑 |
+| 2026-10-24 | T0-0 | DDL 全量补 `COMMENT`（表 + 字段） | 完成 | 12 表 / 77 字段 100% 有注释 |
+| 2026-10-24 | T0-0 | 新增 `seed --schema-only`（强制 drop） | 完成 | 只重建结构、不灌数；`CREATE IF NOT EXISTS` 不会更新 COMMENT |
+| 2026-10-24 | T0-0 | 重建表结构（`--schema-only`） | 成功 | `orders`/`anchor` 均为 0 行；注释已写入 `system.*` |
 | 2026-10-23 | D2-2 | I 类审核 | **通过** | 多轮设计合理；待后续实际运行验证 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**

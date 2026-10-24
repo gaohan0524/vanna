@@ -159,7 +159,12 @@ LIMIT 20
 
 ### 4.3 人工注释（`annotations.yaml`）
 
-ClickHouse 里我们的 DDL 用的是 `--` 行内注释，**不会进入 `system.columns.comment`**。所以表用途和字段含义必须由人工维护：
+**2026-10-24 起，DDL 已为 12 张表、77 个字段全部加上 `COMMENT`**，`system.columns.comment` 与
+`system.tables.comment` 就是权威注释来源，不再依赖外部注释文件。`annotations.yaml` 只用于补充
+数据库注释里放不下的信息（跨表关系、口径提醒），可为空：
+
+> 结构变更后必须用 `python -m analytics_agent.evaluation.cli seed --schema-only` 重建，
+> 因为 `CREATE TABLE IF NOT EXISTS` 不会更新已有表的注释。
 
 ```yaml
 tables:
@@ -179,6 +184,7 @@ tables:
 ```
 
 合并优先级：`system.columns.comment` > `annotations.yaml` > 空字符串。
+当前 77 个字段全部命中数据库注释，`annotations.yaml` 只作为可选补充。
 
 **注释规范**：一句话、不超过 40 字；包含取值或单位；写“易错点”（例如“订单级，没有 product_id”）。
 

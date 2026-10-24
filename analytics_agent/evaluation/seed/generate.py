@@ -124,8 +124,13 @@ def generate(
     scale: float = 1.0,
     drop: bool = False,
     days: int = 400,
+    schema_only: bool = False,
 ) -> Dict[str, int]:
-    """(Re)generate the whole synthetic warehouse and return row counts."""
+    """(Re)generate the whole synthetic warehouse and return row counts.
+
+    ``schema_only=True`` 只重建表结构（需配合 ``drop=True`` 才会应用新的
+    列/表 COMMENT），不写入任何数据，也不写数据锚点。
+    """
     s = settings or Settings.from_env()
     anchor = as_of or (date.today() - timedelta(days=1))
     rng = random.Random(seed)
@@ -141,6 +146,8 @@ def generate(
     if drop:
         _drop(client, TABLES)
     _execute_ddl(client, SEED_DIR / "ddl.sql")
+    if schema_only:
+        return {}
     if not drop:
         _truncate(client, TABLES)
 
