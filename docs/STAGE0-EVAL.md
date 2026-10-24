@@ -575,7 +575,8 @@ anchor = date.today() - timedelta(days=1) # 数据截止到昨天
     golden_sql: |
       SELECT channel, SUM(amount_cents) / 100.0 AS gmv
       FROM shop.orders
-      WHERE created_at >= now() - INTERVAL 30 DAY
+      WHERE created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+        AND created_at <  toStartOfDay(now())
         AND status IN ('paid','shipped','completed')
         AND currency = 'CNY'
         AND is_test = 0
@@ -593,109 +594,32 @@ anchor = date.today() - timedelta(days=1) # 数据截止到昨天
 - `order_sensitive`：默认 false（行序无关）。趋势类问题若必须有序，置 true。
 - `column_alias`：当业务上允许不同列名时显式声明，避免宽松匹配误判。
 
-### 6.3 完整样例（6 条，其余按模板补全）
+### 6.3 完整样例
+
+> **以 `analytics_agent/evaluation/datasets/v1_30.yaml` 为准**：30 条用例已全部审核，包含
+> B-02 的退款按金额占比分摊、C-03/C-15 的上月同期 `least` 封顶、以及“最近 N 天 = 自然日”等修正。
+> 本文不再维护重复副本，避免文档与 YAML 漂移。
+
+字段示例（仅示意结构，实际以 YAML 为准）：
 
 ```yaml
-dataset:
-  name: "shop_v1_30"
-  description: "自建 ClickHouse 合成业务库评测集 v1"
-  test_cases:
-
-    - id: "A-01"
-      user_id: "analyst"
-      user_groups: ["analyst"]
-      message: "最近 30 天各渠道的 GMV 是多少？"
-      metadata:
-        layer: A
-        golden_sql: |
-          SELECT channel, SUM(amount_cents) / 100.0 AS gmv
-          FROM shop.orders
-          WHERE created_at >= now() - INTERVAL 30 DAY
-            AND status IN ('paid','shipped','completed')
-            AND currency = 'CNY' AND is_test = 0
-          GROUP BY channel ORDER BY gmv DESC
-        expected_behavior: answer
-
-    - id: "B-02"
-      user_id: "analyst"
-      user_groups: ["analyst"]
-      message: "按品类看最近一个月的净收入"
-      metadata:
-        layer: B
-        golden_sql: |
-          SELECT p.category,
-                 (SUM(oi.item_amount_cents) - SUM(IFNULL(r.amount_cents, 0))) / 100.0 AS net_revenue
-          FROM shop.order_items oi
-          JOIN shop.orders o ON o.order_id = oi.order_id
-          JOIN shop.products p ON p.product_id = oi.product_id
-          LEFT JOIN (
-              SELECT order_id, SUM(amount_cents) AS amount_cents
-              FROM shop.refunds WHERE status = 'approved' GROUP BY order_id
-          ) r ON r.order_id = o.order_id
-          WHERE o.created_at >= now() - INTERVAL 30 DAY
-            AND o.status IN ('paid','shipped','completed')
-            AND o.currency = 'CNY' AND o.is_test = 0
-          GROUP BY p.category ORDER BY net_revenue DESC
-        expected_behavior: answer
-
-    - id: "C-03"
-      user_id: "analyst"
-      user_groups: ["analyst"]
-      message: "本月 GMV 跟上月比增长了多少？"
-      metadata:
-        layer: C
-        order_sensitive: false
-        golden_sql: |
-          WITH
-            cur AS (
-              SELECT SUM(amount_cents) AS v FROM shop.orders
-              WHERE toStartOfMonth(created_at) = toStartOfMonth(today())
-                AND status IN ('paid','shipped','completed')
-                AND currency = 'CNY' AND is_test = 0
-            ),
-            prev AS (
-              SELECT SUM(amount_cents) AS v FROM shop.orders
-              WHERE toStartOfMonth(created_at) = toStartOfMonth(today() - INTERVAL 1 MONTH)
-                AND status IN ('paid','shipped','completed')
-                AND currency = 'CNY' AND is_test = 0
-            )
-          SELECT round((cur.v - prev.v) / prev.v * 100, 2) AS mom_pct FROM cur, prev
-        expected_behavior: answer
-
-    - id: "D-04"
-      user_id: "analyst"
-      user_groups: ["analyst"]
-      message: "上周各渠道的支付转化率"
-      metadata:
-        layer: D
-        golden_sql: |
-          SELECT channel, countIf(converted = 1) / count() AS cvr
-          FROM shop.sessions
-          WHERE started_at >= toStartOfWeek(today()) - INTERVAL 7 DAY
-            AND started_at <  toStartOfWeek(today())
-          GROUP BY channel ORDER BY cvr DESC
-        expected_behavior: answer
-
-    - id: "E-05"
-      user_id: "analyst"
-      user_groups: ["analyst"]
-      message: "看一下复购率"
-      metadata:
-        layer: E
-        expected_behavior: clarify    # 未指定时间范围与统计粒度，应澄清
-        golden_sql: null
-
-    - id: "F-06"
-      user_id: "analyst"
-      user_groups: ["analyst"]
-      message: "帮我查一下竞品的市场份额"
-      metadata:
-        layer: F
-        expected_behavior: refuse     # 库内无竞品数据
-        golden_sql: null
+- id: "A-01"
+  user_id: "analyst"
+  user_groups: ["analyst"]
+  message: "最近 30 天各渠道的 GMV 是多少？"
+  metadata:
+    layer: A
+    golden_sql: |
+      SELECT channel, SUM(amount_cents) / 100.0 AS gmv
+      FROM shop.orders
+      WHERE created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+        AND created_at <  toStartOfDay(now())
+        AND status IN ('paid','shipped','completed')
+        AND currency = 'CNY' AND is_test = 0
+      GROUP BY channel
+      ORDER BY gmv DESC
+    expected_behavior: answer
 ```
-
-> 其余 24 条按同样结构补全。**先写 golden SQL 并在 ClickHouse 上跑通、看懂结果**，再录入 YAML。
 
 ### 6.4 出题纪律
 

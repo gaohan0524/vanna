@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 0 完成**（2026-10-23；G0 有条件通过，仅“稳定性复跑”延后）；Stage 1 执行手册已就绪（[`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md)），待开始 T1-1。详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
+- **当前进度**：**Stage 0 完成**（2026-10-23；G0 有条件通过，仅“稳定性复跑”延后）；Stage 1 计划已定（2026-10-24 起，见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 12 节），待执行 T1-1。详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -96,7 +96,7 @@
 
 ## 3. 总体思路与架构落点
 
-### 3.1 四层上下文（按“是否需要每次都在”划分）
+### 3.1 五层上下文（按“是否需要每次都在”划分）
 
 | 层 | 内容 | 放哪 | 更新频率 |
 |---|---|---|---|
@@ -198,7 +198,7 @@ analytics_agent/
   - 来源：业务专家（方案负责人）基于合成库人工出题；禁止只用“教科书式”问题。
 - **T0-2 golden（改为 golden SQL 现场执行）**
   - 不存 CSV：合成库按天滚动，golden 结果集会立即过期。改为保存人工确认过的 golden SQL，评测时与 agent SQL 在同一份数据上执行后比较。
-  - 时间敏感问题一律用相对时间（`now() - INTERVAL 30 DAY`），并记录 `run_at`。
+  - 时间敏感问题一律用“最近 N 个完整自然日”（`toStartOfDay(now()) - INTERVAL 30 DAY` 至 `toStartOfDay(now())`），并记录 `run_at`。
   - 需静态回归时才额外导出 CSV，且必须同时冻结数据快照。
 - **T0-3 `ResultSetEvaluator`**
   - 仓库内置的 `ExpectedOutcome` 只支持“调用了哪些工具 / 答案包含哪些词”，**不支持结果集对比**，必须自定义。
@@ -275,14 +275,14 @@ class ResultSetEvaluator(Evaluator):
 > **详细执行步骤见 [`docs/STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md)**（含 schema 抽取 SQL、JSON 结构、
 > 注释规范、L0/L1/L2 提示词全文、接线代码、D1~D5 每日任务与 G1 验收）。本章只保留总体要求。
 
-**目标**：消除 `SCHEMA_MISSING` 与 `DIALECT_ERROR` 两类错误。
+**目标**：消除 `SCHEMA_MISSING` 与 `DIALECT_ERROR` 两类错误，并让 E/F/G 的澄清、拒答、无权限规则生效。
 
 #### 任务
 
 - **T1-1 schema 目录自动生成**
   - 从 `system.columns` + `system.tables` 抽出：库、表、字段、类型、注释、默认值、引擎、行数。
-  - 落成 JSON（`analytics_agent/context/schema_catalog.json`），启动时加载；提供刷新脚本，建议每天或 DDL 变更时跑。
-  - 对每个字段补一句“口语化说明”（可用强模型批量生成，人工抽检 20%）。
+  - 落成 JSON（`analytics_agent/context/schema_catalog.json`），启动时加载；提供刷新脚本，**只在 DDL / 枚举取值变化时跑**（行数不渲染进 prompt，避免每日漂移）。
+  - 字段注释优先读数据库 `COMMENT`（12 表 / 77 字段已全量补齐），`annotations.yaml` 仅作可选补充；人工抽检 20%。
 - **T1-2 L0 稳定指令**
   - 方言规则、硬约束、时间窗口、行为规则、输出格式、工作流，写进 `prompts/templates.py`。
   - 通过 `DefaultSystemPromptBuilder` 子类追加，**不要用 `base_prompt`**（会覆盖默认的记忆工作流段落）。
@@ -292,8 +292,13 @@ class ResultSetEvaluator(Evaluator):
 - **T1-4 L2 指标与术语**
   - 每条：术语、定义、计算公式、易混淆项、权威来源。
   - 与 T3 的指标工具共用同一份数据源，避免两处维护。
-- **T1-5 采样温度与循环上限**
-  - `AgentConfig(temperature=0.0, max_tool_iterations=8)`，并把该配置固化进 `agent_factory.py`。
+- **T1-5 接线与 prompt 版本**
+  - `Settings` 增加 `schema_catalog_path` / `glossary_path`；`build_agent` 注入 `AnalyticsPromptBuilder`，缺文件启动即报错。
+  - `PROMPT_VERSION` 写入 `report.json` 的 `agent_info`，保证结果可追溯。
+  - `temperature=0.0`、`max_tool_iterations=8` 已在 Stage 0 固化，本阶段不改。
+- **T1-6 验证与 G1**
+  - 同配置跑两次 30 条；记录 EX / 首答 / behavior / 平均轮次 / P95，两次差异 ≤ 5pt。
+  - 失败按 taxonomy 归因，每轮只修 Top1 类；勾选 G1 并填写 `STAGE1-CONTEXT.md` 第 9 节。
 
 #### 代码骨架
 
@@ -552,7 +557,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 | Gate | 条件 |
 |---|---|
 | G0 → G1 | 评测可一键运行；基线数字稳定（两次差异 ≤ 2pt） |
-| G1 → G2 | EX +15pt；schema 类错误 < 10% |
+| G1 → G2 | EX ≥ 25%（+10pt）；schema 类错误 < 5%；behavior ≥ 70% |
 | G2 → G3 | 平均工具轮次 ≤ 3.5；复杂查询 +10pt |
 | G3 → G4 | EX ≥ 80%；recall@5 ≥ 0.9；token 不劣化 |
 | G4 → G5 | 澄清准确率 ≥ 85%；多轮 ≥ 75%；人工评分 ≥ 4.0 |
@@ -567,7 +572,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 | 周 | 内容 | 里程碑 |
 |---|---|---|
 | W1 | Stage 0（合成库 + 30 题 + 基线，见 `STAGE0-EVAL.md`） | G0 通过，有稳定基线 |
-| W2 | Stage 1（schema 目录 + prompt + 口径） | EX +15pt，schema 类错误 < 10% |
+| W2 | Stage 1（schema + L0/L1/L2 + 行为规则） | G1 通过：EX ≥ 25%、schema < 5%、behavior ≥ 70% |
 | W3 | Stage 2（工具面 + 护栏） | 轮次 ≤ 3.5，复杂查询 +10pt |
 | W4~W5 | Stage 3（检索层 + 候选表预筛） | EX ≥ 80%，recall@5 ≥ 0.9 |
 | W6 | Stage 4（编排/skill/澄清/呈现） | 澄清 ≥ 85%，多轮 ≥ 75% |
@@ -619,9 +624,10 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [ ] T1-1 schema 目录（`context/schema_catalog.json` + 注释合并）
 - [ ] T1-2 L0 稳定指令（方言/时间窗口/硬约束/行为规则）
 - [ ] T1-3 L1 常驻 schema 渲染（12 表，≤2,200 tokens）
-- [ ] T1-4 术语表与行为规则（`glossary.yaml`，对应 E/F/G）
+- [ ] T1-4 L2 指标与术语（`glossary.yaml` + E/F/G 行为规则）
 - [ ] T1-5 接线与 prompt 版本（`system_prompt_builder` + `prompt_version`）
-- [ ] G1：EX ≥ 25%、behavior ≥ 70%、平均轮次 ≤ 5、两次差异 ≤ 5pt
+- [ ] T1-6 验证与 G1（两次运行、失败归因、填第 9 节）
+- [ ] G1：EX ≥ 25%、behavior ≥ 70%、平均轮次 ≤ 5、schema < 5%、两次差异 ≤ 5pt
 - [ ] EX：`____%`（基线 15% 估算）
 
 ### Stage 2
@@ -681,7 +687,8 @@ dataset:
         golden_sql: |
           SELECT channel, SUM(amount_cents) / 100.0 AS gmv
           FROM shop.orders
-          WHERE created_at >= now() - INTERVAL 30 DAY
+          WHERE created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND created_at <  toStartOfDay(now())
             AND status IN ('paid','shipped','completed')
             AND currency = 'CNY' AND is_test = 0
           GROUP BY channel ORDER BY gmv DESC
