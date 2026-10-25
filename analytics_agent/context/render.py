@@ -84,5 +84,10 @@ def render_schema(
 
 
 def estimate_tokens(text: str) -> int:
-    """Rough token estimate for Chinese/English mixed text."""
-    return len(text) // 4
+    """Rough token estimate for Chinese/English mixed text.
+
+    中文按 1 字≈1 token，其它字符按 4 字符≈1 token；比单纯 ``len/4`` 更接近实际，
+    避免中文提示词被低估 3~4 倍。
+    """
+    cjk = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    return cjk + (len(text) - cjk) // 4

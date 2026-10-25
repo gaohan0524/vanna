@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 1 / T1-1 ~ T1-6** 的详细执行版。
 >
-> - 状态：**进行中（T1-1 / T1-3 完成，2026-10-25）**
+> - 状态：**进行中（T1-1 / T1-2 / T1-3 完成，2026-10-25）**
 > - 前置：Stage 0 完成（2026-10-23），30 条用例与评分规则已冻结
 > - 基线：EX 实测 0/21，95% 上界 13.6%，**保守记 15%**
 > - 目标：EX ≥ 25%，`SCHEMA_MISSING` < 5%，平均工具轮次 ≤ 5
@@ -108,8 +108,8 @@ analytics_agent/
 测试：
 
 ```text
-tests/test_schema_catalog.py   # 纯函数：合并注释、枚举、容错
-tests/test_prompt_render.py    # 渲染格式、token 预算、必备段落
+tests/test_schema_render.py    # 渲染格式、注释加载、token 预算
+tests/test_prompt_builder.py   # L0 段落、日期注入、完整提示词预算
 ```
 
 ---
@@ -333,10 +333,10 @@ class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
 
 ### 5.5 DoD
 
-- [ ] 系统提示词包含 L0 全部 6 个小节
-- [ ] 含当天日期
-- [ ] 快照测试：`tests/test_prompt_render.py` 断言关键段落存在
-- [ ] token 估算 ≤ 4,500
+- [x] 系统提示词包含 L0 全部 6 个小节（2026-10-25）
+- [x] 含当天日期
+- [x] 单测：`tests/test_prompt_builder.py` 断言关键段落与顺序
+- [x] token 估算：**L0 586 / 完整提示词 2,268**（预算 4,500）
 
 ---
 
@@ -380,7 +380,7 @@ class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
 
 - [x] 12 张表全部渲染（随 T1-1 一并完成）
 - [x] 陷阱字段（`is_test`、`currency`、`is_retry`、`subcategory`、`deleted_at`、`properties` 等）注释保留
-- [x] 渲染结果 **4,114 chars ≈ 1,028 tokens**（预算 2,200）
+- [x] 渲染结果 **4,114 chars ≈ 1,556 tokens**（预算 2,200）
 - [x] 单测覆盖：空注释、枚举缺失、超长注释截断
 
 ---
@@ -656,8 +656,11 @@ Stage 1 后如果 EX 仍低，优先看这三类：
 | 2026-10-25 | P0 | `seed --scale 0.1` | 成功 | 12 表 312,569 行；锚点 `2026-10-24`；`check --strict` 41/41 |
 | 2026-10-25 | T1-1 | 实现 `context/schema_catalog.py` | 完成 | 抽取、行数、枚举采样、注释合并、`refresh` 子命令 |
 | 2026-10-25 | T1-1 | 生成 `schema_catalog.json` | 完成 | 12 表 / 77 字段 / 16 枚举；19,475 bytes；刷新 0.79s |
-| 2026-10-25 | T1-1 | 实现 `context/render.py` | 完成 | 4,114 chars ≈ 1,028 tokens（预算 2,200）；重复“取值”已去重 |
-| 2026-10-25 | T1-3 | L1 渲染验收 | 完成 | 12 表全渲染；4,114 chars ≈ 1,028 tokens；空注释/枚举/截断均有单测 |
+| 2026-10-25 | T1-1 | 实现 `context/render.py` | 完成 | 4,114 chars ≈ 1,556 tokens（预算 2,200）；重复“取值”已去重 |
+| 2026-10-25 | T1-3 | L1 渲染验收 | 完成 | 12 表全渲染；4,114 chars ≈ 1,556 tokens；空注释/枚举/截断均有单测 |
+| 2026-10-25 | T1-2 | 实现 `prompts/templates.py`（L0） | 完成 | 586 tokens；方言/时间窗口/口径/行为/工作流 |
+| 2026-10-25 | T1-2 | 实现 `prompts/builder.py` | 完成 | 日期注入 + L0 + L1；L2 可选，缺省不拼 |
+| 2026-10-25 | T1-2 | 完整提示词检查 | 通过 | 5,754 chars ≈ 2,268 tokens（预算 4,500）；12 passed |
 | 2026-10-25 | T1-1 | 单测与静态检查 | 通过 | `tests/test_schema_render.py` 6 passed；ruff 全过 |
 
 ---
