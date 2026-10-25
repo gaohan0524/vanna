@@ -5,8 +5,9 @@ from __future__ import annotations
 from analytics_agent.evaluation.report import build_payload, write_reports
 
 
-def test_html_keeps_full_executed_sql(tmp_path):
+def test_html_keeps_full_executed_sql_and_reason(tmp_path):
     long_sql = "SELECT " + "very_long_column_name, " * 40 + "count() FROM shop.orders"
+    long_reason = "values differ: " + "detail, " * 60
     record = {
         "id": "X-01",
         "layer": "X",
@@ -19,7 +20,7 @@ def test_html_keeps_full_executed_sql(tmp_path):
         "prompt_chars": 200,
         "executed_sql": long_sql,
         "answer": "n/a",
-        "reason": "values differ",
+        "reason": long_reason,
     }
     payload = build_payload(
         dataset_name="t",
@@ -33,3 +34,4 @@ def test_html_keeps_full_executed_sql(tmp_path):
 
     assert long_sql in text
     assert "very_long_column_name" in text
+    assert long_reason in text

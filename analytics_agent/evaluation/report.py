@@ -104,7 +104,7 @@ def _render_html(payload: Dict[str, Any]) -> str:
                 calls=record["tool_calls"],
                 taxonomy=html.escape(record["taxonomy"]),
                 sql=html.escape(record.get("executed_sql") or ""),
-                reason=html.escape((record.get("reason") or "")[:300]),
+                reason=html.escape(record.get("reason") or ""),
             )
         )
 

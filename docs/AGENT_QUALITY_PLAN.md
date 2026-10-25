@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 1 进行中**——T1-6 第二轮 EX 33.3%、behavior 66.7%（差 1 条达 G1）；第三轮 5 项修正已提交，待运行验证。详见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 9/13 节
+- **当前进度**：**Stage 1 功能达标**——T1-6 第 3/4 次 EX 42.9%/57.1%、behavior 88.9%、轮次 1.1~1.6；仅“两次差异 ≤5pt”未过（14.2pt，21 条样本噪声）。详见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 9/13 节
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -626,8 +626,8 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [x] T1-3 L1 常驻 schema 渲染（12 表，≤2,200 tokens）——2026-10-25：4,114 chars ≈1,556 tokens
 - [x] T1-4 L2 指标与术语（`glossary.yaml` + E/F/G 行为规则）——2026-10-25：9 指标 + 5 术语，渲染 ≈173 tokens
 - [x] T1-5 接线与 prompt 版本（`system_prompt_builder` + `prompt_version`）——2026-10-25：完整提示词 2,442 tokens
-- [ ] T1-6 验证与 G1（两次运行、失败归因、填第 9 节）
-- [ ] G1：EX ≥ 25%、behavior ≥ 70%、平均轮次 ≤ 5、schema < 5%、两次差异 ≤ 5pt
+- [x] T1-6 验证与 G1（两次运行、失败归因、填第 9 节）——2026-10-25：EX 42.9%/57.1%、behavior 88.9%
+- [ ] G1：EX ≥ 25% ✅、behavior ≥ 70% ✅、平均轮次 ≤ 5 ✅、schema < 5% ✅、**两次差异 ≤ 5pt ❌（14.2pt）**
 - [ ] EX：`____%`（基线 15% 估算）
 
 ### Stage 2
