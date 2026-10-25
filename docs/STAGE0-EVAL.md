@@ -907,7 +907,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | B-10 | B | analyst | 近 90 天各渠道的退款金额是多少？ | answer | 退款 approved；币种/测试过滤；按订单渠道归因 |
 | B-11 | B | analyst | 近 30 天销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；并列按 `product_id` 升序；`LIMIT 10` |
 | B-12 | B | analyst | 近 30 天各国家用户的支付转化率是多少？ | answer | sessions join users；排测试/软删；输出百分比；近 30 自然日 |
-| B-13 | B | analyst | 近 30 天各品类的客单价（该品类收入 ÷ 含该品类商品的订单数）是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；金额 `/100` |
+| B-13 | B | analyst | 近 30 天各品类的客单价（该品类收入 ÷ 含该品类商品的订单数）是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；金额 `/100`；aov 取 2 位 |
 | C-03 | C | analyst | 本月至今的 GMV，跟上月同期比增长了多少？ | answer | MTD vs 上月 1 日至同日；`least` 封顶 + `nullIf` 防除零 |
 | C-14 | C | analyst | 近 4 周每周的有效订单数是多少？ | answer | 周一为周起点（`toStartOfWeek(..., 1)`）；4 个完整周（不含本周） |
 | C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？ | answer | GMV − approved 退款；按退款发生月；MTD 对比 |
@@ -1200,7 +1200,7 @@ GRANT SELECT ON shop.* TO readonly;
 | B-10 | B | answer | [x] | [x] | [x] | |
 | B-11 | B | answer | [x] | [x] | [x] | 补 30 天窗口 + 并列按 `product_id` 升序（2026-10-25） |
 | B-12 | B | answer | [x] | [x] | [x] | 补 30 天窗口 + 排软删，输出百分比（2026-10-25） |
-| B-13 | B | answer | [x] | [x] | [x] | 题面明确“品类收入 ÷ 含该品类订单数”（2026-10-25） |
+| B-13 | B | answer | [x] | [x] | [x] | 题面明确口径；aov 取 2 位小数（2026-10-25） |
 | C-03 | C | answer | [x] | [x] | [x] | 已加固：上月同期上界 `least(...)`（2026-10-23） |
 | C-14 | C | answer | [x] | [x] | [x] | 已调整：周起点改为周一（`toStartOfWeek(..., 1)`，2026-10-23） |
 | C-15 | C | answer | [x] | [x] | [x] | 已调整：CTE + `ifNull`/`nullIf` + `least` 封顶（2026-10-23） |

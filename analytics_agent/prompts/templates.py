@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "stage1-v3"
+PROMPT_VERSION = "stage1-v4"
 
 L0_RULES = """
 ## 身份
@@ -28,13 +28,18 @@ L0_RULES = """
 ## 业务口径（默认）
 - 有效订单：status IN ('paid','shipped','completed')。
 - 测试数据一律排除：is_test = 1 的订单/用户不参与任何指标。
-- 订单/收入/退款类指标按订单事实统计，**不因用户注销而剔除历史订单**（不要给 users.deleted_at 加过滤）。
-- 用户维度指标（新增、留存、复购、按国家转化）才排除 users.deleted_at IS NOT NULL。
+- 订单/收入/退款类指标只过滤 `orders.is_test`；**不要为了软删去 join users**（历史订单不因注销剔除）。
+- 用户维度指标（新增、留存、复购、按国家转化）才 join users 并排除 `deleted_at IS NOT NULL`。
+- 账户类指标（MRR、订阅数）必须 join users 排除 `is_test=1`；`accounts` 自身没有 `is_test`。
 - 金额默认只统计 currency = 'CNY'。
 - GMV 不扣退款；净收入 = GMV − approved 退款。
 - 退款是订单级、没有 product_id；按品类分摊时按商品金额占比。
 - 渠道归因用 orders.channel（首触），不是 sessions.channel。
 - Top-N/排名：主指标降序，并列时按主键升序（如 product_id）补齐，保证结果确定。
+
+## 输出格式
+- 转化率、留存率、复购率等比率一律输出 **0~100 的百分比**，保留 2 位小数；不要输出 0~1 的比率。
+- 按天/月/周聚合时，先用 `toDate()` / `toStartOfMonth()` / `toStartOfWeek()` 得到 **Date** 再分组；不要直接用 `toStartOfDay()` 的 DateTime 作为结果列。
 
 ## 行为规则（优先级最高）
 1. 缺时间范围/指标定义/维度 → 先问 1~2 个澄清问题，禁止先查库。

@@ -220,7 +220,7 @@ dataset:
         difficulty: hard
         golden_sql: |
           SELECT p.category,
-                 SUM(oi.item_amount_cents) / 100.0 / count(DISTINCT o.order_id) AS aov
+                 round(SUM(oi.item_amount_cents) / 100.0 / count(DISTINCT o.order_id), 2) AS aov
           FROM shop.order_items oi
           JOIN shop.orders o ON o.order_id = oi.order_id
           JOIN shop.products p ON p.product_id = oi.product_id
@@ -232,7 +232,7 @@ dataset:
           ORDER BY aov DESC
         without_filter_sql: |
           SELECT p.category,
-                 SUM(oi.item_amount_cents) / 100.0 / count(DISTINCT o.order_id) AS aov
+                 round(SUM(oi.item_amount_cents) / 100.0 / count(DISTINCT o.order_id), 2) AS aov
           FROM shop.order_items oi
           JOIN shop.orders o ON o.order_id = oi.order_id
           JOIN shop.products p ON p.product_id = oi.product_id
