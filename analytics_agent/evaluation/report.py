@@ -103,7 +103,7 @@ def _render_html(payload: Dict[str, Any]) -> str:
                 first="Y" if record["first_try"] else "N",
                 calls=record["tool_calls"],
                 taxonomy=html.escape(record["taxonomy"]),
-                sql=html.escape((record.get("executed_sql") or "")[:400]),
+                sql=html.escape(record.get("executed_sql") or ""),
                 reason=html.escape((record.get("reason") or "")[:300]),
             )
         )
@@ -130,7 +130,7 @@ h1 {{ font-size: 20px; }}
 .metric b {{ display: block; font-size: 20px; }}
 table {{ border-collapse: collapse; width: 100%; margin: 12px 0 24px; font-size: 13px; }}
 th, td {{ border-bottom: 1px solid #e4e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }}
-code {{ font-size: 12px; }}
+code {{ font-size: 12px; white-space: pre-wrap; word-break: break-word; }}
 tr.fail td {{ background: #fff5f5; }}
 tr.pass td {{ background: #f7fdf9; }}
 </style></head><body>

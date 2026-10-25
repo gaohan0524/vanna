@@ -1134,6 +1134,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-24 | T0-0 | 新增 `seed --schema-only`（强制 drop） | 完成 | 只重建结构、不灌数；`CREATE IF NOT EXISTS` 不会更新 COMMENT |
 | 2026-10-24 | T0-0 | 重建表结构（`--schema-only`） | 成功 | `orders`/`anchor` 均为 0 行；注释已写入 `system.*` |
 | 2026-10-23 | D2-2 | I 类审核 | **通过** | 多轮设计合理；待后续实际运行验证 |
+| 2026-10-25 | 报表 | HTML 报告取消 Executed SQL 400 字截断 | 完成 | 现有报告最长 SQL 1,753 chars 完整显示；CSS 自动换行 |
 
 **2026-10-22 · D1-2 灌数明细（scale=0.1）**
 
