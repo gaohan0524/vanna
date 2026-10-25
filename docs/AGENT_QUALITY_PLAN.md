@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 1 进行中**——T1-1 ~ T1-5 已完成（2026-10-25），下一步 T1-6 跑 30 条基线。计划见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 12 节；Stage 0 详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
+- **当前进度**：**Stage 1 进行中**——T1-6 第一次完成（2026-10-25：EX 19.1%、behavior 55.6%、avg_tools 1.1），正在修 Top 失败；详见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 9/13 节
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -294,7 +294,7 @@ class ResultSetEvaluator(Evaluator):
   - 与 T3 的指标工具共用同一份数据源，避免两处维护。
 - **T1-5 接线与 prompt 版本**
   - `Settings` 增加 `schema_catalog_path` / `glossary_path`；`build_agent` 注入 `AnalyticsPromptBuilder`，缺文件启动即报错。
-  - `PROMPT_VERSION` 写入 `report.json` 的 `agent_info`，保证结果可追溯。
+  - `PROMPT_VERSION` 写入 `report.json` 的 `agent` 字段，保证结果可追溯。
   - `temperature=0.0`、`max_tool_iterations=8` 已在 Stage 0 固化，本阶段不改。
 - **T1-6 验证与 G1**
   - 同配置跑两次 30 条；记录 EX / 首答 / behavior / 平均轮次 / P95，两次差异 ≤ 5pt。
