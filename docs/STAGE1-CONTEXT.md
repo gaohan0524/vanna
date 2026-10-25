@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 1 / T1-1 ~ T1-6** 的详细执行版。
 >
-> - 状态：**进行中（T1-1 / T1-2 / T1-3 完成，2026-10-25）**
+> - 状态：**进行中（T1-1 ~ T1-4 完成，T1-5 待接线；2026-10-25）**
 > - 前置：Stage 0 完成（2026-10-23），30 条用例与评分规则已冻结
 > - 基线：EX 实测 0/21，95% 上界 13.6%，**保守记 15%**
 > - 目标：EX ≥ 25%，`SCHEMA_MISSING` < 5%，平均工具轮次 ≤ 5
@@ -95,9 +95,10 @@ analytics_agent/
 │   ├── __init__.py
 │   ├── schema_catalog.py      # 抽取 / 刷新 / 加载
 │   ├── schema_catalog.json    # 生成物（提交进 git）
-│   ├── annotations.yaml       # 人工注释（表用途、字段含义、枚举说明）
+│   ├── annotations.yaml       # 可选补充（DB 注释已全覆盖）
 │   ├── glossary.yaml          # 指标与术语（单一事实源）
-│   └── render.py              # catalog + glossary -> 紧凑文本
+│   ├── glossary.py            # 加载 + 渲染 L2
+│   └── render.py              # catalog -> 紧凑文本
 ├── prompts/
 │   ├── __init__.py
 │   ├── builder.py             # AnalyticsPromptBuilder
@@ -110,6 +111,7 @@ analytics_agent/
 ```text
 tests/test_schema_render.py    # 渲染格式、注释加载、token 预算
 tests/test_prompt_builder.py   # L0 段落、日期注入、完整提示词预算
+tests/test_glossary.py         # 指标/术语加载、渲染、预算、异常
 ```
 
 ---
@@ -336,7 +338,7 @@ class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
 - [x] 系统提示词包含 L0 全部 6 个小节（2026-10-25）
 - [x] 含当天日期
 - [x] 单测：`tests/test_prompt_builder.py` 断言关键段落与顺序
-- [x] token 估算：**L0 586 / 完整提示词 2,268**（预算 4,500）
+- [x] token 估算：**L0 586 / 完整提示词 2,268**（含 L2 为 2,442；预算 4,500）
 
 ---
 
@@ -426,10 +428,10 @@ terms:
 
 ### 7.3 DoD
 
-- [ ] `glossary.yaml` 覆盖 9 个指标 + 5 个术语
-- [ ] 渲染文本 ≤ 300 tokens
-- [ ] 与 `evaluation/seed/metrics.md` 的口径一致（人工对照一次）
-- [ ] E/F/G 的规则在 L0 中有明确对应句
+- [x] `glossary.yaml` 覆盖 9 个指标 + 5 个术语（2026-10-25）
+- [x] 渲染文本 **349 chars ≈ 173 tokens**（预算 300）
+- [x] 与 `evaluation/seed/metrics.md` 的口径一致（人工对照）
+- [x] E/F/G 的规则在 L0 中有明确对应句（见 `templates.py` 行为规则）
 
 ---
 
@@ -661,6 +663,9 @@ Stage 1 后如果 EX 仍低，优先看这三类：
 | 2026-10-25 | T1-2 | 实现 `prompts/templates.py`（L0） | 完成 | 586 tokens；方言/时间窗口/口径/行为/工作流 |
 | 2026-10-25 | T1-2 | 实现 `prompts/builder.py` | 完成 | 日期注入 + L0 + L1；L2 可选，缺省不拼 |
 | 2026-10-25 | T1-2 | 完整提示词检查 | 通过 | 5,754 chars ≈ 2,268 tokens（预算 4,500）；12 passed |
+| 2026-10-25 | T1-4 | 新增 `context/glossary.yaml` | 完成 | 9 指标 + 5 术语；含 formula/pitfalls，供 Stage 2 工具复用 |
+| 2026-10-25 | T1-4 | 实现 `context/glossary.py` | 完成 | 加载 + 渲染；349 chars ≈ 173 tokens（预算 300） |
+| 2026-10-25 | T1-4 | 单测与静态检查 | 通过 | 18 passed（glossary 6 项）；ruff 全过 |
 | 2026-10-25 | T1-1 | 单测与静态检查 | 通过 | `tests/test_schema_render.py` 6 passed；ruff 全过 |
 
 ---

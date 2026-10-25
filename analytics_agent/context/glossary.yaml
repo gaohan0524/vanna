@@ -1,0 +1,61 @@
+# L2 指标与术语：提示词只渲染 short；formula/pitfalls 供 Stage 2 指标工具使用。
+# 口径以 evaluation/seed/metrics.md 为准，修改时两边必须同步。
+
+metrics:
+  gmv:
+    name: "GMV"
+    short: "有效订单/CNY/排测试；不扣退款"
+    formula: "SUM(orders.amount_cents)/100，status IN ('paid','shipped','completed')，currency='CNY'，is_test=0"
+    pitfalls: "不扣退款；不含 pending/cancelled；不含 USD"
+  net_revenue:
+    name: "净收入"
+    short: "GMV - approved 退款"
+    formula: "GMV - SUM(refunds.amount_cents)/100 WHERE refunds.status='approved'"
+    pitfalls: "公司级按退款发生月；品类级按订单 cohort，并按商品金额占比分摊"
+  aov:
+    name: "客单价"
+    short: "GMV ÷ 有效订单数"
+    formula: "GMV / count(DISTINCT orders.order_id)"
+    pitfalls: "分母必须是有效订单，不是全部订单"
+  payment_amount:
+    name: "支付金额"
+    short: "succeeded 且 is_retry=0"
+    formula: "SUM(payments.amount_cents)/100 WHERE status='succeeded' AND is_retry=0"
+    pitfalls: "重试流水会导致重复计"
+  refund_amount:
+    name: "退款金额"
+    short: "approved 退款"
+    formula: "SUM(refunds.amount_cents)/100 WHERE status='approved'"
+    pitfalls: "退款是订单级，没有 product_id"
+  repurchase_rate:
+    name: "复购率"
+    short: "近90天≥2单用户占比"
+    formula: "countIf(orders>=2) / count(DISTINCT user_id)，窗口按 orders.created_at 近90天"
+    pitfalls: "未限定窗口会随时间漂移"
+  conversion_rate:
+    name: "支付转化率"
+    short: "converted 会话 ÷ 全部会话"
+    formula: "countIf(sessions.converted=1) / count()"
+    pitfalls: "分母是会话，不是用户；不要用 payments 表"
+  retention_d7:
+    name: "7日留存率"
+    short: "注册后 [D+1,D+7) 回访占比"
+    formula: "uniqExactIf(user_id, started_at >= signup_at + INTERVAL 1 DAY AND started_at < signup_at + INTERVAL 7 DAY) / uniqExact(user_id)"
+    pitfalls: "窗口是左闭右开；排除测试与软删"
+  mrr:
+    name: "MRR"
+    short: "active 账户 mrr 之和"
+    formula: "SUM(accounts.mrr_cents)/100 WHERE status='active'"
+    pitfalls: "不要按用户去重；paused/churned 不计"
+
+terms:
+  - term: "有效订单"
+    short: "paid/shipped/completed"
+  - term: "首触渠道"
+    short: "orders.channel"
+  - term: "测试账号"
+    short: "is_test=1，经营指标排除"
+  - term: "软删"
+    short: "users.deleted_at 非空，需排除"
+  - term: "退款分摊"
+    short: "按商品金额占比"
