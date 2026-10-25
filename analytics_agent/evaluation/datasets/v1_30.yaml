@@ -38,7 +38,7 @@ dataset:
     - id: "A-07"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "各支付方式的成功支付金额分别是多少？"
+      message: "近 30 天各支付方式的成功支付金额分别是多少？"
       metadata:
         layer: A
         difficulty: easy
@@ -46,6 +46,8 @@ dataset:
           SELECT method, SUM(amount_cents) / 100.0 AS paid_amount
           FROM shop.payments
           WHERE status = 'succeeded' AND is_retry = 0
+            AND paid_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND paid_at <  toStartOfDay(now())
           GROUP BY method
           ORDER BY paid_amount DESC
         without_filter_sql: |
@@ -170,7 +172,7 @@ dataset:
     - id: "B-11"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "销量最高的 10 个商品是哪些？"
+      message: "近 30 天销量最高的 10 个商品是哪些？"
       metadata:
         layer: B
         difficulty: medium
@@ -181,6 +183,8 @@ dataset:
           JOIN shop.products p ON p.product_id = oi.product_id
           WHERE o.status IN ('paid','shipped','completed')
             AND o.currency = 'CNY' AND o.is_test = 0
+            AND o.created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND o.created_at <  toStartOfDay(now())
           GROUP BY p.name
           ORDER BY units DESC
           LIMIT 10
@@ -189,7 +193,7 @@ dataset:
     - id: "B-12"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "各国家用户的支付转化率是多少？"
+      message: "近 30 天各国家用户的支付转化率是多少？"
       metadata:
         layer: B
         difficulty: medium
@@ -197,7 +201,9 @@ dataset:
           SELECT u.country, countIf(s.converted = 1) / count() AS cvr
           FROM shop.sessions s
           JOIN shop.users u ON u.user_id = s.user_id
-          WHERE u.is_test = 0
+          WHERE u.is_test = 0 AND u.deleted_at IS NULL
+            AND s.started_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND s.started_at <  toStartOfDay(now())
           GROUP BY u.country
           ORDER BY cvr DESC
         expected_behavior: answer
@@ -205,7 +211,7 @@ dataset:
     - id: "B-13"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "各品类的客单价是多少？"
+      message: "近 30 天各品类的客单价是多少？"
       metadata:
         layer: B
         difficulty: hard
@@ -217,6 +223,8 @@ dataset:
           JOIN shop.products p ON p.product_id = oi.product_id
           WHERE o.status IN ('paid','shipped','completed')
             AND o.currency = 'CNY' AND o.is_test = 0
+            AND o.created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND o.created_at <  toStartOfDay(now())
           GROUP BY p.category
           ORDER BY aov DESC
         without_filter_sql: |
@@ -226,6 +234,8 @@ dataset:
           JOIN shop.orders o ON o.order_id = oi.order_id
           JOIN shop.products p ON p.product_id = oi.product_id
           WHERE o.currency = 'CNY' AND o.is_test = 0
+            AND o.created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND o.created_at <  toStartOfDay(now())
           GROUP BY p.category
           ORDER BY aov DESC
         expected_behavior: answer
@@ -517,7 +527,7 @@ dataset:
     - id: "H-26"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "近 7 天每天的下单事件数是多少？"
+      message: "近 7 天每天的 purchase 事件数是多少？"
       metadata:
         layer: H
         difficulty: medium

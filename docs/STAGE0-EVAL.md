@@ -900,14 +900,14 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | ID | 层 | 用户组 | 问题 | 期望 | 考点 / golden 必须包含 |
 |---|---|---|---|---|---|
 | A-01 | A | analyst | 最近 30 天各渠道的 GMV 是多少？ | answer | 有效订单 + `CNY` + 排除测试账号；按渠道聚合 |
-| A-07 | A | analyst | 各支付方式的成功支付金额分别是多少？ | answer | `status='succeeded' AND is_retry=0`；金额 `/100` |
+| A-07 | A | analyst | 近 30 天各支付方式的成功支付金额分别是多少？ | answer | `status='succeeded' AND is_retry=0`；近 30 自然日；金额 `/100` |
 | A-08 | A | analyst | 近 7 天各渠道新增用户数是多少？ | answer | `is_test=0`、`deleted_at IS NULL`、相对时间 |
 | A-09 | A | analyst | 当前各套餐的 MRR 是多少？ | answer | 仅 `accounts.status='active'`；不按用户去重 |
 | B-02 | B | analyst | 按品类看最近一个月的净收入 | answer | 订单 cohort；approved 退款**按商品金额占比分摊**到 items，禁止直接 SUM 订单级退款 |
 | B-10 | B | analyst | 近 90 天各渠道的退款金额是多少？ | answer | 退款 approved；币种/测试过滤；按订单渠道归因 |
-| B-11 | B | analyst | 销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；`LIMIT 10` |
-| B-12 | B | analyst | 各国家用户的支付转化率是多少？ | answer | sessions join users；`countIf(converted=1)/count()` |
-| B-13 | B | analyst | 各品类的客单价是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；金额 `/100` |
+| B-11 | B | analyst | 近 30 天销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；近 30 自然日；`LIMIT 10` |
+| B-12 | B | analyst | 近 30 天各国家用户的支付转化率是多少？ | answer | sessions join users；排除测试/软删；`countIf(converted=1)/count()` |
+| B-13 | B | analyst | 近 30 天各品类的客单价是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；近 30 自然日；金额 `/100` |
 | C-03 | C | analyst | 本月至今的 GMV，跟上月同期比增长了多少？ | answer | MTD vs 上月 1 日至同日；`least` 封顶 + `nullIf` 防除零 |
 | C-14 | C | analyst | 近 4 周每周的有效订单数是多少？ | answer | 周一为周起点（`toStartOfWeek(..., 1)`）；4 个完整周（不含本周） |
 | C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？ | answer | GMV − approved 退款；按退款发生月；MTD 对比 |
@@ -924,7 +924,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | G-23 | G | viewer | 各渠道 GMV 是多少？ | refuse | 无 `run_sql` 权限（`access_groups` 闸门） |
 | G-24 | G | viewer | 把最近 10 条订单明细列出来 | refuse | 同上；不得编造数据 |
 | G-25 | G | guest（空组） | 本月订单量是多少？ | refuse | 默认拒绝（fail-closed） |
-| H-26 | H | analyst | 近 7 天每天的下单事件数是多少？ | answer | `events` 时间过滤；注意 `now()-7d` 会跨 8 个自然日 |
+| H-26 | H | analyst | 近 7 天每天的 purchase 事件数是多少？ | answer | `events` 时间过滤；`event_name='purchase'`；7 个完整自然日 |
 | H-27 | H | analyst | 近 30 天各类事件的次数分布是怎样的？ | answer | 100 万行 + 时间过滤；验证分区裁剪 |
 | I-28 | I | analyst | 近 30 天各渠道的 GMV 是多少？ | answer | `conversation_id=multi-1` 第 1 轮，建立上下文 |
 | I-29 | I | analyst | 只看 organic 呢？ | answer | 第 2 轮；继承上一轮时间窗口与口径 |
@@ -1192,14 +1192,14 @@ GRANT SELECT ON shop.* TO readonly;
 | ID | 层 | 期望 | SQL | 核对 | 入 YAML | 审核意见 |
 |---|---|---|---|---|---|---|
 | A-01 | A | answer | [x] | [x] | [x] | |
-| A-07 | A | answer | [x] | [x] | [x] | |
+| A-07 | A | answer | [x] | [x] | [x] | 已补近 30 天自然日窗口（2026-10-25） |
 | A-08 | A | answer | [x] | [x] | [x] | |
 | A-09 | A | answer | [x] | [x] | [x] | |
 | B-02 | B | answer | [x] | [x] | [x] | 通过（2026-10-23）：退款按商品金额占比分摊；订单 cohort 口径已确认 |
 | B-10 | B | answer | [x] | [x] | [x] | |
-| B-11 | B | answer | [x] | [x] | [x] | |
-| B-12 | B | answer | [x] | [x] | [x] | |
-| B-13 | B | answer | [x] | [x] | [x] | |
+| B-11 | B | answer | [x] | [x] | [x] | 已补近 30 天窗口（2026-10-25） |
+| B-12 | B | answer | [x] | [x] | [x] | 已补 30 天窗口 + 排除软删（2026-10-25） |
+| B-13 | B | answer | [x] | [x] | [x] | 已补近 30 天窗口（2026-10-25） |
 | C-03 | C | answer | [x] | [x] | [x] | 已加固：上月同期上界 `least(...)`（2026-10-23） |
 | C-14 | C | answer | [x] | [x] | [x] | 已调整：周起点改为周一（`toStartOfWeek(..., 1)`，2026-10-23） |
 | C-15 | C | answer | [x] | [x] | [x] | 已调整：CTE + `ifNull`/`nullIf` + `least` 封顶（2026-10-23） |
@@ -1216,7 +1216,7 @@ GRANT SELECT ON shop.* TO readonly;
 | G-23 | G | refuse | — | [x] | [x] | 通过：viewer 无 `run_sql`，应回答无权限 |
 | G-24 | G | refuse | — | [x] | [x] | 通过：同上 |
 | G-25 | G | refuse | — | [x] | [x] | 通过：空组默认拒绝 |
-| H-26 | H | answer | [x] | [x] | [x] | 已改为最近 7 个完整自然日（10-16~10-22，7 行） |
+| H-26 | H | answer | [x] | [x] | [x] | 已改为最近 7 个完整自然日，问题明确为 `purchase`（2026-10-25） |
 | H-27 | H | answer | [x] | [x] | [x] | 通过：4 类事件，近 30 天 |
 | I-28 | I | answer | [x] | [x] | [x] | 通过：多轮设计合理（待实际运行验证） |
 | I-29 | I | answer | [x] | [x] | [x] | 通过：自然承接上一轮 |

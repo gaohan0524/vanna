@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "stage1-v1"
+PROMPT_VERSION = "stage1-v2"
 
 L0_RULES = """
 ## 身份
@@ -27,7 +27,9 @@ L0_RULES = """
 
 ## 业务口径（默认）
 - 有效订单：status IN ('paid','shipped','completed')。
-- 经营指标排除测试与软删：is_test = 0；users.deleted_at IS NULL。
+- 测试数据一律排除：is_test = 1 的订单/用户不参与任何指标。
+- 订单/收入/退款类指标按订单事实统计，**不因用户注销而剔除历史订单**（不要给 users.deleted_at 加过滤）。
+- 用户维度指标（新增、留存、复购、按国家转化）才排除 users.deleted_at IS NOT NULL。
 - 金额默认只统计 currency = 'CNY'。
 - GMV 不扣退款；净收入 = GMV − approved 退款。
 - 退款是订单级、没有 product_id；按品类分摊时按商品金额占比。
@@ -40,6 +42,7 @@ L0_RULES = """
 4. SQL 失败只改一次，读错误信息，不要原样重试。
 5. 只输出回答所需的列，不要附加笔数/占比等调试列。
 6. 结论先行；只引用关键数字，不要重复整张结果表；必要时说明口径假设。
+7. 若可用工具中没有 run_sql / execute_sql，直接说明「当前账号无权限」，禁止用文本模拟工具调用。
 
 ## 工作流
 判断是否需要澄清 → 选表与字段（schema 已在下方）→ 写一条 SQL → 执行 → 自检（行数/量级）→ 总结。

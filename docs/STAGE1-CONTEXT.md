@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 1 / T1-1 ~ T1-6** 的详细执行版。
 >
-> - 状态：**进行中（T1-6 第一次：EX 19.1%；待修 Top 问题；2026-10-25）**
+> - 状态：**进行中（T1-6 第二次：EX 33.3%、behavior 66.7%，差 1 条达 G1；2026-10-25）**
 > - 前置：Stage 0 完成（2026-10-23），30 条用例与评分规则已冻结
 > - 基线：EX 实测 0/21，95% 上界 13.6%，**保守记 15%**
 > - 目标：EX ≥ 25%，`SCHEMA_MISSING` < 5%，平均工具轮次 ≤ 5
@@ -482,15 +482,15 @@ def build_agent(settings=None, ...):
 在 `analytics_agent/__init__.py` 或 `prompts/templates.py` 定义：
 
 ```python
-PROMPT_VERSION = "stage1-v1"
+PROMPT_VERSION = "stage1-v2"
 ```
 
 `cli.py` 的 `agent` 字段（`report.json["agent"]`）包含 `prompt_version` 与 `prompt_tokens_est`，报告里能追溯“这次结果用的是哪版提示词、多大”。prompt 任何改动都要递增版本号。
 
 ### 8.4 DoD
 
-- [x] `build_agent` 默认带上 Stage 1 提示词（2,442 tokens，`stage1-v1`）
-- [x] 报告 `agent.prompt_version` / `prompt_tokens_est` 有值（实测 `stage1-v1` / 2,459）
+- [x] `build_agent` 默认带上 Stage 1 提示词（`stage1-v2`，2,572 tokens）
+- [x] 报告 `agent.prompt_version` / `prompt_tokens_est` 有值（实测 `stage1-v2` / 2,572）
 - [x] 缺 catalog / glossary 时启动即报错，并提示刷新命令（单测覆盖）
 
 ---
@@ -514,16 +514,16 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 
 | 指标 | 基线（Stage 0） | Stage 1 第 1 次 | Stage 1 第 2 次 |
 |---|---|---|---|
-| EX | 15%（估算） | **19.1%（4/21）** | |
-| 首答命中 | 0% | 19.1% | |
-| behavior | 44.4% | **55.6%（5/9）** | |
-| 平均工具轮次 | 9.83 | **1.1** | |
-| P95 | 31.4s | **22.0s** | |
-| `METRIC_WRONG` | 0 | 8 | |
-| `NO_TOOL` | 0 | 5 | |
-| `SHAPE_MISMATCH` | 21 | 4 | |
-| `AMBIGUOUS` | 5 | 4 | |
-| `UNKNOWN` | 0% | 0% | |
+| EX | 15%（估算） | 19.1%（4/21） | **33.3%（7/21）** |
+| 首答命中 | 0% | 19.1% | 33.3% |
+| behavior | 44.4% | 55.6%（5/9） | **66.7%（6/9）** |
+| 平均工具轮次 | 9.83 | 1.1 | **1.37** |
+| P95 | 31.4s | 22.0s | **20.2s** |
+| `METRIC_WRONG` | 0 | 8 | 10 |
+| `NO_TOOL` | 0 | 5 | 1 |
+| `SHAPE_MISMATCH` | 21 | 4 | 2 |
+| `AMBIGUOUS` | 5 | 4 | 3 |
+| `UNKNOWN` | 0% | 0% | 0% |
 
 ### 9.3 失败归因重点
 
@@ -674,6 +674,8 @@ Stage 1 后如果 EX 仍低，优先看这三类：
 | 2026-10-25 | T1-5 | 报告增加 `prompt_version` / `prompt_tokens_est` | 完成 | 22 passed（含接线 4 项）；ruff 全过 |
 | 2026-10-25 | T1-6 | 第一次运行（30 条） | 完成 | EX 19.1%（4/21）、behavior 55.6%、avg_tools 1.1、P95 22.0s |
 | 2026-10-25 | T1-6 | 失败归因 | METRIC_WRONG 8 / NO_TOOL 5 / SHAPE 4 / AMBIGUOUS 4 | 报告 `reports/20261025-194149/` |
+| 2026-10-25 | T1-6 | 第二轮修正：A-07/B-11/B-12/B-13 补 30 天窗口、H-26 明确 purchase、软删口径、无工具规则 | 完成 | prompt `stage1-v2`（2,572 tokens） |
+| 2026-10-25 | T1-6 | 第二次运行（30 条） | 完成 | **EX 33.3%（7/21）、behavior 66.7%（6/9）、avg_tools 1.37、P95 20.2s** |
 | 2026-10-25 | T1-1 | 单测与静态检查 | 通过 | `tests/test_schema_render.py` 6 passed；ruff 全过 |
 
 ---
