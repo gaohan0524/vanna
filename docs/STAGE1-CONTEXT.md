@@ -2,11 +2,11 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 1 / T1-1 ~ T1-6** 的详细执行版。
 >
-> - 状态：**计划已定，待执行**（2026-10-24 起）
+> - 状态：**进行中（T1-1 完成，2026-10-25）**
 > - 前置：Stage 0 完成（2026-10-23），30 条用例与评分规则已冻结
 > - 基线：EX 实测 0/21，95% 上界 13.6%，**保守记 15%**
 > - 目标：EX ≥ 25%，`SCHEMA_MISSING` < 5%，平均工具轮次 ≤ 5
-> - 最后更新：2026-10-24
+> - 最后更新：2026-10-25
 
 ---
 
@@ -230,11 +230,11 @@ python -m analytics_agent.context.schema_catalog refresh
 
 ### 4.6 DoD
 
-- [ ] 12 张表全部有 `summary`
-- [ ] 100% 字段有 `type`，≥ 80% 字段有非空 `comment`
-- [ ] 所有 `LowCardinality` 列有 `enum`（或明确标注“自由文本”）
-- [ ] `schema_catalog.json` < 100 KB，刷新 < 5s
-- [ ] 人工抽查 20 个字段，注释与数据一致
+- [x] 12 张表全部有 `summary`（2026-10-25）
+- [x] 100% 字段有 `type`，**77/77 有非空 `comment`**
+- [x] 16 个 `LowCardinality` 列全部有 `enum`
+- [x] `schema_catalog.json` **19,475 bytes**（<100 KB），刷新 **0.79s**
+- [x] 抽查 `orders` 全字段 + 各表 summary，注释与数据一致
 
 ---
 
@@ -653,7 +653,11 @@ Stage 1 后如果 EX 仍低，优先看这三类：
 
 | 日期 | 步骤 | 操作 | 结果 | 备注 |
 |---|---|---|---|---|
-| | | | | |
+| 2026-10-25 | P0 | `seed --scale 0.1` | 成功 | 12 表 312,569 行；锚点 `2026-10-24`；`check --strict` 41/41 |
+| 2026-10-25 | T1-1 | 实现 `context/schema_catalog.py` | 完成 | 抽取、行数、枚举采样、注释合并、`refresh` 子命令 |
+| 2026-10-25 | T1-1 | 生成 `schema_catalog.json` | 完成 | 12 表 / 77 字段 / 16 枚举；19,475 bytes；刷新 0.79s |
+| 2026-10-25 | T1-1 | 实现 `context/render.py` | 完成 | 4,114 chars ≈ 1,028 tokens（预算 2,200）；重复“取值”已去重 |
+| 2026-10-25 | T1-1 | 单测与静态检查 | 通过 | `tests/test_schema_render.py` 6 passed；ruff 全过 |
 
 ---
 

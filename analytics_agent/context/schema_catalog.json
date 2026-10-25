@@ -1,0 +1,714 @@
+{
+  "version": 1,
+  "generated_at": "2026-10-25T17:28:51+08:00",
+  "database": "shop",
+  "tables": [
+    {
+      "name": "orders",
+      "engine": "MergeTree",
+      "rows": 36000,
+      "summary": "订单主表，一单一行；金额单位为分",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "订单唯一 ID",
+          "enum": null
+        },
+        {
+          "name": "user_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "下单用户 ID",
+          "enum": null
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime('Asia/Shanghai')",
+          "nullable": false,
+          "comment": "下单时间（Asia/Shanghai）",
+          "enum": null
+        },
+        {
+          "name": "status",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "订单状态；有效订单=paid/shipped/completed；另有 pending/cancelled/refunded",
+          "enum": [
+            "paid",
+            "shipped",
+            "completed",
+            "pending",
+            "cancelled",
+            "refunded"
+          ]
+        },
+        {
+          "name": "currency",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "币种；95% CNY，5% USD；经营指标默认只看 CNY",
+          "enum": [
+            "CNY",
+            "USD"
+          ]
+        },
+        {
+          "name": "amount_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "订单金额（分），已扣 discount_cents；不含退款",
+          "enum": null
+        },
+        {
+          "name": "discount_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "优惠金额（分）",
+          "enum": null
+        },
+        {
+          "name": "channel",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "首触渠道；取值 organic/paid_search/social/referral",
+          "enum": [
+            "organic",
+            "paid_search",
+            "social",
+            "referral"
+          ]
+        },
+        {
+          "name": "campaign_id",
+          "type": "Nullable(UInt64)",
+          "nullable": true,
+          "comment": "关联营销活动 ID；可为空",
+          "enum": null
+        },
+        {
+          "name": "is_test",
+          "type": "UInt8",
+          "nullable": false,
+          "comment": "测试订单标记，1=测试；经营指标必须排除",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "order_items",
+      "engine": "MergeTree",
+      "rows": 89916,
+      "summary": "订单明细表，一单多行；金额单位为分",
+      "columns": [
+        {
+          "name": "order_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "所属订单 ID",
+          "enum": null
+        },
+        {
+          "name": "product_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "商品 ID",
+          "enum": null
+        },
+        {
+          "name": "quantity",
+          "type": "UInt32",
+          "nullable": false,
+          "comment": "购买数量",
+          "enum": null
+        },
+        {
+          "name": "unit_price_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "成交单价（分）",
+          "enum": null
+        },
+        {
+          "name": "item_amount_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "明细金额（分）= quantity * unit_price_cents - 分摊优惠",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "payments",
+      "engine": "MergeTree",
+      "rows": 34160,
+      "summary": "支付流水表；含 3% 重复扣款重试流水",
+      "columns": [
+        {
+          "name": "payment_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "支付流水 ID",
+          "enum": null
+        },
+        {
+          "name": "order_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "所属订单 ID",
+          "enum": null
+        },
+        {
+          "name": "paid_at",
+          "type": "DateTime('Asia/Shanghai')",
+          "nullable": false,
+          "comment": "支付时间（Asia/Shanghai）",
+          "enum": null
+        },
+        {
+          "name": "method",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "支付方式；取值 alipay/wechat/card",
+          "enum": [
+            "alipay",
+            "wechat",
+            "card"
+          ]
+        },
+        {
+          "name": "amount_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "支付金额（分）",
+          "enum": null
+        },
+        {
+          "name": "status",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "支付状态；当前数据只生成 succeeded",
+          "enum": [
+            "succeeded"
+          ]
+        },
+        {
+          "name": "is_retry",
+          "type": "UInt8",
+          "nullable": false,
+          "comment": "重试流水标记，1=重试；统计金额必须排除 is_retry=1",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "refunds",
+      "engine": "MergeTree",
+      "rows": 1101,
+      "summary": "退款表，订单级（无 product_id）；金额单位为分",
+      "columns": [
+        {
+          "name": "refund_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "退款单 ID",
+          "enum": null
+        },
+        {
+          "name": "order_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "所属订单 ID；退款是订单级，没有 product_id",
+          "enum": null
+        },
+        {
+          "name": "created_at",
+          "type": "DateTime('Asia/Shanghai')",
+          "nullable": false,
+          "comment": "退款发起时间（Asia/Shanghai）",
+          "enum": null
+        },
+        {
+          "name": "amount_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "退款金额（分）",
+          "enum": null
+        },
+        {
+          "name": "reason",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "退款原因；取值 quality/late_delivery/wrong_item/other",
+          "enum": [
+            "late_delivery",
+            "quality",
+            "other",
+            "wrong_item"
+          ]
+        },
+        {
+          "name": "status",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "退款状态；当前数据只有 approved/pending，统计只算 approved",
+          "enum": [
+            "approved",
+            "pending"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "users",
+      "engine": "MergeTree",
+      "rows": 5000,
+      "summary": "用户表，一行一个注册用户",
+      "columns": [
+        {
+          "name": "user_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "用户唯一 ID",
+          "enum": null
+        },
+        {
+          "name": "email",
+          "type": "String",
+          "nullable": false,
+          "comment": "注册邮箱",
+          "enum": null
+        },
+        {
+          "name": "signup_at",
+          "type": "DateTime('Asia/Shanghai')",
+          "nullable": false,
+          "comment": "注册时间（Asia/Shanghai）",
+          "enum": null
+        },
+        {
+          "name": "channel",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "注册渠道（首触）；取值 organic/paid_search/social/referral",
+          "enum": [
+            "organic",
+            "paid_search",
+            "social",
+            "referral"
+          ]
+        },
+        {
+          "name": "country",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "注册国家；取值 CN/US/JP/SG",
+          "enum": [
+            "CN",
+            "US",
+            "JP",
+            "SG"
+          ]
+        },
+        {
+          "name": "is_test",
+          "type": "UInt8",
+          "nullable": false,
+          "comment": "测试账号标记，1=测试；经营指标必须排除",
+          "enum": null
+        },
+        {
+          "name": "deleted_at",
+          "type": "Nullable(DateTime)",
+          "nullable": true,
+          "comment": "软删时间；非空表示已注销，经营指标需排除",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "products",
+      "engine": "MergeTree",
+      "rows": 200,
+      "summary": "商品维表，含品类与成本",
+      "columns": [
+        {
+          "name": "product_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "商品唯一 ID",
+          "enum": null
+        },
+        {
+          "name": "sku",
+          "type": "String",
+          "nullable": false,
+          "comment": "商品编码",
+          "enum": null
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "comment": "商品名称",
+          "enum": null
+        },
+        {
+          "name": "category",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "商品品类；取值 electronics/apparel/grocery/home/beauty",
+          "enum": [
+            "apparel",
+            "grocery",
+            "beauty",
+            "home",
+            "electronics"
+          ]
+        },
+        {
+          "name": "subcategory",
+          "type": "Nullable(String)",
+          "nullable": true,
+          "comment": "二级品类；约 2% 为空，left join 时注意 NULL 丢行",
+          "enum": null
+        },
+        {
+          "name": "unit_price_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "售价（分）",
+          "enum": null
+        },
+        {
+          "name": "cost_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "成本（分）",
+          "enum": null
+        },
+        {
+          "name": "is_active",
+          "type": "UInt8",
+          "nullable": false,
+          "comment": "是否在售，1=是，0=否",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "engine": "MergeTree",
+      "rows": 40000,
+      "summary": "会话表，一行一次访问，用于转化率与漏斗",
+      "columns": [
+        {
+          "name": "session_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "会话 ID",
+          "enum": null
+        },
+        {
+          "name": "user_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "用户 ID",
+          "enum": null
+        },
+        {
+          "name": "started_at",
+          "type": "DateTime('Asia/Shanghai')",
+          "nullable": false,
+          "comment": "会话开始时间（Asia/Shanghai）",
+          "enum": null
+        },
+        {
+          "name": "channel",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "本次会话渠道；与 orders.channel（首触）不同",
+          "enum": [
+            "organic",
+            "paid_search",
+            "social",
+            "referral"
+          ]
+        },
+        {
+          "name": "device",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "设备类型；取值 ios/android/web",
+          "enum": [
+            "android",
+            "ios",
+            "web"
+          ]
+        },
+        {
+          "name": "converted",
+          "type": "UInt8",
+          "nullable": false,
+          "comment": "是否转化（下单），1=是，0=否",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "events",
+      "engine": "MergeTree",
+      "rows": 100000,
+      "summary": "行为事件明细表，一行一个事件；100 万行，查询必须带时间过滤",
+      "columns": [
+        {
+          "name": "event_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "事件 ID",
+          "enum": null
+        },
+        {
+          "name": "user_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "用户 ID",
+          "enum": null
+        },
+        {
+          "name": "session_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "所属会话 ID",
+          "enum": null
+        },
+        {
+          "name": "event_time",
+          "type": "DateTime('Asia/Shanghai')",
+          "nullable": false,
+          "comment": "事件时间（Asia/Shanghai）",
+          "enum": null
+        },
+        {
+          "name": "event_name",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "事件名；取值 page_view/add_to_cart/checkout/purchase",
+          "enum": [
+            "page_view",
+            "add_to_cart",
+            "checkout",
+            "purchase"
+          ]
+        },
+        {
+          "name": "properties",
+          "type": "String",
+          "nullable": false,
+          "comment": "事件属性 JSON 字符串；键名大小写不统一（如 event/Event），解析时需兼容",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "accounts",
+      "engine": "MergeTree",
+      "rows": 800,
+      "summary": "订阅账户表，一行一个订阅；用于 MRR 与流失",
+      "columns": [
+        {
+          "name": "account_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "订阅账户 ID",
+          "enum": null
+        },
+        {
+          "name": "user_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "所属用户 ID",
+          "enum": null
+        },
+        {
+          "name": "plan",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "套餐；取值 starter/pro/enterprise",
+          "enum": [
+            "starter",
+            "pro",
+            "enterprise"
+          ]
+        },
+        {
+          "name": "mrr_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "月度经常性收入（分）",
+          "enum": null
+        },
+        {
+          "name": "status",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "订阅状态；active/paused/churned；MRR 只统计 active",
+          "enum": [
+            "active",
+            "churned",
+            "paused"
+          ]
+        },
+        {
+          "name": "started_at",
+          "type": "DateTime('Asia/Shanghai')",
+          "nullable": false,
+          "comment": "订阅开始时间（Asia/Shanghai）",
+          "enum": null
+        },
+        {
+          "name": "churned_at",
+          "type": "Nullable(DateTime)",
+          "nullable": true,
+          "comment": "流失时间；非空表示已流失",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "campaigns",
+      "engine": "MergeTree",
+      "rows": 200,
+      "summary": "营销活动表，一行一个投放计划",
+      "columns": [
+        {
+          "name": "campaign_id",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "活动 ID",
+          "enum": null
+        },
+        {
+          "name": "name",
+          "type": "String",
+          "nullable": false,
+          "comment": "活动名称",
+          "enum": null
+        },
+        {
+          "name": "channel",
+          "type": "LowCardinality(String)",
+          "nullable": false,
+          "comment": "投放渠道",
+          "enum": [
+            "organic",
+            "paid_search",
+            "social",
+            "referral"
+          ]
+        },
+        {
+          "name": "start_date",
+          "type": "Date",
+          "nullable": false,
+          "comment": "开始日期",
+          "enum": null
+        },
+        {
+          "name": "end_date",
+          "type": "Date",
+          "nullable": false,
+          "comment": "结束日期；可能晚于数据锚点（活动排期）",
+          "enum": null
+        },
+        {
+          "name": "budget_cents",
+          "type": "Int64",
+          "nullable": false,
+          "comment": "预算（分）",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "dim_date",
+      "engine": "MergeTree",
+      "rows": 1201,
+      "summary": "日期维度表，用于关联时间属性",
+      "columns": [
+        {
+          "name": "date_key",
+          "type": "Date",
+          "nullable": false,
+          "comment": "日期主键，格式 YYYY-MM-DD",
+          "enum": null
+        },
+        {
+          "name": "year",
+          "type": "UInt16",
+          "nullable": false,
+          "comment": "年份，如 2026",
+          "enum": null
+        },
+        {
+          "name": "month",
+          "type": "UInt8",
+          "nullable": false,
+          "comment": "月份，1-12",
+          "enum": null
+        },
+        {
+          "name": "day_of_week",
+          "type": "UInt8",
+          "nullable": false,
+          "comment": "星期几，1=周一 ... 7=周日",
+          "enum": null
+        },
+        {
+          "name": "is_weekend",
+          "type": "UInt8",
+          "nullable": false,
+          "comment": "是否周末，1=是，0=否",
+          "enum": null
+        },
+        {
+          "name": "is_holiday",
+          "type": "UInt8",
+          "nullable": false,
+          "comment": "是否法定节假日，1=是，0=否",
+          "enum": null
+        }
+      ]
+    },
+    {
+      "name": "meta_data_anchor",
+      "engine": "MergeTree",
+      "rows": 1,
+      "summary": "数据锚点表，单行；预检据此判断数据是否过期",
+      "columns": [
+        {
+          "name": "anchor_date",
+          "type": "Date",
+          "nullable": false,
+          "comment": "数据截止日期（通常为昨天）",
+          "enum": null
+        },
+        {
+          "name": "seed",
+          "type": "UInt64",
+          "nullable": false,
+          "comment": "生成用随机种子",
+          "enum": null
+        },
+        {
+          "name": "generated_at",
+          "type": "DateTime",
+          "nullable": false,
+          "comment": "生成时间",
+          "enum": null
+        }
+      ]
+    }
+  ]
+}
