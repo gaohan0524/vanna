@@ -9,7 +9,7 @@ from vanna.core.system_prompt import DefaultSystemPromptBuilder
 
 from analytics_agent.context.render import estimate_tokens
 
-from .templates import L0_RULES, PROMPT_VERSION
+from .templates import L0_RULES, NO_TOOL_RULES, PROMPT_VERSION
 
 
 class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
@@ -53,8 +53,12 @@ class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
             base,
             f"今天日期：{self._today().isoformat()}",
             L0_RULES,
-            self._schema_text,
         ]
+        # 权限过滤后可能一个工具都不剩；此时必须显式告诉模型，而不是让它
+        # 用文本“模拟”一个 run_sql 调用。
+        if not tools:
+            parts.append(NO_TOOL_RULES)
+        parts.append(self._schema_text)
         if self._glossary_text:
             parts.append(self._glossary_text)
         prompt = "\n\n".join(part for part in parts if part)

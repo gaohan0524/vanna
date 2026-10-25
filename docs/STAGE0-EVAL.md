@@ -900,19 +900,19 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | ID | 层 | 用户组 | 问题 | 期望 | 考点 / golden 必须包含 |
 |---|---|---|---|---|---|
 | A-01 | A | analyst | 最近 30 天各渠道的 GMV 是多少？ | answer | 有效订单 + `CNY` + 排除测试账号；按渠道聚合 |
-| A-07 | A | analyst | 近 30 天各支付方式的成功支付金额分别是多少？ | answer | `status='succeeded' AND is_retry=0`；近 30 自然日；金额 `/100` |
+| A-07 | A | analyst | 近 30 天各支付方式的成功支付金额分别是多少？ | answer | join orders 限 `CNY`/排测试；`status='succeeded' AND is_retry=0`；近 30 自然日 |
 | A-08 | A | analyst | 近 7 天各渠道新增用户数是多少？ | answer | `is_test=0`、`deleted_at IS NULL`、相对时间 |
-| A-09 | A | analyst | 当前各套餐的 MRR 是多少？ | answer | 仅 `accounts.status='active'`；不按用户去重 |
+| A-09 | A | analyst | 当前各套餐的 MRR 是多少？ | answer | 仅 `active`；join users 排测试账号；不按用户去重 |
 | B-02 | B | analyst | 按品类看最近一个月的净收入 | answer | 订单 cohort；approved 退款**按商品金额占比分摊**到 items，禁止直接 SUM 订单级退款 |
 | B-10 | B | analyst | 近 90 天各渠道的退款金额是多少？ | answer | 退款 approved；币种/测试过滤；按订单渠道归因 |
-| B-11 | B | analyst | 近 30 天销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；近 30 自然日；`LIMIT 10` |
-| B-12 | B | analyst | 近 30 天各国家用户的支付转化率是多少？ | answer | sessions join users；排除测试/软删；`countIf(converted=1)/count()` |
-| B-13 | B | analyst | 近 30 天各品类的客单价是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；近 30 自然日；金额 `/100` |
+| B-11 | B | analyst | 近 30 天销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；并列按 `product_id` 升序；`LIMIT 10` |
+| B-12 | B | analyst | 近 30 天各国家用户的支付转化率是多少？ | answer | sessions join users；排测试/软删；输出百分比；近 30 自然日 |
+| B-13 | B | analyst | 近 30 天各品类的客单价（该品类收入 ÷ 含该品类商品的订单数）是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；金额 `/100` |
 | C-03 | C | analyst | 本月至今的 GMV，跟上月同期比增长了多少？ | answer | MTD vs 上月 1 日至同日；`least` 封顶 + `nullIf` 防除零 |
 | C-14 | C | analyst | 近 4 周每周的有效订单数是多少？ | answer | 周一为周起点（`toStartOfWeek(..., 1)`）；4 个完整周（不含本周） |
 | C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？ | answer | GMV − approved 退款；按退款发生月；MTD 对比 |
 | C-16 | C | analyst | 近 12 个月每月新增用户数及环比是多少？ | answer | 无数据月份补 0；首月环比为 `NULL` |
-| D-04 | D | analyst | 上周各渠道的支付转化率 | answer | 上周完整窗口；`converted=1` 占比 |
+| D-04 | D | analyst | 上周各渠道的支付转化率 | answer | 周一为周起点；排测试/软删；上周完整窗口 |
 | D-17 | D | analyst | 近 3 个月每月注册用户的 7 日留存率是多少？ | answer | 月度 cohort；窗口 `[D+1, D+7)`；排除测试/软删 |
 | D-18 | D | analyst | 近 7 天加购后最终下单的会话比例是多少？ | answer | `uniqExactIf`；`nullIf` 防除零 |
 | E-05 | E | analyst | 看一下复购率 | clarify | 未给时间窗口与“复购”口径 |
@@ -1192,19 +1192,19 @@ GRANT SELECT ON shop.* TO readonly;
 | ID | 层 | 期望 | SQL | 核对 | 入 YAML | 审核意见 |
 |---|---|---|---|---|---|---|
 | A-01 | A | answer | [x] | [x] | [x] | |
-| A-07 | A | answer | [x] | [x] | [x] | 已补近 30 天自然日窗口（2026-10-25） |
+| A-07 | A | answer | [x] | [x] | [x] | 补 30 天窗口 + join orders 限 CNY/排测试（2026-10-25） |
 | A-08 | A | answer | [x] | [x] | [x] | |
-| A-09 | A | answer | [x] | [x] | [x] | |
+| A-09 | A | answer | [x] | [x] | [x] | 补 join users 排测试账号（2026-10-25） |
 | B-02 | B | answer | [x] | [x] | [x] | 通过（2026-10-23）：退款按商品金额占比分摊；订单 cohort 口径已确认 |
 | B-10 | B | answer | [x] | [x] | [x] | |
-| B-11 | B | answer | [x] | [x] | [x] | 已补近 30 天窗口（2026-10-25） |
-| B-12 | B | answer | [x] | [x] | [x] | 已补 30 天窗口 + 排除软删（2026-10-25） |
-| B-13 | B | answer | [x] | [x] | [x] | 已补近 30 天窗口（2026-10-25） |
+| B-11 | B | answer | [x] | [x] | [x] | 补 30 天窗口 + 并列按 `product_id` 升序（2026-10-25） |
+| B-12 | B | answer | [x] | [x] | [x] | 补 30 天窗口 + 排软删，输出百分比（2026-10-25） |
+| B-13 | B | answer | [x] | [x] | [x] | 题面明确“品类收入 ÷ 含该品类订单数”（2026-10-25） |
 | C-03 | C | answer | [x] | [x] | [x] | 已加固：上月同期上界 `least(...)`（2026-10-23） |
 | C-14 | C | answer | [x] | [x] | [x] | 已调整：周起点改为周一（`toStartOfWeek(..., 1)`，2026-10-23） |
 | C-15 | C | answer | [x] | [x] | [x] | 已调整：CTE + `ifNull`/`nullIf` + `least` 封顶（2026-10-23） |
 | C-16 | C | answer | [x] | [x] | [x] | |
-| D-04 | D | answer | [x] | [x] | [x] | |
+| D-04 | D | answer | [x] | [x] | [x] | 周起点改为周一 + 排测试/软删（2026-10-25） |
 | D-17 | D | answer | [x] | [x] | [x] | |
 | D-18 | D | answer | [x] | [x] | [x] | |
 | E-05 | E | clarify | — | [x] | [x] | 通过：缺时间窗口与“复购”定义 |

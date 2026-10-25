@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 1 / T1-1 ~ T1-6** 的详细执行版。
 >
-> - 状态：**进行中（T1-6 第二次：EX 33.3%、behavior 66.7%，差 1 条达 G1；2026-10-25）**
+> - 状态：**进行中（第二轮 EX 33.3%、behavior 66.7%；第三轮 5 项修正完成，待运行；2026-10-25）**
 > - 前置：Stage 0 完成（2026-10-23），30 条用例与评分规则已冻结
 > - 基线：EX 实测 0/21，95% 上界 13.6%，**保守记 15%**
 > - 目标：EX ≥ 25%，`SCHEMA_MISSING` < 5%，平均工具轮次 ≤ 5
@@ -249,8 +249,8 @@ python -m analytics_agent.context.schema_catalog refresh
 1. **身份**：电商数据分析师，把业务问题转成 ClickHouse SQL 并给结论。
 2. **方言**：`toStartOfDay`/`toStartOfMonth`/`today()`；禁止 `DATE_TRUNC`/`EXTRACT`；`count()` 而非 `count(1)`；`concat()` 而非 `||`。
 3. **时间窗口**：近 N 天 = 最近 N 个完整自然日；本月/上月同期的边界规则。
-4. **业务口径**：有效订单、排除测试/软删、默认 CNY、GMV 不扣退款、净收入扣 approved 退款、渠道用 `orders.channel`。
-5. **行为规则**：先澄清、无权限直说、数据不存在直说、失败只改一次、只输出必要列。
+4. **业务口径**：有效订单、测试数据一律排除、软删只影响用户维度、默认 CNY、GMV 不扣退款、净收入扣 approved 退款、渠道用 `orders.channel`、Top-N 并列按主键。
+5. **行为规则**：先澄清、无权限直说、数据不存在直说、失败只改一次、只输出必要列、无可用工具时禁止文本模拟调用。
 6. **工作流**：判断澄清 → 选表 → 写一条 SQL → 执行 → 自检 → 总结。
 
 ### 5.2 代码骨架
@@ -273,11 +273,14 @@ L0_RULES = """
 
 ## 业务口径
 - 有效订单：status IN ('paid','shipped','completed')。
-- 经营指标排除测试与软删：is_test = 0；users.deleted_at IS NULL。
+- 测试数据一律排除：is_test = 1 的订单/用户不参与任何指标。
+- 订单/收入/退款类指标按订单事实统计，不因用户注销剔除历史订单（不要过滤 users.deleted_at）。
+- 用户维度指标（新增、留存、复购、按国家转化）才排除 users.deleted_at IS NOT NULL。
 - 金额默认只统计 currency='CNY'。
 - GMV 不扣退款；净收入 = GMV − approved 退款。
 - 退款是订单级、没有 product_id；按品类分摊时按商品金额占比。
 - 渠道归因用 orders.channel（首触）。
+- Top-N/排名：主指标降序，并列时按主键升序（如 product_id）补齐。
 
 ## 行为规则（优先级最高）
 1. 缺时间范围/指标定义/维度 → 先问 1~2 个澄清问题，禁止先查库。
@@ -285,7 +288,8 @@ L0_RULES = """
 3. 数据中不存在（无表/无字段/无记录）→ 说明「当前数据不包含」，禁止估算。
 4. SQL 失败只改一次；读错误信息，不要原样重试。
 5. 只输出回答所需的列；不要附加笔数/占比等调试列，除非用户要求。
-6. 结论先行，再给表格；说明口径假设。
+6. 结论先行；只引用关键数字，不要重复整张结果表；必要时说明口径假设。
+7. 若可用工具中没有 run_sql/execute_sql，直接说明「当前账号无权限」，禁止用文本模拟工具调用。
 
 ## 工作流
 判断是否需要澄清 → 选表与字段 → 写一条 SQL → 执行 → 自检（行数/量级）→ 总结。
@@ -482,15 +486,15 @@ def build_agent(settings=None, ...):
 在 `analytics_agent/__init__.py` 或 `prompts/templates.py` 定义：
 
 ```python
-PROMPT_VERSION = "stage1-v2"
+PROMPT_VERSION = "stage1-v3"
 ```
 
 `cli.py` 的 `agent` 字段（`report.json["agent"]`）包含 `prompt_version` 与 `prompt_tokens_est`，报告里能追溯“这次结果用的是哪版提示词、多大”。prompt 任何改动都要递增版本号。
 
 ### 8.4 DoD
 
-- [x] `build_agent` 默认带上 Stage 1 提示词（`stage1-v2`，2,572 tokens）
-- [x] 报告 `agent.prompt_version` / `prompt_tokens_est` 有值（实测 `stage1-v2` / 2,572）
+- [x] `build_agent` 默认带上 Stage 1 提示词（`stage1-v3`，≈2,600 tokens）
+- [x] 报告 `agent.prompt_version` / `prompt_tokens_est` 有值（第二轮实测 `stage1-v2` / 2,572）
 - [x] 缺 catalog / glossary 时启动即报错，并提示刷新命令（单测覆盖）
 
 ---
@@ -676,6 +680,7 @@ Stage 1 后如果 EX 仍低，优先看这三类：
 | 2026-10-25 | T1-6 | 失败归因 | METRIC_WRONG 8 / NO_TOOL 5 / SHAPE 4 / AMBIGUOUS 4 | 报告 `reports/20261025-194149/` |
 | 2026-10-25 | T1-6 | 第二轮修正：A-07/B-11/B-12/B-13 补 30 天窗口、H-26 明确 purchase、软删口径、无工具规则 | 完成 | prompt `stage1-v2`（2,572 tokens） |
 | 2026-10-25 | T1-6 | 第二次运行（30 条） | 完成 | **EX 33.3%（7/21）、behavior 66.7%（6/9）、avg_tools 1.37、P95 20.2s** |
+| 2026-10-25 | T1-6 | 第三轮修正：无工具块、D-04 周一、A-07/A-09/H-26/B-12 golden 对齐、B-13 题面、B-11 并列 | 完成，**未运行** | prompt `stage1-v3`（≈2,600 tokens） |
 | 2026-10-25 | T1-1 | 单测与静态检查 | 通过 | `tests/test_schema_render.py` 6 passed；ruff 全过 |
 
 ---

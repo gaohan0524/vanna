@@ -43,12 +43,14 @@ dataset:
         layer: A
         difficulty: easy
         golden_sql: |
-          SELECT method, SUM(amount_cents) / 100.0 AS paid_amount
-          FROM shop.payments
-          WHERE status = 'succeeded' AND is_retry = 0
-            AND paid_at >= toStartOfDay(now()) - INTERVAL 30 DAY
-            AND paid_at <  toStartOfDay(now())
-          GROUP BY method
+          SELECT p.method AS method, SUM(p.amount_cents) / 100.0 AS paid_amount
+          FROM shop.payments p
+          JOIN shop.orders o ON o.order_id = p.order_id
+          WHERE p.status = 'succeeded' AND p.is_retry = 0
+            AND o.currency = 'CNY' AND o.is_test = 0
+            AND p.paid_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+            AND p.paid_at <  toStartOfDay(now())
+          GROUP BY p.method
           ORDER BY paid_amount DESC
         without_filter_sql: |
           SELECT method, SUM(amount_cents) / 100.0 AS paid_amount
@@ -83,10 +85,11 @@ dataset:
         layer: A
         difficulty: easy
         golden_sql: |
-          SELECT plan, SUM(mrr_cents) / 100.0 AS mrr
-          FROM shop.accounts
-          WHERE status = 'active'
-          GROUP BY plan
+          SELECT a.plan AS plan, SUM(a.mrr_cents) / 100.0 AS mrr
+          FROM shop.accounts a
+          JOIN shop.users u ON u.user_id = a.user_id
+          WHERE a.status = 'active' AND u.is_test = 0
+          GROUP BY a.plan
           ORDER BY mrr DESC
         without_filter_sql: |
           SELECT plan, SUM(mrr_cents) / 100.0 AS mrr
@@ -185,8 +188,8 @@ dataset:
             AND o.currency = 'CNY' AND o.is_test = 0
             AND o.created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
             AND o.created_at <  toStartOfDay(now())
-          GROUP BY p.name
-          ORDER BY units DESC
+          GROUP BY p.name, p.product_id
+          ORDER BY units DESC, p.product_id
           LIMIT 10
         expected_behavior: answer
 
@@ -198,20 +201,20 @@ dataset:
         layer: B
         difficulty: medium
         golden_sql: |
-          SELECT u.country, countIf(s.converted = 1) / count() AS cvr
+          SELECT u.country, round(100.0 * countIf(s.converted = 1) / count(), 2) AS cvr_pct
           FROM shop.sessions s
           JOIN shop.users u ON u.user_id = s.user_id
           WHERE u.is_test = 0 AND u.deleted_at IS NULL
             AND s.started_at >= toStartOfDay(now()) - INTERVAL 30 DAY
             AND s.started_at <  toStartOfDay(now())
           GROUP BY u.country
-          ORDER BY cvr DESC
+          ORDER BY cvr_pct DESC
         expected_behavior: answer
 
     - id: "B-13"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "近 30 天各品类的客单价是多少？"
+      message: "近 30 天各品类的客单价（该品类收入 ÷ 含该品类商品的订单数）是多少？"
       metadata:
         layer: B
         difficulty: hard
@@ -384,11 +387,13 @@ dataset:
         layer: D
         difficulty: medium
         golden_sql: |
-          SELECT channel, countIf(converted = 1) / count() AS cvr
-          FROM shop.sessions
-          WHERE started_at >= toStartOfWeek(today()) - INTERVAL 7 DAY
-            AND started_at <  toStartOfWeek(today())
-          GROUP BY channel
+          SELECT s.channel AS channel, countIf(s.converted = 1) / count() AS cvr
+          FROM shop.sessions s
+          JOIN shop.users u ON u.user_id = s.user_id
+          WHERE u.is_test = 0 AND u.deleted_at IS NULL
+            AND s.started_at >= toStartOfWeek(today(), 1) - INTERVAL 7 DAY
+            AND s.started_at <  toStartOfWeek(today(), 1)
+          GROUP BY s.channel
           ORDER BY cvr DESC
         expected_behavior: answer
 
@@ -536,6 +541,7 @@ dataset:
           SELECT toDate(event_time) AS day, count() AS purchase_events
           FROM shop.events
           WHERE event_name = 'purchase'
+            AND user_id NOT IN (SELECT user_id FROM shop.users WHERE is_test = 1)
             AND event_time >= toStartOfDay(now()) - INTERVAL 7 DAY
             AND event_time <  toStartOfDay(now())
           GROUP BY day

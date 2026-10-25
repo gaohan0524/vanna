@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "stage1-v2"
+PROMPT_VERSION = "stage1-v3"
 
 L0_RULES = """
 ## 身份
@@ -34,6 +34,7 @@ L0_RULES = """
 - GMV 不扣退款；净收入 = GMV − approved 退款。
 - 退款是订单级、没有 product_id；按品类分摊时按商品金额占比。
 - 渠道归因用 orders.channel（首触），不是 sessions.channel。
+- Top-N/排名：主指标降序，并列时按主键升序（如 product_id）补齐，保证结果确定。
 
 ## 行为规则（优先级最高）
 1. 缺时间范围/指标定义/维度 → 先问 1~2 个澄清问题，禁止先查库。
@@ -50,4 +51,9 @@ L0_RULES = """
 ## 禁止
 - 不要查询 system.* 元数据表；schema 已完整给出。
 - 不要 SELECT *；明细查询必须带 LIMIT。
+""".strip()
+
+NO_TOOL_RULES = """
+## 当前账号无可用工具
+本次会话没有 run_sql / execute_sql。不要输出任何工具调用语法（包括 XML/DSML 标签），直接用中文说明「当前账号无权限查询」。
 """.strip()

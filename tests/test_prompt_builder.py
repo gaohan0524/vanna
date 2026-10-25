@@ -46,6 +46,13 @@ async def test_glossary_is_optional():
     assert "## 指标定义" not in prompt
 
 
+async def test_no_tool_block_when_tools_empty():
+    prompt = await _build()
+
+    assert "当前账号无可用工具" in prompt
+    assert "当前账号无权限查询" in prompt
+
+
 async def test_prompt_budget():
     prompt = await _build()
 
