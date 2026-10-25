@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 1 / T1-1 ~ T1-6** 的详细执行版。
 >
-> - 状态：**进行中（T1-1 ~ T1-4 完成，T1-5 待接线；2026-10-25）**
+> - 状态：**进行中（T1-1 ~ T1-5 完成，待 T1-6 验证；2026-10-25）**
 > - 前置：Stage 0 完成（2026-10-23），30 条用例与评分规则已冻结
 > - 基线：EX 实测 0/21，95% 上界 13.6%，**保守记 15%**
 > - 目标：EX ≥ 25%，`SCHEMA_MISSING` < 5%，平均工具轮次 ≤ 5
@@ -485,13 +485,13 @@ def build_agent(settings=None, ...):
 PROMPT_VERSION = "stage1-v1"
 ```
 
-`cli.py` 的 `agent_info` 增加 `prompt_version`，报告里能追溯“这次结果用的是哪版提示词”。prompt 任何改动都要递增版本号。
+`cli.py` 的 `agent_info` 增加 `prompt_version` 与 `prompt_tokens_est`，报告里能追溯“这次结果用的是哪版提示词、多大”。prompt 任何改动都要递增版本号。
 
 ### 8.4 DoD
 
-- [ ] `build_agent` 默认带上 Stage 1 提示词
-- [ ] 报告 `agent_info.prompt_version` 有值
-- [ ] 缺 catalog / glossary 时启动即报错，并提示刷新命令
+- [x] `build_agent` 默认带上 Stage 1 提示词（2,442 tokens，`stage1-v1`）
+- [x] 报告 `agent_info.prompt_version` / `prompt_tokens_est` 有值
+- [x] 缺 catalog / glossary 时启动即报错，并提示刷新命令（单测覆盖）
 
 ---
 
@@ -630,7 +630,7 @@ Stage 1 后如果 EX 仍低，优先看这三类：
 ### 12.3 每日收工动作
 
 1. 追加第 13 节执行日志（命令、结果、关键数字、报告路径）；
-2. 记录当天的提示词 token 数（`len(prompt) // 4`）；
+2. 记录当天的提示词 token 数（用 `context.render.estimate_tokens`，中文按 1 字≈1 token）；
 3. 若改了提示词，递增 `PROMPT_VERSION`；
 4. 只提交当天相关文件，不把实验性改动混进同一提交。
 
@@ -666,6 +666,9 @@ Stage 1 后如果 EX 仍低，优先看这三类：
 | 2026-10-25 | T1-4 | 新增 `context/glossary.yaml` | 完成 | 9 指标 + 5 术语；含 formula/pitfalls，供 Stage 2 工具复用 |
 | 2026-10-25 | T1-4 | 实现 `context/glossary.py` | 完成 | 加载 + 渲染；349 chars ≈ 173 tokens（预算 300） |
 | 2026-10-25 | T1-4 | 单测与静态检查 | 通过 | 18 passed（glossary 6 项）；ruff 全过 |
+| 2026-10-25 | T1-5 | `Settings` 增加 catalog/glossary 路径 | 完成 | 默认指向 `analytics_agent/context/`；支持环境变量覆盖 |
+| 2026-10-25 | T1-5 | `build_agent` 注入 `AnalyticsPromptBuilder` | 完成 | 2,442 tokens；schema/glossary/rules 全部命中 |
+| 2026-10-25 | T1-5 | 报告增加 `prompt_version` / `prompt_tokens_est` | 完成 | 22 passed（含接线 4 项）；ruff 全过 |
 | 2026-10-25 | T1-1 | 单测与静态检查 | 通过 | `tests/test_schema_render.py` 6 passed；ruff 全过 |
 
 ---

@@ -7,7 +7,9 @@ from typing import Callable, Optional
 
 from vanna.core.system_prompt import DefaultSystemPromptBuilder
 
-from .templates import L0_RULES
+from analytics_agent.context.render import estimate_tokens
+
+from .templates import L0_RULES, PROMPT_VERSION
 
 
 class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
@@ -30,10 +32,20 @@ class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
         self._schema_text = schema_text.strip()
         self._glossary_text = glossary_text.strip()
         self._today = today or date.today
+        self._last_prompt_tokens = 0
 
     @property
     def schema_text(self) -> str:
         return self._schema_text
+
+    @property
+    def prompt_version(self) -> str:
+        return PROMPT_VERSION
+
+    @property
+    def last_prompt_tokens(self) -> int:
+        """Token estimate of the most recent prompt (0 before first build)."""
+        return self._last_prompt_tokens
 
     async def build_system_prompt(self, user, tools) -> str:
         base = await super().build_system_prompt(user, tools) or ""
@@ -45,4 +57,6 @@ class AnalyticsPromptBuilder(DefaultSystemPromptBuilder):
         ]
         if self._glossary_text:
             parts.append(self._glossary_text)
-        return "\n\n".join(part for part in parts if part)
+        prompt = "\n\n".join(part for part in parts if part)
+        self._last_prompt_tokens = estimate_tokens(prompt)
+        return prompt

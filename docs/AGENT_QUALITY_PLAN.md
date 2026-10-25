@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 1 进行中**——T1-1 ~ T1-4 已完成（2026-10-25），下一步 T1-5 接线（把 `AnalyticsPromptBuilder` 接进 `build_agent`）。计划见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 12 节；Stage 0 详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
+- **当前进度**：**Stage 1 进行中**——T1-1 ~ T1-5 已完成（2026-10-25），下一步 T1-6 跑 30 条基线。计划见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 12 节；Stage 0 详见 [`STAGE0-EVAL.md`](./STAGE0-EVAL.md) 0.1
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -625,7 +625,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [x] T1-2 L0 稳定指令（方言/时间窗口/硬约束/行为规则）——2026-10-25：586 tokens；完整提示词 2,268 tokens
 - [x] T1-3 L1 常驻 schema 渲染（12 表，≤2,200 tokens）——2026-10-25：4,114 chars ≈1,556 tokens
 - [x] T1-4 L2 指标与术语（`glossary.yaml` + E/F/G 行为规则）——2026-10-25：9 指标 + 5 术语，渲染 ≈173 tokens
-- [ ] T1-5 接线与 prompt 版本（`system_prompt_builder` + `prompt_version`）
+- [x] T1-5 接线与 prompt 版本（`system_prompt_builder` + `prompt_version`）——2026-10-25：完整提示词 2,442 tokens
 - [ ] T1-6 验证与 G1（两次运行、失败归因、填第 9 节）
 - [ ] G1：EX ≥ 25%、behavior ≥ 70%、平均轮次 ≤ 5、schema < 5%、两次差异 ≤ 5pt
 - [ ] EX：`____%`（基线 15% 估算）

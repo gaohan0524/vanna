@@ -19,6 +19,10 @@ from vanna.tools.agent_memory import (
 )
 
 from .config import Settings
+from .context.glossary import load_glossary, render_glossary
+from .context.render import render_schema
+from .context.schema_catalog import load_catalog
+from .prompts.builder import AnalyticsPromptBuilder
 
 
 class EvalUserResolver(UserResolver):
@@ -131,11 +135,25 @@ def build_tool_registry(
     return registry
 
 
+def build_prompt_builder(settings: Settings) -> AnalyticsPromptBuilder:
+    """Load Stage 1 assets and assemble the prompt builder.
+
+    缺 catalog / glossary 时直接抛错（不静默降级），错误信息包含刷新命令。
+    """
+    catalog = load_catalog(settings.schema_catalog_path)
+    glossary = load_glossary(settings.glossary_path)
+    return AnalyticsPromptBuilder(
+        schema_text=render_schema(catalog),
+        glossary_text=render_glossary(glossary),
+    )
+
+
 def build_agent(
     settings: Optional[Settings] = None,
     *,
     llm_service=None,
     agent_memory=None,
+    prompt_builder: Optional[AnalyticsPromptBuilder] = None,
     stream_responses: bool = False,
     enable_memory_tools: bool = False,
 ) -> Agent:
@@ -145,16 +163,19 @@ def build_agent(
         settings: 运行时配置；缺省从环境变量读取。
         llm_service: 可注入 mock/自定义 LLM（单元测试用）。
         agent_memory: 可注入记忆后端；Stage 3 会换成向量库实现。
+        prompt_builder: 可注入自定义提示词构建器（测试用）。
         stream_responses: 评测时建议 False（少一层流式聚合）。
         enable_memory_tools: 是否注册记忆检索/保存工具（Stage 3 再打开）。
     """
     s = settings or Settings.from_env()
+    builder = prompt_builder or build_prompt_builder(s)
 
     return Agent(
         llm_service=llm_service or build_llm_service(s),
         tool_registry=build_tool_registry(s, enable_memory_tools=enable_memory_tools),
         user_resolver=EvalUserResolver(),
         agent_memory=agent_memory or DemoAgentMemory(max_items=10_000),
+        system_prompt_builder=builder,
         config=AgentConfig(
             temperature=0.0,
             max_tool_iterations=s.agent_max_iterations,

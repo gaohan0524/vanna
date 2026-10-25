@@ -132,6 +132,24 @@ class Settings:
         return Path(raw) if raw else PROJECT_ROOT / "reports"
 
     @property
+    def schema_catalog_path(self) -> Path:
+        """Stage 1 schema catalog（可用 SCHEMA_CATALOG_PATH 覆盖）。"""
+        raw = _env("SCHEMA_CATALOG_PATH")
+        return (
+            Path(raw)
+            if raw
+            else PROJECT_ROOT / "analytics_agent/context/schema_catalog.json"
+        )
+
+    @property
+    def glossary_path(self) -> Path:
+        """Stage 1 指标术语表（可用 GLOSSARY_PATH 覆盖）。"""
+        raw = _env("GLOSSARY_PATH")
+        return (
+            Path(raw) if raw else PROJECT_ROOT / "analytics_agent/context/glossary.yaml"
+        )
+
+    @property
     def datasets_dir(self) -> Path:
         """评测用例目录。"""
         return Path(__file__).resolve().parent / "evaluation" / "datasets"

@@ -219,7 +219,13 @@ async def _cmd_run(args: argparse.Namespace) -> int:
             "provider": settings.llm_provider,
             "model": settings.llm_model,
             "temperature": 0.0,
-            "max_tool_iterations": 8,
+            "max_tool_iterations": settings.agent_max_iterations,
+            "prompt_version": getattr(
+                agent.system_prompt_builder, "prompt_version", "unknown"
+            ),
+            "prompt_tokens_est": getattr(
+                agent.system_prompt_builder, "last_prompt_tokens", 0
+            ),
         },
         records=records,
     )
