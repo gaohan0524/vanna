@@ -112,7 +112,108 @@ tests/
 
 ## 4. T2-1：`search_columns` / `describe_table`
 
-### 4.1 catalog 查询函数（`context/search.py`）
+### 4.1 三个模块的职责与使用场景（先读这一节）
+
+> 代码注释已写在 `context/search.py`、`tools/search_columns.py`、`tools/describe_table.py`；
+> 本节记录“为什么这样拆”，修改前先看这里，避免把检索逻辑又写回工具里。
+
+#### 4.1.1 `context/search.py`：检索引擎
+
+它回答的是：**业务词在 catalog 里对应哪些字段？**
+
+纯内存操作，不连数据库，原因是：
+
+- 工具只负责“参数校验 + 输出格式”，检索逻辑单独可测；
+- 可以用 fixture 单测，不依赖 ClickHouse；
+- catalog 启动时已加载，搜索零延迟、可重复，不会因数据库抖动影响工具结果。
+
+| 函数 | 作用 |
+|---|---|
+| `_terms` | 同义词展开：`gmv` → `amount_cents`、`销售额`、`成交额` |
+| `search_columns` | 按表名/字段名/注释/表说明打分排序 |
+| `find_table` | 精确查表，兼容 `orders` / `shop.orders`，大小写不敏感 |
+| `suggest_tables` | 表名拼错时给候选（`oder` → `orders`） |
+
+打分规则（只用于排序，不代表概率）：
+
+| 命中位置 | 分值 |
+|---|---|
+| 表名精确 | +6 |
+| 表名包含 | +3 |
+| 字段名精确 | +4 |
+| 字段名包含 | +2 |
+| 字段注释包含 | +1 |
+| 表说明包含 | +1 |
+
+同一字段被多个同义词命中时取最高分，不累加；同分按表名、字段名排序，保证结果稳定。
+
+维护约定：新增业务叫法时改 `_SYNONYMS`，**不要改打分公式**；本模块不生成 SQL、不访问数据库。
+
+#### 4.1.2 `search_columns`：字段级入口
+
+定位：**“我不知道字段叫什么”** 时用。
+
+适用：
+
+- 用户说 GMV，但表里只有 `amount_cents`；
+- 用户说“渠道”，不确定是 `channel` 还是 `source`；
+- 用户说“复购”，需要知道用 `user_id` + `order_id`。
+
+不适用：
+
+- 已经知道表、想看整张表结构 → `describe_table`；
+- 想确认枚举/日期格式 → `sample_rows`（T2-2）；
+- 想拿数据 → `run_sql`。
+
+输出一行一列：
+
+```text
+orders.amount_cents  Int64  -- 订单金额（分），已扣 discount_cents；不含退款
+```
+
+一个关键行为：**搜不到时返回 `success=True`**。因为“没找到”不是工具执行失败，模型应换词或去 `describe_table`，而不是原样重试同一个调用。
+
+#### 4.1.3 `describe_table`：表级入口
+
+定位：**“我知道是哪张表，但不确定字段、枚举、规模”** 时用。
+
+输出包含：
+
+```text
+表：shop.orders（36,000 行，MergeTree）
+说明：订单主表，一单一行；金额单位为分
+字段（10）：
+- status LowCardinality(String) — ...；取值: paid/shipped/completed/...
+```
+
+- 行数：判断“要不要先加时间过滤 / LIMIT”；
+- 枚举：避免猜 `status`、`currency`、`channel` 的取值；
+- 注释：理解字段业务含义。
+
+不适用：
+
+- 不知道表名 → 先 `search_columns`；
+- 想看真实数据格式 → `sample_rows`；
+- 想拿查询结果 → `run_sql`。
+
+一个关键行为：**未知表返回 `success=False`**，并附相近表名。这是参数错误，必须让模型换表名重试，不能让它把“表不存在”误当成“表是空的”。
+
+#### 4.1.4 三者关系与调用链
+
+```text
+用户问题
+  │
+  ├─ 不知道字段名 → search_columns（字段级、广度搜索）
+  │       └─ 找到候选表/字段
+  ├─ 知道表名     → describe_table（表级、单点深挖）
+  │       └─ 确认字段、枚举、行数
+  └─ 都确定了     → run_sql（T2-6 加护栏）
+```
+
+`search_columns` 是“广度搜索”，`describe_table` 是“单点深挖”，`search.py` 是两者共用的底层引擎。
+三个模块都只读 catalog，不执行 SQL、不查数据库。
+
+### 4.2 catalog 查询函数（`context/search.py`）
 
 ```python
 def iter_columns(catalog):
@@ -148,7 +249,7 @@ def describe_table(catalog, name: str):
     return None
 ```
 
-### 4.2 工具实现
+### 4.3 工具实现
 
 ```python
 class SearchColumnsArgs(BaseModel):
@@ -203,7 +304,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 索引/分区：PARTITION BY toYYYYMM(created_at) ORDER BY (toDate(created_at), order_id)
 ```
 
-### 4.3 DoD
+### 4.4 DoD
 
 - [x] 搜索覆盖表名、字段名、注释、表说明（含业务同义词）
 - [x] 空结果给出可执行建议（换词/describe）
