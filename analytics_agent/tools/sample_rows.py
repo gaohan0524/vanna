@@ -89,9 +89,10 @@ class SampleRowsTool(Tool[SampleRowsArgs]):
     @property
     def description(self) -> str:
         return (
-            "查看一张表的前 N 行（已脱敏）。当需要确认枚举大小写、日期格式、"
-            "脏数据或字段实际内容时调用；不要用它执行聚合查询，"
-            "也不要对未知表名反复重试（先用 search_columns / describe_table）。"
+            "sample_rows：查看单表前 N 行真实数据（已脱敏）。\n"
+            "用：确认枚举大小写、日期格式、JSON 键名、脏数据。\n"
+            "不要用：聚合统计（用 run_sql）、未知表名（先 search_columns / describe_table）。\n"
+            "分工：describe_table 看字段 → sample_rows 看真实值 → run_sql 取数。"
         )
 
     def get_args_schema(self) -> Type[SampleRowsArgs]:

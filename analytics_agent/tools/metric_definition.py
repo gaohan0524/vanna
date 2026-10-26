@@ -56,9 +56,11 @@ class GetMetricDefinitionTool(Tool[GetMetricDefinitionArgs]):
     @property
     def description(self) -> str:
         return (
-            "查询业务指标的权威口径，返回定义、公式与易错点。"
-            "当不确定 GMV/净收入/客单价/复购率等指标怎么算时调用；"
-            "不要用它查字段或执行查询，也不要在未命中时自行编造公式。"
+            "get_metric_definition：查询业务指标的权威口径。\n"
+            "用：不确定 GMV / 净收入 / 客单价 / 复购率等指标怎么算，或口径有歧义。\n"
+            "不要用：查字段（用 search_columns）、查表（用 describe_table）、"
+            "执行查询（用 run_sql）。\n"
+            "分工：先确认口径 → 再写 SQL → run_sql。"
         )
 
     def get_args_schema(self) -> Type[GetMetricDefinitionArgs]:

@@ -54,8 +54,11 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
     @property
     def description(self) -> str:
         return (
-            "按业务关键词查找字段。当你不确定字段名、不知道某个指标由哪些字段计算、"
-            "或需要在多张表之间找候选列时调用。不要用它执行查询，也不要替代 describe_table。"
+            "search_columns：按业务关键词查找字段。\n"
+            "用：不确定字段名、不知道某指标由哪些字段计算、需要跨表找候选列。\n"
+            "不要用：已确定表要看全貌（用 describe_table）、确认取值（用 sample_rows）、"
+            "执行查询（用 run_sql）。\n"
+            "分工：先 search_columns 缩小范围，再 describe_table 看单表。"
         )
 
     def get_args_schema(self) -> Type[SearchColumnsArgs]:

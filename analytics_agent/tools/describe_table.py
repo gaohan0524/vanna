@@ -54,9 +54,11 @@ class DescribeTableTool(Tool[DescribeTableArgs]):
     @property
     def description(self) -> str:
         return (
-            "查看单张表的完整字段、类型、注释、枚举取值与行数。"
-            "当已经确定表、但不确定字段或取值时调用；不要用它执行查询，"
-            "也不要在不知道表名时乱试（先用 search_columns）。"
+            "describe_table：查看单张表的字段、类型、注释、枚举与行数。\n"
+            "用：知道表名，但不确定字段、枚举或规模。\n"
+            "不要用：不知道表名（先 search_columns）、看真实数据（用 sample_rows）、"
+            "执行查询（用 run_sql）。\n"
+            "分工：search_columns 找表 → describe_table 看结构 → sample_rows 看值。"
         )
 
     def get_args_schema(self) -> Type[DescribeTableArgs]:

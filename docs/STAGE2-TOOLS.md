@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**进行中（T2-1 ~ T2-3 完成，2026-10-26）**
+> - 状态：**进行中（T2-1 ~ T2-4 完成，2026-10-26）**
 > - 前置：Stage 1 完成（2026-10-25）
 > - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
@@ -549,33 +549,61 @@ class GetMetricDefinitionArgs(BaseModel):
 
 ## 7. T2-4：工具 description 重写
 
-每个 description 必须包含四段：
+### 7.1 原则
+
+每个 description 统一四段：
 
 1. **做什么**（一句话）
-2. **什么时候用**（触发条件）
-3. **什么时候不要用**（禁忌）
-4. **和谁分工**（替代关系）
+2. **用**（触发条件）
+3. **不要用**（禁忌，指向正确工具）
+4. **分工**（前后关系）
 
-示例：
+工具路由主要靠 description，而不是靠参数名；写得越清楚，模型越不会“用 run_sql 猜字段”。
+
+### 7.2 七个工具的描述要点
+
+| 工具 | 用 | 不要用 | 分工 |
+|---|---|---|---|
+| `search_columns` | 不确定字段名、指标对应字段 | 看单表全貌、执行查询 | 先搜索缩小范围 |
+| `describe_table` | 已知表，需要字段/枚举/行数 | 未知表名、看真实值 | search → describe |
+| `sample_rows` | 确认枚举大小写/日期格式/JSON 键名 | 聚合统计、未知表 | 结构 → 真实值 → run_sql |
+| `explain_query` | 大表/多表 join 前评估扫描量 | 拿业务结果、非 SELECT | explain → run_sql |
+| `get_metric_definition` | 不确定 GMV/净收入/复购率口径 | 查字段、查表、执行查询 | 口径 → SQL → run_sql |
+| `run_sql` | 表/字段/口径都确定，需要结果 | 猜字段、确认取值、查口径 | 最后一步 |
+| `visualize_data` | 已有 run_sql 结果，需要图表 | 没有结果、想查数 | run_sql → visualize |
+
+### 7.3 L0 新增“工具使用”段
 
 ```text
-search_columns：按业务词查字段。
-用：不知道字段名、不确定某指标由哪些字段计算。
-不要用：执行查询、确认取值分布（用 sample_rows）。
-替代关系：先 search_columns 缩小范围，再 describe_table 看单表全貌。
+## 工具使用
+- 不确定字段/指标对应字段 → search_columns。
+- 已知表，需要字段/枚举/行数 → describe_table。
+- 确认真实取值/日期格式/JSON 键名 → sample_rows。
+- 大表或多表 join 前 → explain_query。
+- 口径不清（GMV/净收入/复购率）→ get_metric_definition。
+- 表、字段、口径都确定后 → run_sql；图表用 visualize_data（先有结果）。
 ```
+
+同时保留“禁止”段：
 
 ```text
-run_sql：执行一条只读 SQL。
-用：已经确定表/字段/口径，需要拿结果。
-不要用：猜字段（用 search_columns）、确认枚举（用 sample_rows）。
-注意：只允许单条 SELECT/WITH；无 LIMIT 会被自动追加。
+- 不要查询 system.*；不要 SELECT *；明细必须带 LIMIT。
 ```
 
-DoD：
+L0 总长 **804 tokens**（预算 900）；7 个工具全部可见时，完整提示词 **2,698 tokens**（预算 4,500）。提示词版本升为 `stage2-v1`。
 
-- [ ] 5 个新工具 + `run_sql` / `visualize_data` 全部重写
-- [ ] 人工读一遍，确认没有“两个工具都能做同一件事”的模糊地带
+### 7.4 实现位置
+
+- 5 个新工具：直接改各自 `description` property
+- `run_sql`：`RunSqlTool(custom_tool_description=RUN_SQL_DESCRIPTION)`
+- `visualize_data`：`AnalyticsVisualizeTool` 子类覆盖 description，不改上游实现
+
+### 7.5 DoD
+
+- [x] 5 个新工具 + `run_sql` / `visualize_data` 全部四段式
+- [x] L0 增加工具使用段（804 tokens，≤ 900）
+- [x] `PROMPT_VERSION = "stage2-v1"`
+- [x] 单测校验 7 个工具描述都包含“用/不要用/分工”
 
 ---
 
@@ -852,6 +880,9 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-3 | `context/glossary.py` 增加查找/候选函数 | 完成 | key/中文名/别名/包含式匹配 |
 | 2026-10-26 | T2-3 | 实现 `get_metric_definition` | 完成 | 定义 + 公式 + 易错点；未命中给候选 |
 | 2026-10-26 | T2-3 | 注册并验证 | 完成 | 17 passed；真实 glossary：净收入/复购率/gpm 均正常 |
+| 2026-10-26 | T2-4 | 7 个工具 description 统一四段式 | 完成 | run_sql/visualize 通过自定义描述覆盖 |
+| 2026-10-26 | T2-4 | L0 增加“工具使用”段并压缩到预算内 | 完成 | L0 804 tokens（预算 900） |
+| 2026-10-26 | T2-4 | `PROMPT_VERSION` 升 `stage2-v1` | 完成 | 15 passed（含 7 工具描述校验） |
 
 ---
 

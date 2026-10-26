@@ -53,6 +53,17 @@ async def test_no_tool_block_when_tools_empty():
     assert "当前账号无权限查询" in prompt
 
 
+async def test_prompt_contains_tool_routing():
+    prompt = await _build()
+
+    assert "## 工具使用" in prompt
+    assert "search_columns" in prompt
+    assert "sample_rows" in prompt
+    assert "explain_query" in prompt
+    assert "get_metric_definition" in prompt
+    assert "run_sql" in prompt
+
+
 async def test_prompt_budget():
     prompt = await _build()
 
@@ -64,4 +75,4 @@ async def test_l0_budget():
 
 
 def test_prompt_version_is_set():
-    assert PROMPT_VERSION.startswith("stage1-")
+    assert PROMPT_VERSION.startswith("stage2-")

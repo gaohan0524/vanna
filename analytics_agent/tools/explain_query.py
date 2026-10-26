@@ -51,9 +51,10 @@ class ExplainQueryTool(Tool[ExplainQueryArgs]):
     @property
     def description(self) -> str:
         return (
-            "查看一条 SELECT/WITH 的 ClickHouse 执行计划（扫描行数、分区裁剪）。"
-            "当查询涉及大表或多表 join、担心超时/全表扫时调用；"
-            "不要用它拿业务结果（用 run_sql），也不要在 SQL 还没写好时调用。"
+            "explain_query：查看 SELECT/WITH 的 ClickHouse 执行计划。\n"
+            "用：大表或多表 join 前确认扫描量；run_sql 超时后判断是否全表扫。\n"
+            "不要用：获取业务结果（用 run_sql）、非 SELECT/WITH。\n"
+            "分工：先 explain_query 评估 → 再 run_sql 执行。"
         )
 
     def get_args_schema(self) -> Type[ExplainQueryArgs]:

@@ -12,7 +12,7 @@ from vanna.core.registry import ToolRegistry
 from vanna.core.user import RequestContext, User, UserResolver
 from vanna.integrations.clickhouse import ClickHouseRunner
 from vanna.integrations.local.agent_memory import DemoAgentMemory
-from vanna.tools import RunSqlTool, VisualizeDataTool
+from vanna.tools import RunSqlTool
 from vanna.tools.agent_memory import (
     SaveQuestionToolArgsTool,
     SearchSavedCorrectToolUsesTool,
@@ -24,10 +24,12 @@ from .context.render import render_schema
 from .context.schema_catalog import load_catalog
 from .prompts.builder import AnalyticsPromptBuilder
 from .tools.describe_table import DescribeTableTool
+from .tools.descriptions import RUN_SQL_DESCRIPTION
 from .tools.explain_query import ExplainQueryTool
 from .tools.metric_definition import GetMetricDefinitionTool
 from .tools.sample_rows import SampleRowsTool
 from .tools.search_columns import SearchColumnsTool
+from .tools.visualize import AnalyticsVisualizeTool
 
 
 class EvalUserResolver(UserResolver):
@@ -130,10 +132,14 @@ def build_tool_registry(
 
     registry = ToolRegistry()
     registry.register_local_tool(
-        RunSqlTool(sql_runner=runner), access_groups=["admin", "analyst"]
+        RunSqlTool(
+            sql_runner=runner,
+            custom_tool_description=RUN_SQL_DESCRIPTION,
+        ),
+        access_groups=["admin", "analyst"],
     )
     registry.register_local_tool(
-        VisualizeDataTool(), access_groups=["admin", "analyst"]
+        AnalyticsVisualizeTool(), access_groups=["admin", "analyst"]
     )
     registry.register_local_tool(
         SearchColumnsTool(catalog), access_groups=["admin", "analyst"]
