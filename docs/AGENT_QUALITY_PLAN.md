@@ -359,8 +359,8 @@ L0_RULES = """
 
 ### Stage 2：工具面重构（P2，1 周）
 
-> **详细执行步骤见 [`docs/STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)**（含 5 个工具的代码骨架、
-> description 模板、AST 护栏、LIMIT/超时/截断方案、绕过测试、D1~D6 每日任务与 G2）。
+> **详细执行步骤见 [`docs/STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)**（含 7 个工具的实现与描述、
+> AST 护栏、LIMIT/超时/截断方案、结构化错误、绕过测试、D1~D6 每日任务与 G2）。
 > 本章只保留总体要求。
 
 **目标**：让模型能“先探查、再写 SQL”，而不是靠猜；同时把护栏做对。
@@ -372,7 +372,7 @@ L0_RULES = """
 | `search_columns` | `keyword: str`, `limit: int = 20` | `库.表.字段 类型 -- 注释` | 按业务词模糊搜字段，替代全量 schema |
 | `describe_table` | `table: str` | 字段列表 + 枚举 Top20 + 行数 + 引擎 | 单表深挖 |
 | `sample_rows` | `table: str`, `n: int = 5` | 前 n 行（脱敏） | 确认日期格式/枚举大小写/脏数据 |
-| `get_metric_definition` | `name: str` | 定义 + SQL 片段 + 易错点 | 口径唯一权威来源 |
+| `get_metric_definition` | `name: str` | 定义 + 公式 + 易错点 | 口径唯一权威来源 |
 | `explain_query` | `sql: str` | 预估扫描行数/分区裁剪情况 | 大表前置检查 |
 | `run_sql` | 现有 | 结果表 + 截断标注 | 加 AST 只读校验、LIMIT 注入、超时 |
 | `visualize_data` | 现有 | 图表 | 保持 |
@@ -383,9 +383,9 @@ L0_RULES = """
 - **T2-2** 实现 `sample_rows` / `explain_query`（直接查 ClickHouse，`LIMIT` 强制 + 超时）。
 - **T2-3** 实现 `get_metric_definition`（数据源与 T1-4 共用）。
 - **T2-4** 工具 description 重写：写清**触发条件 + 禁忌 + 与其他工具的分工**。这是工具路由的主要依据。
-- **T2-5** 参数收敛：`granularity`、`time_range`、`order` 等用 `Literal`/枚举，减少自由发挥。
-- **T2-6** `run_sql` 护栏改造：
-  - 只读校验改用 AST（`sqlglot`）或依赖数据库只读账号，避免关键字黑名单误杀（当前实现会把字符串字面量里的 `'delete'` 判为写操作）。
+- **T2-5** 参数收敛：现有参数用 `ge/le`、表名 `pattern`、`extra="forbid"`；未来 `time_range` / `granularity` 用 `Literal` 枚举。
+- **T2-6** `run_sql` 护栏改造（已完成）：
+  - 只读校验改用 AST（`sqlglot`），避免关键字黑名单把字符串字面量里的 `'delete'` 判为写操作。
   - 无 `LIMIT` 时自动追加（可通过 prompt 提示“已自动加 LIMIT”，避免模型误解结果）。
   - 超时通过 ClickHouse `settings={"max_execution_time": 30}` 实现（`ClickHouseRunner.BLOCKING=True`，外层 `wait_for` 打不断线程）。
   - 结果超过 `max_result_chars` 时，返回“已截断 + 总行数 + 总列数”，避免模型误判为全量。
@@ -393,56 +393,17 @@ L0_RULES = """
 
 #### 代码骨架
 
-```python
-# analytics_agent/tools/search_columns.py
-from typing import Type
-
-from pydantic import BaseModel, Field
-
-from vanna import Tool, ToolContext, ToolResult
-
-
-class SearchColumnsArgs(BaseModel):
-    keyword: str = Field(description="业务关键词，如 'gmv'、'渠道'、'支付时间'")
-    limit: int = Field(default=20, ge=1, le=50)
-
-
-class SearchColumnsTool(Tool[SearchColumnsArgs]):
-    def __init__(self, catalog):
-        self.catalog = catalog
-
-    @property
-    def name(self) -> str:
-        return "search_columns"
-
-    @property
-    def description(self) -> str:
-        return (
-            "按业务关键词查找字段。当你不确定字段名、不确定某指标由哪些字段计算、"
-            "或需要列出某张表的候选字段时调用。不要用它执行查询。"
-        )
-
-    def get_args_schema(self) -> Type[SearchColumnsArgs]:
-        return SearchColumnsArgs
-
-    async def execute(self, context: ToolContext, args: SearchColumnsArgs) -> ToolResult:
-        hits = self.catalog.search(args.keyword, limit=args.limit)
-        if not hits:
-            return ToolResult(
-                success=True,
-                result_for_llm=f"未找到与 '{args.keyword}' 相关的字段，请换用其他业务词。",
-            )
-        text = "\n".join(
-            f"{h.table}.{h.column}  {h.type}  -- {h.comment}" for h in hits
-        )
-        return ToolResult(success=True, result_for_llm=text)
-```
+已移除过时示例（原示例假设 `catalog.search()` 返回对象；实际实现是 `context/search.py` 的纯函数 + `SearchColumnsTool`）。
+以 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md) 第 4 节为准。
 
 #### 验收
 
-- 评测集上平均工具轮次 ≤ 3.5，且 `TOOL_MISUSE` 占比 < 5%。
+- EX ≥ **70%**（Stage 1 基线 61.9%）；同配置两次差异 ≤ 5pt。
+- behavior ≥ **85%**；P95 ≤ **20s**。
+- 平均工具轮次 ≤ **3.5**，`TOOL_MISUSE` < **5%**。
+- `run_sql` 绕过测试 100% 拦截；工具单测全过。
+- 复杂查询（≥3 表 join）成功率 ≥ **60%**。
 - 人工抽检 20 条轨迹：不存在“先跑 SQL 报错再找字段”的低效路径。
-- 复杂查询（>3 表 join）成功率提升 ≥ 10pt。
 
 ---
 
@@ -562,7 +523,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 |---|---|
 | G0 → G1 | 评测可一键运行；基线数字稳定（两次差异 ≤ 2pt） |
 | G1 → G2 | EX ≥ 25%（+10pt）；schema 类错误 < 5%；behavior ≥ 70% |
-| G2 → G3 | 平均工具轮次 ≤ 3.5；复杂查询 +10pt |
+| G2 → G3 | EX ≥ 70%；behavior ≥ 85%；平均轮次 ≤ 3.5；`TOOL_MISUSE` < 5%；绕过测试全过 |
 | G3 → G4 | EX ≥ 80%；recall@5 ≥ 0.9；token 不劣化 |
 | G4 → G5 | 澄清准确率 ≥ 85%；多轮 ≥ 75%；人工评分 ≥ 4.0 |
 | G5 常态 | 每周 EX 不下降；错误记忆 < 2% |
@@ -577,7 +538,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 |---|---|---|
 | W1 | Stage 0（合成库 + 30 题 + 基线，见 `STAGE0-EVAL.md`） | G0 通过，有稳定基线 |
 | W2 | Stage 1（schema + L0/L1/L2 + 行为规则） | G1 通过：EX ≥ 25%、schema < 5%、behavior ≥ 70% |
-| W3 | Stage 2（工具面 + 护栏） | 轮次 ≤ 3.5，复杂查询 +10pt |
+| W3 | Stage 2（7 工具 + AST 护栏） | G2：EX ≥ 70%、behavior ≥ 85%、轮次 ≤ 3.5、绕过测试全过 |
 | W4~W5 | Stage 3（检索层 + 候选表预筛） | EX ≥ 80%，recall@5 ≥ 0.9 |
 | W6 | Stage 4（编排/skill/澄清/呈现） | 澄清 ≥ 85%，多轮 ≥ 75% |
 | W7+ | Stage 5 + 灰度 | 进入持续迭代 |
@@ -642,7 +603,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [x] T2-5 参数收敛——2026-10-26：`ToolArgs` 统一 forbid/strip；范围与表名格式；6 项单测
 - [x] T2-6 `run_sql` 护栏改造——2026-10-26：AST 只读 + LIMIT + 30s 超时 + 截断说明；10 项测试
 - [x] T2-7 结构化错误回喂——2026-10-26：`error_type` + `hint` JSON；校验/执行错误分类；49 passed（暂不评测）
-- [ ] G2：EX ≥ 70%、`TOOL_MISUSE` < 5%、平均轮次 ≤ 3.5、护栏绕过测试全过
+- [ ] G2：EX ≥ 70%、behavior ≥ 85%、`TOOL_MISUSE` < 5%、平均轮次 ≤ 3.5、P95 ≤ 20s、护栏绕过测试全过（代码项已满足，待评测）
 - [ ] 平均轮次：`____`
 
 ### Stage 3

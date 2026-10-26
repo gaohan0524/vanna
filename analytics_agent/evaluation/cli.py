@@ -212,6 +212,7 @@ async def _cmd_run(args: argparse.Namespace) -> int:
             }
         )
 
+    tool_names = await agent.tool_registry.list_tools()
     payload = build_payload(
         dataset_name=dataset.name,
         dataset_path=dataset_path,
@@ -226,6 +227,8 @@ async def _cmd_run(args: argparse.Namespace) -> int:
             "prompt_tokens_est": getattr(
                 agent.system_prompt_builder, "last_prompt_tokens", 0
             ),
+            # 全部已注册工具（不区分用户分组），用于复盘“这次有哪些工具可用”
+            "tool_names": tool_names,
         },
         records=records,
     )

@@ -44,6 +44,17 @@ def test_catalog_tools_are_registered(monkeypatch):
         asyncio.run(agent.tool_registry.get_tool("get_metric_definition")) is not None
     )
 
+    names = set(asyncio.run(agent.tool_registry.list_tools()))
+    assert {
+        "run_sql",
+        "visualize_data",
+        "search_columns",
+        "describe_table",
+        "sample_rows",
+        "explain_query",
+        "get_metric_definition",
+    } <= names
+
 
 def test_missing_catalog_fails_fast(monkeypatch, tmp_path):
     settings = _settings(monkeypatch, catalog=tmp_path / "missing.json")

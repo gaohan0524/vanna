@@ -21,7 +21,7 @@
 | behavior | 88.9%（8/9） |
 | 平均工具调用 | 1.07~1.23 |
 | P95 | 16.5s |
-| 提示词 | 2,726 tokens |
+| 提示词 | 2,726 tokens（Stage 1 最终） |
 | 两次差异 | 0pt |
 
 ### 0.2 剩余失败（Stage 2 的输入）
@@ -44,7 +44,7 @@
 
 - 30 条用例与 golden（除发现真实错误）
 - 评分规则、自然日窗口、数据锚点语义
-- `stage1-v4` 的 L0/L1/L2 结构（只追加工具使用规则，不重写）
+- Stage 1 的 L0/L1/L2 结构（Stage 2 只追加工具使用规则，版本升到 `stage2-v2`，不重写主体）
 
 ---
 
@@ -64,19 +64,21 @@
 - [ ] behavior ≥ **85%**
 - [ ] 平均工具轮次 ≤ **3.5**（当前已 1.1，主要防工具滥用）
 - [ ] `TOOL_MISUSE` < 5%（人工抽检 20 条轨迹）
-- [ ] `run_sql` 绕过测试 100% 拦截（写操作、多语句、超长、注释绕过、字符串字面量）
-- [ ] `SCHEMA_MISSING` / `DIALECT_ERROR` = 0
-- [ ] 复杂查询（≥3 表 join）成功率 ≥ 60%
-- [ ] P95 ≤ **20s**
-- [ ] 工具单测覆盖：catalog 搜索、脱敏、LIMIT 注入、超时透传、错误结构
+- [x] `run_sql` 绕过测试 100% 拦截（写操作、多语句、超长、注释绕过、字符串字面量）
+- [ ] `SCHEMA_MISSING` / `DIALECT_ERROR` = 0（待评测）
+- [ ] 复杂查询（≥3 表 join）成功率 ≥ 60%（待评测）
+- [ ] P95 ≤ **20s**（待评测）
+- [x] 工具单测覆盖：catalog 搜索、脱敏、LIMIT 注入、超时透传、错误结构
 
 > 统计提醒：21 条 answer 每条≈4.8pt；从 61.9% 到 70% 约 2 条用例。Stage 2 的真实价值更多在“护栏正确性”与“轨迹质量”，不要只盯 EX。
+>
+> 代码/单测项已满足；EX、behavior、P95、复杂查询等指标项需等 G2 评测。
 
 ---
 
 ## 2. 设计原则
 
-1. **保留 L1 schema**：12 张表只有 2,726 tokens，全量放进提示词仍然划算；工具用于“深挖”，不是替代。
+1. **保留 L1 schema**：12 张表渲染约 **1,556 tokens**，完整提示词 **2,902 tokens**（预算 4,500），全量放进提示词仍然划算；工具用于“深挖”，不是替代。
 2. **catalog 优先**：`search_columns` / `describe_table` / `get_metric_definition` 只读 `schema_catalog.json` 与 `glossary.yaml`，不查数据库。
 3. **只有 sample / explain 查库**：必须强制 `LIMIT`、超时、表名白名单、结果脱敏。
 4. **工具描述即路由**：description 写清“什么时候用、什么时候不要用、和谁分工”，比参数名更重要。
@@ -90,23 +92,34 @@
 analytics_agent/
 ├── tools/
 │   ├── __init__.py
+│   ├── params.py              # ToolArgs + TABLE_PATTERN
+│   ├── descriptions.py        # run_sql 四段式描述
 │   ├── search_columns.py      # search_columns
 │   ├── describe_table.py      # describe_table
-│   ├── sample_rows.py         # sample_rows
-│   ├── explain_query.py       # explain_query
+│   ├── sample_rows.py         # sample_rows（白名单/脱敏/10s）
+│   ├── explain_query.py       # explain_query（SELECT/WITH）
 │   ├── metric_definition.py   # get_metric_definition
-│   └── guardrails.py          # AST 只读校验 / LIMIT 注入
+│   ├── run_sql.py             # AnalyticsRunSqlTool（AST + LIMIT）
+│   ├── visualize.py           # AnalyticsVisualizeTool（只改描述）
+│   └── guardrails.py          # prepare_sql / SqlGuardError
 ├── context/
 │   └── search.py              # catalog 上的纯函数：search / describe
-└── agent_factory.py           # 注册工具（access_groups）
+└── agent_factory.py           # 注册 7 个工具（access_groups）
+src/vanna/tools/
+├── sql_errors.py              # 错误分类 + JSON 回喂
+├── sql_validation.py          # AST 优先、关键字兜底
+└── run_sql.py                 # 截断补充总行数/列数
 tests/
 ├── test_catalog_tools.py
 ├── test_sample_tools.py
 ├── test_metric_tool.py
-└── test_sql_guardrails.py
+├── test_tool_params.py
+├── test_tool_descriptions.py
+├── test_sql_guardrails.py
+└── test_sql_errors.py
 ```
 
-新增依赖：`sqlglot>=25`（纯 Python，用于 AST 校验）。加入 `pyproject.toml` 主依赖；若暂时不加，`guardrails.py` 回退到 `sqlparse` 并记录 warning，但 G2 的绕过测试要求 AST 路径。
+新增依赖：`sqlglot>=25` 已加入 `pyproject.toml` 主依赖。应用侧 `guardrails.prepare_sql` **不设回退**（解析失败直接拒绝）；框架侧 `_ast_read_only` 只对 `SHOW/EXPLAIN/Command` 回退到关键字逻辑。
 
 ---
 
@@ -252,7 +265,8 @@ def describe_table(catalog, name: str):
 ### 4.3 工具实现
 
 ```python
-class SearchColumnsArgs(BaseModel):
+# SearchColumnsArgs 继承 tools.params.ToolArgs（extra="forbid" + strip）
+class SearchColumnsArgs(ToolArgs):
     keyword: str = Field(description="业务关键词，如 'GMV'、'渠道'、'支付时间'")
     limit: int = Field(default=20, ge=1, le=50)
 
@@ -510,7 +524,7 @@ async def execute(self, context, args):
 | | L2（提示词） | 工具 |
 |---|---|---|
 | 数据源 | `glossary.yaml` | 同一份 |
-| 内容 | 只渲染 `short`（约 170 tokens） | 定义 + 完整 `formula` + `pitfalls` |
+| 内容 | 只渲染 `short`（约 173 tokens） | 定义 + 完整 `formula` + `pitfalls` |
 | 时机 | 每轮常驻 | 模型按需调用 |
 | 作用 | 让模型“知道有这些指标” | 让模型“确认具体公式” |
 
@@ -519,7 +533,8 @@ async def execute(self, context, args):
 ### 6.2 实现
 
 ```python
-class GetMetricDefinitionArgs(BaseModel):
+# GetMetricDefinitionArgs 继承 tools.params.ToolArgs
+class GetMetricDefinitionArgs(ToolArgs):
     name: str = Field(
         min_length=1,
         max_length=50,
@@ -1180,33 +1195,60 @@ def error_payload(error_type, message, hint) -> str:
 ## 11. 接线与权限
 
 ```python
-registry.register_local_tool(SearchColumnsTool(catalog), access_groups=["admin", "analyst"])
-registry.register_local_tool(DescribeTableTool(catalog), access_groups=["admin", "analyst"])
-registry.register_local_tool(SampleRowsTool(catalog, runner), access_groups=["admin", "analyst"])
-registry.register_local_tool(ExplainQueryTool(runner), access_groups=["admin", "analyst"])
-registry.register_local_tool(GetMetricDefinitionTool(glossary), access_groups=["admin", "analyst"])
+registry.register_local_tool(
+    AnalyticsRunSqlTool(
+        sql_runner=runner,
+        custom_tool_description=RUN_SQL_DESCRIPTION,
+        auto_limit=1000,
+    ),
+    access_groups=["admin", "analyst"],
+)
+registry.register_local_tool(
+    AnalyticsVisualizeTool(), access_groups=["admin", "analyst"]
+)
+registry.register_local_tool(
+    SearchColumnsTool(catalog), access_groups=["admin", "analyst"]
+)
+registry.register_local_tool(
+    DescribeTableTool(catalog), access_groups=["admin", "analyst"]
+)
+registry.register_local_tool(
+    SampleRowsTool(catalog, runner), access_groups=["admin", "analyst"]
+)
+registry.register_local_tool(
+    ExplainQueryTool(runner), access_groups=["admin", "analyst"]
+)
+registry.register_local_tool(
+    GetMetricDefinitionTool(glossary), access_groups=["admin", "analyst"]
+)
 ```
 
-- `viewer` / 空组仍然只能看到“无工具”提示（G 类用例不能回归）
-- 不启用记忆工具（Stage 3 再开）
+- `run_sql` 的 runner 构造时带 `query_settings={"max_execution_time": 30}`；
+- `viewer` / 空组仍然只能看到“无工具”提示（G 类用例待 G2 回归）；
+- 不启用记忆工具（Stage 3 再开）。
 
-提示词只追加一段，不改 L0 主体：
+L0 已包含工具使用段（不是额外独立段落，预算仍受 1,100 限制）：
 
 ```text
 ## 工具使用
-- 不确定字段名 → search_columns；需要单表全貌 → describe_table。
-- 需要确认枚举/日期格式 → sample_rows；大表先 explain_query。
-- 口径不清 → get_metric_definition，不要凭记忆编公式。
-- 已确定表和字段后，才调用 run_sql。
+- 不确定字段名 / 指标对应字段 → search_columns。
+- 已知表名，需要字段 / 枚举 / 行数 → describe_table。
+- 需要确认真实取值 / 日期格式 / JSON 键名 → sample_rows。
+- 大表或多表 join，先 explain_query 看扫描量。
+- 口径不清（GMV / 净收入 / 复购率）→ get_metric_definition。
+- 表、字段、口径都确定后，才调用 run_sql。
+- 需要图表时用 visualize_data（必须先有 run_sql 结果）。
+- 不要用 run_sql 查 system.*；不要用 search_columns 执行查询。
 ```
 
-`PROMPT_VERSION` 升到 `stage2-v2`。
+`PROMPT_VERSION` 升到 `stage2-v2`，L0 1,008 tokens，完整提示词 2,902 tokens。
 
 DoD：
 
-- [ ] `build_agent` 默认注册 5 个新工具
-- [ ] G-23/24/25 仍然 PASS（viewer 无工具）
-- [ ] 报告 `agent.tool_names` 可追溯本次可用工具
+- [x] `build_agent` 默认注册 **7 个工具**（5 个新工具 + `run_sql` / `visualize_data`）
+- [x] `run_sql` 使用服务端 30s 超时；sample/explain 10s
+- [x] viewer / 空组无工具（注册层未给 viewer 分组；G-23/24/25 待 G2 评测回归）
+- [x] 报告 `agent.tool_names` 可追溯本次注册的工具（全部注册工具，不区分用户分组）
 
 ---
 
@@ -1232,6 +1274,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 复杂查询通过率 | 5/12 | | |
 
 > 复杂查询定义：B/C/D 层中涉及 ≥3 表 join 或时间窗口的用例；先人工列出，再统计。
+> 当前状态：代码与单测完成，**尚未运行 G2 评测**。
 
 ### 12.3 人工轨迹抽检（20 条）
 
@@ -1253,6 +1296,8 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 ---
 
 ## 13. 每日步骤（D1~D6）
+
+> 状态：D1~D5 已完成（2026-10-26）；D6（G2 评测）按用户要求暂缓。
 
 ### D1：catalog 工具（约 4 小时）
 
@@ -1342,6 +1387,8 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-7 | 框架 `RunSqlTool` 补执行异常捕获 | 完成 | 原先只捕获超时，异常会冒泡 |
 | 2026-10-26 | T2-7 | 应用工具统一结构化错误 | 完成 | run_sql / sample_rows / explain_query |
 | 2026-10-26 | T2-7 | 单测 | 通过 | 49 passed；按用户要求**暂不评测** |
+| 2026-10-26 | 审计 | 更新 §3 目录、§11 接线与 DoD | 完成 | 7 工具、sqlglot、`agent.tool_names` |
+| 2026-10-26 | 审计 | 同步总计划 Stage 2 工具数/验收/门禁 | 完成 | 5 → 7 工具；G2 与执行手册一致 |
 
 ---
 
