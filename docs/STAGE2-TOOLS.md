@@ -666,7 +666,79 @@ Granularity = Literal["day", "week", "month"]
 
 不要用自由字符串；枚举值同时写进参数 `description`，让模型知道合法取值。
 
-### 8.5 DoD
+### 8.5 校验链路（框架视角）
+
+工具参数不是工具自己解析的，执行前框架会强制校验。完整链路：
+
+```text
+Tool.get_args_schema()
+  → get_schema() 生成 JSON Schema（发给 LLM）
+  → LLM 返回 tool_call.arguments（原始 dict）
+  → ToolRegistry.execute_tool_call()
+      1. 查工具
+      2. 权限校验
+      3. args_model.model_validate(arguments)
+      4. transform_args（RLS）
+      5. tool.execute(context, validated_args)
+```
+
+#### 8.5.1 LLM 侧：JSON Schema
+
+```python
+args_model = self.get_args_schema()
+schema = args_model.model_json_schema()
+```
+
+框架会把字段类型、`ge/le`、`pattern`、必填项写给模型。这一步是“告知”，模型仍可能不遵守。
+
+#### 8.5.2 执行侧：Pydantic 强制校验
+
+```python
+# src/vanna/core/registry.py
+try:
+    args_model = tool.get_args_schema()
+    validated_args = args_model.model_validate(tool_call.arguments)
+except Exception as e:
+    msg = f"Invalid arguments: {str(e)}"
+    return ToolResult(success=False, result_for_llm=msg, error=msg)
+```
+
+关键点：
+
+- 校验失败**不抛异常**，返回 `success=False`，模型下一轮能看到错误；
+- `execute()` 收到的是**已验证的 Pydantic 实例**，不是 dict；
+- 权限校验在参数校验之前，未授权用户看不到参数错误细节。
+
+#### 8.5.3 `ToolArgs` 的实际效果
+
+| 配置 | 模型输入 | 结果 |
+|---|---|---|
+| `extra="forbid"` | `{"table":"orders","sql":"..."}` | `Extra inputs are not permitted` |
+| `str_strip_whitespace` | `"  GMV  "` | 先变 `"GMV"`，再校验长度 |
+| `ge=1, le=20` | `n=21` | `Input should be less than or equal to 20` |
+| `pattern=TABLE_PATTERN` | `orders; DROP ...` | `String should match pattern` |
+
+因此 `execute()` 里不需要再写 `if n > 20`。业务校验（表是否存在）仍留在工具内，因为它依赖 catalog，属于语义校验。
+
+#### 8.5.4 参数校验 ≠ 内容校验
+
+| 层 | 负责 | 例子 |
+|---|---|---|
+| Pydantic | 参数类型/范围/格式 | `n=21`、表名带分号 |
+| 工具内部 | 参数内容是否可执行 | 表是否存在、SQL 是否只读 |
+
+`run_sql(sql="DROP TABLE ...")` 能通过 Pydantic（类型确实是字符串），真正的只读校验由 T2-6 的 AST 护栏负责。
+
+#### 8.5.5 测试位置
+
+| 层面 | 位置 |
+|---|---|
+| JSON Schema 生成 | `src/vanna/core/tool/base.py` |
+| 运行时 Pydantic 校验 | `src/vanna/core/registry.py` |
+| 参数模型 | `analytics_agent/tools/*.py` |
+| 参数约束测试 | `tests/test_tool_params.py` |
+
+### 8.6 DoD
 
 - [x] 所有工具 Args 继承 `ToolArgs`（`extra="forbid"` + strip）
 - [x] 数量参数有明确上下界
@@ -944,6 +1016,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-5 | 新增 `tools/params.py` 公共基类 | 完成 | `extra="forbid"` + strip；表名 pattern |
 | 2026-10-26 | T2-5 | 5 个工具 Args 迁移到 `ToolArgs` | 完成 | 上界/格式/未知字段统一 |
 | 2026-10-26 | T2-5 | 参数越界与注入测试 | 完成 | 31 passed（param 6 项） |
+| 2026-10-26 | T2-5 | 记录参数校验链路（Schema → Pydantic → execute） | 完成 | 见 8.5；含代码路径与测试位置 |
 
 ---
 
