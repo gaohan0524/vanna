@@ -642,6 +642,8 @@ L0 总长 **1,008 tokens**（Stage 2 起预算调整为 **1,100**；完整表述
 
 ### 8.3 公共基类
 
+#### 8.3.1 基类只声明配置，字段在子类
+
 ```python
 class ToolArgs(BaseModel):
     model_config = ConfigDict(
@@ -650,10 +652,148 @@ class ToolArgs(BaseModel):
     )
 ```
 
-所有工具的 Args 都继承它：
+`ToolArgs` **没有声明任何业务字段**，只声明了配置。实际字段都在各工具的参数模型类体里，用“类型注解 + `Field(...)`”声明：
 
-- `extra="forbid"`：多传字段直接报错，不会静默忽略；
-- `str_strip_whitespace=True`：`"  GMV  "` → `"GMV"`，`"   "` → 长度校验失败。
+```python
+class SampleRowsArgs(ToolArgs):
+    table: str = Field(
+        min_length=1,
+        max_length=60,
+        pattern=TABLE_PATTERN,
+        description="表名，可带库名，如 orders 或 shop.orders",
+    )
+    n: int = Field(default=5, ge=1, le=20, description="返回行数（1~20）")
+```
+
+`table: str = Field(...)` 就是“声明一个字段 `table`”；`n` 同理。
+
+#### 8.3.2 各工具声明的字段
+
+| 模型 | 文件 | 声明字段 |
+|---|---|---|
+| `SearchColumnsArgs` | `tools/search_columns.py` | `keyword`、`limit` |
+| `DescribeTableArgs` | `tools/describe_table.py` | `table` |
+| `SampleRowsArgs` | `tools/sample_rows.py` | `table`、`n` |
+| `ExplainQueryArgs` | `tools/explain_query.py` | `sql` |
+| `GetMetricDefinitionArgs` | `tools/metric_definition.py` | `name` |
+| `RunSqlToolArgs` | 框架 `capabilities/sql_runner.py` | `sql` |
+| `VisualizeDataArgs` | 框架 `tools/visualize_data.py` | `filename`、`title` |
+
+#### 8.3.3 Pydantic 如何收集字段
+
+Pydantic 元类在**创建类时**扫描类体里的类型注解，把字段收集进 `model_fields`：
+
+```text
+SampleRowsArgs: ['table', 'n']
+DescribeTableArgs: ['table']
+ToolArgs: []          ← 基类没有业务字段
+```
+
+`extra="forbid"` 的判断逻辑：
+
+```text
+传入的 key ∈ 当前模型（含继承）的 model_fields ？
+  是 → 继续校验类型/范围
+  否 → Extra inputs are not permitted
+```
+
+所以 `SampleRowsArgs(table="orders", sql="SELECT 1")` 中，`sql` 不在 `model_fields`，直接报 `extra_forbidden`。
+
+两个容易误解的点：
+
+- `model_config` **不是字段**，不参与 `model_fields`，也不出现在 JSON Schema 的 `properties`；
+- 字段可以继承：若在 `ToolArgs` 声明 `request_id`，所有子类都会自动接受。
+
+#### 8.3.4 `ConfigDict` 的两个配置
+
+**`extra="forbid"`**：只接受声明过的字段，多传直接报错：
+
+```python
+SampleRowsArgs(table="orders", sql="SELECT 1")
+# ValidationError: Extra inputs are not permitted (type=extra_forbidden)
+```
+
+**`str_strip_whitespace=True`**：字符串先 strip，再做长度/正则校验：
+
+```python
+SampleRowsArgs(table="  shop.orders  ")   # -> table="shop.orders"
+SearchColumnsArgs(keyword="   ")          # -> 长度 0，报 string_too_short
+```
+
+顺序很重要：如果先校验长度再 strip，`"   "` 会通过；Pydantic 不是这个顺序。
+
+#### 8.3.5 `TABLE_PATTERN` 的含义
+
+```python
+TABLE_PATTERN = r"^[A-Za-z_][A-Za-z0-9_.]*$"
+```
+
+| 部分 | 含义 |
+|---|---|
+| `^` | 从字符串开头 |
+| `[A-Za-z_]` | 第一个字符必须是字母或下划线 |
+| `[A-Za-z0-9_.]*` | 后续可以是字母、数字、下划线、点 |
+| `$` | 到字符串结尾 |
+
+允许：
+
+```text
+orders
+shop.orders
+order_items
+_tmp
+```
+
+拒绝：
+
+```text
+orders; DROP TABLE x     # 分号、空格
+orders where 1=1         # 空格
+`orders`                 # 反引号
+orders-name              # 连字符
+订单表                    # 中文
+```
+
+两个关键点：
+
+1. `TABLE_PATTERN` 本身只是字符串常量，**不会自动生效**；必须在字段上显式引用：
+   ```python
+   table: str = Field(..., pattern=TABLE_PATTERN)
+   ```
+2. 它**只做格式校验，不检查表是否存在**。表是否存在仍由 `find_table()` 查 catalog：
+   ```text
+   格式合法 + catalog 存在  → 通过
+   格式合法 + catalog 不存在 → “未找到表，相近的表：...”
+   格式非法                 → Pydantic 拒绝，工具不会执行
+   ```
+
+#### 8.3.6 实际报错示例
+
+```text
+=== 正常：strip + 默认值 ===
+OK: table='shop.orders' n=5
+
+=== 非法表名：分号注入 ===
+('table',) | String should match pattern '^[A-Za-z_][A-Za-z0-9_.]*$' | type: string_pattern_mismatch
+
+=== 未知字段 ===
+('sql',) | Extra inputs are not permitted | type: extra_forbidden
+
+=== n 越界 ===
+('n',) | Input should be less than or equal to 20 | type: less_than_equal
+
+=== keyword 全空白 ===
+('keyword',) | String should have at least 1 character | type: string_too_short
+```
+
+#### 8.3.7 声明之后发生什么
+
+1. `model_json_schema()` 把字段与约束写进工具 schema，发给 LLM（告知）；
+2. LLM 返回参数 dict；
+3. `ToolRegistry` 用 `model_validate(dict)` 强制校验；
+4. 通过后 `execute()` 收到已验证的 Pydantic 实例。
+
+完整的权限 → 校验 → 执行顺序见 8.5。
 
 ### 8.4 未来参数约定
 
@@ -1017,6 +1157,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-5 | 5 个工具 Args 迁移到 `ToolArgs` | 完成 | 上界/格式/未知字段统一 |
 | 2026-10-26 | T2-5 | 参数越界与注入测试 | 完成 | 31 passed（param 6 项） |
 | 2026-10-26 | T2-5 | 记录参数校验链路（Schema → Pydantic → execute） | 完成 | 见 8.5；含代码路径与测试位置 |
+| 2026-10-26 | T2-5 | 补充 8.3：字段声明、`model_fields`、`TABLE_PATTERN` 与报错示例 | 完成 | 基类只声明配置，字段在子类类体 |
 
 ---
 
