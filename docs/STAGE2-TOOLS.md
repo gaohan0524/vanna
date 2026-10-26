@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**进行中（T2-1 完成，2026-10-26）**
+> - 状态：**进行中（T2-1 / T2-2 完成，2026-10-26）**
 > - 前置：Stage 1 完成（2026-10-25）
 > - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
@@ -315,9 +315,111 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 
 ## 5. T2-2：`sample_rows` / `explain_query`
 
-### 5.1 `sample_rows`
+### 5.1 两个工具的职责与使用场景（先读这一节）
 
-参数：`table: Literal[...]`（由 catalog 动态生成不方便，Pydantic 里用 `str` + 白名单校验）、`n: int = 5`（1~20）。
+> 与 T2-1 不同：`sample_rows` / `explain_query` **会真的连 ClickHouse**。
+> 因此除了“查什么”，还必须约束“能查多少、查多久、返回什么”。
+
+#### 5.1.1 `sample_rows`：看真实取值
+
+定位：**“注释看完了，但不确定数据长什么样”** 时用。
+
+适用：
+
+- 确认枚举大小写（`PAID` vs `paid`）、日期格式（`2026-10-24` vs `20261024`）；
+- 看 `properties` 这类 JSON 字段的真实键名；
+- 判断是否存在脏数据（空字符串、异常值）。
+
+不适用：
+
+- 聚合/统计 → `run_sql`；
+- 不知道表名 → `search_columns` / `describe_table`。
+
+输出：
+
+```text
+表：shop.users（前 5 行，共 7 列；已脱敏）
+user_id  email     country ...
+1        [email]   CN
+...
+```
+
+安全约束：
+
+| 约束 | 实现 |
+|---|---|
+| 表名白名单 | 必须是 catalog 中存在的表，否则拒绝且不查库 |
+| 行数上限 | `n: 1~20`，SQL 强制 `LIMIT n` |
+| 超时 | 10s，走 ClickHouse `max_execution_time` |
+| 脱敏 | 邮箱 → `[email]`，大陆手机号 → `[phone]` |
+| 字符串截断 | 单值超过 80 字截断；整体结果超过 4,000 字符截断并说明 |
+
+关键行为：未知表返回 `success=False`，并附相近表名——参数错误必须让模型换表名，不能让它把“表不存在”当成“表是空的”。
+
+#### 5.1.2 `explain_query`：看执行计划
+
+定位：**“SQL 写好了，但担心全表扫/超时”** 时用。
+
+适用：
+
+- 大表（events 100 万行）或多表 join 前，确认扫描行数与分区裁剪；
+- `run_sql` 超时后，判断是否需要缩时间范围。
+
+不适用：
+
+- 获取业务结果 → `run_sql`；
+- 非 `SELECT` / `WITH` → 直接拒绝。
+
+输出：
+
+```text
+read_rows: 100000
+partitions: 30/30
+...
+说明：重点看 read_rows / partitions；EXPLAIN 只反映执行计划，不代表结果一定正确。
+```
+
+安全约束：
+
+| 约束 | 实现 |
+|---|---|
+| 语句类型 | 只允许单条 `SELECT` / `WITH`（复用 `validate_sql`） |
+| 超时 | 10s 服务端超时 |
+| 结果大小 | 4,000 字符，超出标注“已截断” |
+| 错误 | 返回 `error_type` + 建议，不抛堆栈 |
+
+#### 5.1.3 三者关系与调用链
+
+```text
+不知道字段/表
+  → search_columns / describe_table（只读 catalog）
+  → sample_rows（看真实取值，查库但限行/脱敏）
+  → explain_query（大表前置检查，查库但不返回业务数据）
+  → run_sql（正式结果）
+```
+
+- `describe_table` 回答“字段是什么”；
+- `sample_rows` 回答“值长什么样”；
+- `explain_query` 回答“这条 SQL 要扫多少”；
+- `run_sql` 才回答“结果是多少”。
+
+#### 5.1.4 为什么超时必须走服务端
+
+`ClickHouseRunner.BLOCKING = True`，`asyncio.wait_for` 只能取消协程等待，**打不断正在执行的同步查询线程**。
+因此 T2-2 给 `ClickHouseRunner` 增加：
+
+```python
+async def run_query(self, sql, settings=None):
+    ...
+    client.query(sql, settings=settings or self.query_settings)
+```
+
+- `sample_rows` / `explain_query` 每次传 `{"max_execution_time": 10}`；
+- 后续 T2-6 给 `run_sql` 配 `{"max_execution_time": 30}`。
+
+### 5.2 `sample_rows`
+
+参数：`table: str`（Pydantic 里用 `str` + catalog 白名单校验）、`n: int = 5`（1~20）。
 
 安全要求：
 
@@ -337,18 +439,20 @@ async def execute(self, context, args):
     ...
 ```
 
-### 5.2 `explain_query`
+### 5.3 `explain_query`
 
 - 参数：`sql: str`
-- 仅允许 `SELECT` / `WITH`
-- 执行 `EXPLAIN PLAN <sql>`（ClickHouse），返回前 40 行文本
+- 仅允许单条 `SELECT` / `WITH`
+- 执行 `EXPLAIN PLAN <sql>`（ClickHouse），返回文本
 - 附一行提示：“重点看 read_rows / partitions，不要据此判断结果正确性”
 
-DoD：
+### 5.4 DoD
 
-- [ ] 非 SELECT / 多语句直接拒绝
-- [ ] `EXPLAIN` 超时 10s
-- [ ] 结果截断到 4,000 字符，并标注总行数
+- [x] `sample_rows` 表名白名单、`LIMIT 1~20`、10s 服务端超时
+- [x] 邮箱 → `[email]`、手机号 → `[phone]`、单值 80 字截断、整体 4,000 字符
+- [x] `explain_query` 只接受 SELECT/WITH；写操作与多语句直接拒绝
+- [x] `explain_query` 10s 超时、结果 4,000 字符截断
+- [x] `ClickHouseRunner.run_query(sql, settings=...)` 支持 `max_execution_time` 透传（单测覆盖）
 
 ---
 
@@ -678,6 +782,10 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-1 | 实现 `context/search.py`（同义词 + 打分 + 表查找） | 完成 | `gmv` 命中 `orders.amount_cents` 等 4 列 |
 | 2026-10-26 | T2-1 | 实现 `search_columns` / `describe_table` | 完成 | 单元测试 10 passed |
 | 2026-10-26 | T2-1 | 注册到 `build_agent`（admin/analyst） | 完成 | 接线测试 22 passed；viewer 仍无工具 |
+| 2026-10-26 | T2-2 | `ClickHouseRunner` 增加 `run_query(sql, settings)` | 完成 | `max_execution_time` 透传；单测覆盖 |
+| 2026-10-26 | T2-2 | 实现 `sample_rows` | 完成 | 白名单、LIMIT、脱敏、80 字截断、10s 超时 |
+| 2026-10-26 | T2-2 | 实现 `explain_query` | 完成 | 仅 SELECT/WITH、EXPLAIN PLAN、4,000 字符截断 |
+| 2026-10-26 | T2-2 | 注册到 `build_agent` | 完成 | 24 passed；viewer 仍无工具 |
 
 ---
 

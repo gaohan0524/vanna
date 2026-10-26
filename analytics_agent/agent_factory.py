@@ -24,6 +24,8 @@ from .context.render import render_schema
 from .context.schema_catalog import load_catalog
 from .prompts.builder import AnalyticsPromptBuilder
 from .tools.describe_table import DescribeTableTool
+from .tools.explain_query import ExplainQueryTool
+from .tools.sample_rows import SampleRowsTool
 from .tools.search_columns import SearchColumnsTool
 
 
@@ -135,6 +137,12 @@ def build_tool_registry(
     )
     registry.register_local_tool(
         DescribeTableTool(catalog), access_groups=["admin", "analyst"]
+    )
+    registry.register_local_tool(
+        SampleRowsTool(catalog, runner), access_groups=["admin", "analyst"]
+    )
+    registry.register_local_tool(
+        ExplainQueryTool(runner), access_groups=["admin", "analyst"]
     )
     if enable_memory_tools:
         registry.register_local_tool(
