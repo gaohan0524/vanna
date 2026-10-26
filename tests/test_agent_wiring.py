@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from analytics_agent.agent_factory import build_agent, build_prompt_builder
@@ -31,6 +33,13 @@ def test_build_agent_uses_stage1_builder(monkeypatch):
 
     assert isinstance(agent.system_prompt_builder, AnalyticsPromptBuilder)
     assert agent.system_prompt_builder.prompt_version == PROMPT_VERSION
+
+
+def test_catalog_tools_are_registered(monkeypatch):
+    agent = build_agent(_settings(monkeypatch), llm_service=object())
+
+    assert asyncio.run(agent.tool_registry.get_tool("search_columns")) is not None
+    assert asyncio.run(agent.tool_registry.get_tool("describe_table")) is not None
 
 
 def test_missing_catalog_fails_fast(monkeypatch, tmp_path):

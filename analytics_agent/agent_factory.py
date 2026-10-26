@@ -23,6 +23,8 @@ from .context.glossary import load_glossary, render_glossary
 from .context.render import render_schema
 from .context.schema_catalog import load_catalog
 from .prompts.builder import AnalyticsPromptBuilder
+from .tools.describe_table import DescribeTableTool
+from .tools.search_columns import SearchColumnsTool
 
 
 class EvalUserResolver(UserResolver):
@@ -100,6 +102,7 @@ def build_tool_registry(
     sql_runner: Optional[ClickHouseRunner] = None,
     *,
     enable_memory_tools: bool = False,
+    catalog: Optional[dict] = None,
 ) -> ToolRegistry:
     """Register the tools available to the agent.
 
@@ -118,12 +121,20 @@ def build_tool_registry(
         password=settings.ch_password,
     )
 
+    catalog = catalog or load_catalog(settings.schema_catalog_path)
+
     registry = ToolRegistry()
     registry.register_local_tool(
         RunSqlTool(sql_runner=runner), access_groups=["admin", "analyst"]
     )
     registry.register_local_tool(
         VisualizeDataTool(), access_groups=["admin", "analyst"]
+    )
+    registry.register_local_tool(
+        SearchColumnsTool(catalog), access_groups=["admin", "analyst"]
+    )
+    registry.register_local_tool(
+        DescribeTableTool(catalog), access_groups=["admin", "analyst"]
     )
     if enable_memory_tools:
         registry.register_local_tool(

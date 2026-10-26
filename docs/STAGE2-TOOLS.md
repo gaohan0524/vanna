@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**未开始**
+> - 状态：**进行中（T2-1 完成，2026-10-26）**
 > - 前置：Stage 1 完成（2026-10-25）
 > - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
@@ -205,10 +205,10 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 
 ### 4.3 DoD
 
-- [ ] 搜索覆盖表名、字段名、注释、表说明
-- [ ] 空结果给出可执行建议（换词/describe）
-- [ ] `describe_table` 对未知表返回“表不存在 + 相近表名”
-- [ ] 单测：大小写、别名（`gmv` 命中 `amount_cents` 注释）、limit 上限
+- [x] 搜索覆盖表名、字段名、注释、表说明（含业务同义词）
+- [x] 空结果给出可执行建议（换词/describe）
+- [x] `describe_table` 对未知表返回“表不存在 + 相近表名”
+- [x] 单测：同义词、注释命中、limit、空关键词、未知表
 
 ---
 
@@ -574,7 +574,9 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 
 | 日期 | 步骤 | 操作 | 结果 | 备注 |
 |---|---|---|---|---|
-| | | | | |
+| 2026-10-26 | T2-1 | 实现 `context/search.py`（同义词 + 打分 + 表查找） | 完成 | `gmv` 命中 `orders.amount_cents` 等 4 列 |
+| 2026-10-26 | T2-1 | 实现 `search_columns` / `describe_table` | 完成 | 单元测试 10 passed |
+| 2026-10-26 | T2-1 | 注册到 `build_agent`（admin/analyst） | 完成 | 接线测试 22 passed；viewer 仍无工具 |
 
 ---
 

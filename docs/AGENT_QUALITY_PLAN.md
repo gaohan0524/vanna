@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 1 完成**（EX 61.9%、behavior 88.9%、两次差异 0pt）；**Stage 2 执行手册已就绪**（[`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)），待开始 T2-1。详见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 9/13 节
+- **当前进度**：**Stage 2 进行中**——T2-1 `search_columns` / `describe_table` 已完成（2026-10-26），下一步 T2-2 `sample_rows` / `explain_query`。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -635,7 +635,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [ ] EX：`____%`（基线 15% 估算）
 
 ### Stage 2（执行细节见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)）
-- [ ] T2-1 `search_columns` / `describe_table`
+- [x] T2-1 `search_columns` / `describe_table`——2026-10-26：catalog 搜索 + 单表描述，10 项单测通过
 - [ ] T2-2 `sample_rows` / `explain_query`
 - [ ] T2-3 `get_metric_definition`
 - [ ] T2-4 工具 description 重写
