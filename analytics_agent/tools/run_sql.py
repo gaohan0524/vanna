@@ -7,6 +7,7 @@ from typing import Type
 from vanna import ToolContext, ToolResult
 from vanna.capabilities.sql_runner import RunSqlToolArgs
 from vanna.tools import RunSqlTool
+from vanna.tools.sql_errors import error_payload, hint_for_error
 
 from analytics_agent.tools.guardrails import SqlGuardError, prepare_sql
 
@@ -37,12 +38,13 @@ class AnalyticsRunSqlTool(RunSqlTool):
         try:
             prepared_sql, note = prepare_sql(args.sql, limit=self.auto_limit)
         except SqlGuardError as exc:
-            message = f"{exc.message} (error_type={exc.error_type})"
+            hint = hint_for_error(exc.error_type)
+            payload = error_payload(exc.error_type, exc.message, hint)
             return ToolResult(
                 success=False,
-                result_for_llm=message,
-                error=exc.message,
-                metadata={"error_type": exc.error_type},
+                result_for_llm=payload,
+                error=exc.error_type,
+                metadata={"error_type": exc.error_type, "hint": hint},
             )
 
         result = await super().execute(

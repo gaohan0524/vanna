@@ -13,6 +13,7 @@ from typing import Type
 from pydantic import Field
 from vanna import Tool, ToolContext, ToolResult
 from vanna.capabilities.sql_runner import RunSqlToolArgs
+from vanna.tools.sql_errors import classify_sql_error, error_payload, hint_for_error
 from vanna.tools.sql_validation import validate_sql
 
 from analytics_agent.tools.params import ToolArgs
@@ -75,24 +76,30 @@ class ExplainQueryTool(Tool[ExplainQueryArgs]):
             args.sql, read_only=True, max_length=4_000, require_single_statement=True
         )
         if not validation.ok:
+            error_type = validation.error_type or "invalid_sql"
+            hint = hint_for_error(error_type)
+            payload = error_payload(
+                error_type, f"EXPLAIN 拒绝执行：{validation.reason}", hint
+            )
             return ToolResult(
                 success=False,
-                result_for_llm=(
-                    f"EXPLAIN 拒绝执行：{validation.reason} "
-                    f"(error_type={validation.error_type})"
-                ),
-                error=validation.error_type,
+                result_for_llm=payload,
+                error=error_type,
+                metadata={"error_type": error_type, "hint": hint},
             )
 
         # 只允许 SELECT/WITH；EXPLAIN/SHOW 等交给专门工具，避免递归
         if validation.statement_type not in {"SELECT", "WITH"}:
+            message = (
+                "EXPLAIN 只接受 SELECT/WITH，"
+                f"收到 {validation.statement_type or 'unknown'}。"
+            )
+            hint = "改为 SELECT/WITH；EXPLAIN 本身不用再嵌套。"
             return ToolResult(
                 success=False,
-                result_for_llm=(
-                    "EXPLAIN 只接受 SELECT/WITH，"
-                    f"收到 {validation.statement_type or 'unknown'}。"
-                ),
+                result_for_llm=error_payload("unsupported_statement", message, hint),
                 error="unsupported_statement",
+                metadata={"error_type": "unsupported_statement", "hint": hint},
             )
 
         sql = args.sql.strip().rstrip(";")
@@ -101,10 +108,14 @@ class ExplainQueryTool(Tool[ExplainQueryArgs]):
         try:
             frame = await self._execute(explain_sql, context)
         except Exception as exc:
+            info = classify_sql_error(exc)
+            message = f"EXPLAIN 执行失败：{type(exc).__name__}: {exc}"
+            payload = error_payload(info.error_type, message, info.hint)
             return ToolResult(
                 success=False,
-                result_for_llm=f"EXPLAIN 执行失败：{type(exc).__name__}: {exc}",
+                result_for_llm=payload,
                 error="explain_failed",
+                metadata={"error_type": info.error_type, "hint": info.hint},
             )
 
         text = frame.to_string(index=False, header=False)

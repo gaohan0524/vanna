@@ -18,6 +18,7 @@ import pandas as pd
 from pydantic import Field
 from vanna import Tool, ToolContext, ToolResult
 from vanna.capabilities.sql_runner import RunSqlToolArgs
+from vanna.tools.sql_errors import classify_sql_error, error_payload
 
 from analytics_agent.context.search import find_table, suggest_tables
 from analytics_agent.tools.params import TABLE_PATTERN, ToolArgs
@@ -130,10 +131,14 @@ class SampleRowsTool(Tool[SampleRowsArgs]):
         try:
             frame = await self._execute(sql, context)
         except Exception as exc:  # 数据库错误要回喂给模型，而不是抛给上层
+            info = classify_sql_error(exc)
+            message = f"查询样例失败：{type(exc).__name__}: {exc}"
+            payload = error_payload(info.error_type, message, info.hint)
             return ToolResult(
                 success=False,
-                result_for_llm=f"查询样例失败：{type(exc).__name__}: {exc}",
+                result_for_llm=payload,
                 error="sample_failed",
+                metadata={"error_type": info.error_type, "hint": info.hint},
             )
 
         masked = mask_frame(frame)

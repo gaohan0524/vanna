@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**进行中（T2-1 ~ T2-6 完成，2026-10-26）**
+> - 状态：**T2-1 ~ T2-7 代码完成，待 G2 评测（2026-10-26）**
 > - 前置：Stage 1 完成（2026-10-25）
 > - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
@@ -1095,24 +1095,85 @@ ClickHouseRunner(..., query_settings={"max_execution_time": 30})
 
 ## 10. T2-7：错误结构化回喂
 
-把 `validate_sql` 的 `error_type` 与建议一起回喂：
+### 10.0 职责与原则
+
+目标：让模型看到**可行动的错误**，而不是一长串异常。
+
+- 统一输出 JSON：`error_type` + `message` + `hint`
+- UI 仍显示人话，只有 `result_for_llm` 是 JSON
+- 不把堆栈整段回喂，也不吞掉原始错误（`message` 保留关键信息）
+- 不自动重试；由模型决定改 SQL 还是停止
+
+### 10.1 统一格式
 
 ```json
 {
-  "error_type": "read_only_violation",
-  "message": "只允许 SELECT/WITH/EXPLAIN",
-  "hint": "删除写操作，或改用 SELECT 查询；不要重试同一句 SQL"
+  "error_type": "unknown_identifier",
+  "message": "Error executing query: Code: 47. Unknown identifier: foo",
+  "hint": "字段或别名不存在。先用 search_columns 确认字段名，再改 SQL；不要原样重试。"
 }
 ```
 
-执行错误（ClickHouse 异常）也做轻量分类：
+实现：`src/vanna/tools/sql_errors.py`
 
-- `UNKNOWN_IDENTIFIER` → “字段/别名不存在，先用 search_columns 确认”
-- `SYNTAX_ERROR` → “检查函数名与括号，ClickHouse 不支持 DATE_TRUNC”
-- `TIMEOUT` → “缩小时间范围或加分区过滤”
-- 其它 → 原文 + “只改一次，不要原样重试”
+```python
+def error_payload(error_type, message, hint) -> str:
+    return json.dumps(
+        {"error_type": error_type, "message": message, "hint": hint},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+```
 
-DoD：单测断言错误文本包含 `error_type` 与 `hint`，且不会把原始堆栈整段回喂。
+### 10.2 校验类错误
+
+来源：`validate_sql` / `guardrails.prepare_sql`。
+
+| `error_type` | hint |
+|---|---|
+| `empty_sql` | SQL 不能为空，请给出完整查询 |
+| `sql_too_long` | SQL 过长，去掉重复 CTE/子查询 |
+| `multiple_statements` | 只保留一条 SELECT/WITH，不要分号堆叠 |
+| `read_only_violation` | 只允许 SELECT/WITH；删除写操作 |
+| `unsupported_format` | 去掉 FORMAT 子句 |
+| `parse_error` | 检查括号/引号/方言，不要原样重试 |
+| `invalid_sql` | 按错误信息修改后重试一次 |
+
+### 10.3 执行类错误
+
+来源：ClickHouse 异常，`classify_sql_error()`。
+
+| `error_type` | 触发关键词（示例） | hint |
+|---|---|---|
+| `timeout` | `TIMEOUT_EXCEEDED`、`max_execution_time`、`Code: 159` | 缩小时间范围 / 加分区过滤 / 先 explain_query |
+| `unknown_identifier` | `Unknown identifier`、`Code: 47/207` | 先用 search_columns 确认字段 |
+| `unknown_table` | `Unknown table`、`doesn't exist`、`Code: 60/81` | 先用 search_columns / describe_table 确认表名 |
+| `syntax_error` | `Syntax error`、`Code: 62` | 检查函数名/括号/方言 |
+| `memory_limit` | `Memory limit exceeded`、`Code: 241` | 减少扫描列/行，先聚合 |
+| `division_by_zero` | `Division by zero`、`Code: 153` | 用 `nullIf(x, 0)` 包住分母 |
+| `read_only_violation` | `readonly`、`Code: 164` | 当前连接只读，只允许 SELECT/WITH |
+| `connection_error` | `Connection refused`、`network` | 环境问题，不要重复重试 |
+| `sql_error` | 其它 | 读错误信息，只改一次，不要原样重试 |
+
+### 10.4 应用位置
+
+| 位置 | 改了什么 |
+|---|---|
+| `src/vanna/tools/run_sql.py` | 校验失败、超时、**执行异常** 三类都返回 JSON；补上了原先未捕获的执行异常 |
+| `analytics_agent/tools/run_sql.py` | `SqlGuardError` 转 JSON，`error` 字段保留 `error_type` |
+| `analytics_agent/tools/sample_rows.py` | 数据库异常分类后回喂，`error` 仍是 `sample_failed` |
+| `analytics_agent/tools/explain_query.py` | 校验/执行异常分类后回喂 |
+
+一个顺带修复：框架 `RunSqlTool` 原先只捕获超时，runner 抛出的 `Unknown identifier` 会直接冒泡；现在统一捕获并分类。
+
+### 10.5 DoD
+
+- [x] 校验错误返回 `error_type` + `hint`
+- [x] 执行错误按 ClickHouse 错误码/关键词分类
+- [x] `result_for_llm` 为 JSON，UI 仍显示人话
+- [x] 不把堆栈整段回喂
+- [x] 单测覆盖：守卫错误、字段不存在、校验空 SQL、sample 错误
+- [ ] **暂不评测**（按用户要求，G2 评测另行安排）
 
 ---
 
@@ -1277,6 +1338,10 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-6 | `AnalyticsRunSqlTool` 接入；框架 `sql_validation` AST 优先 | 完成 | `'delete'` 字符串不再误杀；`WITH...INSERT` 拦截 |
 | 2026-10-26 | T2-6 | 服务端 30s 超时 + 截断总行数/列数 | 完成 | 10 项护栏测试；框架回归 39 passed |
 | 2026-10-26 | T2-6 | 文档补充两层 AST 校验（应用侧 + 框架侧） | 完成 | 见 9.1；含三态返回值与边界说明 |
+| 2026-10-26 | T2-7 | 新增 `vanna/tools/sql_errors.py` | 完成 | 校验/执行错误分类 + JSON 回喂 |
+| 2026-10-26 | T2-7 | 框架 `RunSqlTool` 补执行异常捕获 | 完成 | 原先只捕获超时，异常会冒泡 |
+| 2026-10-26 | T2-7 | 应用工具统一结构化错误 | 完成 | run_sql / sample_rows / explain_query |
+| 2026-10-26 | T2-7 | 单测 | 通过 | 49 passed；按用户要求**暂不评测** |
 
 ---
 

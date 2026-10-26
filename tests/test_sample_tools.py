@@ -115,9 +115,7 @@ async def test_explain_only_accepts_select():
     ):
         result = await tool.execute(None, ExplainQueryArgs(sql=bad))
         assert not result.success, bad
-        assert (
-            "error_type" not in result.result_for_llm or "拒绝" in result.result_for_llm
-        )
+        assert "error_type" in result.result_for_llm
 
 
 async def test_clickhouse_runner_passes_query_settings(monkeypatch):

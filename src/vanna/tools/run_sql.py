@@ -23,6 +23,7 @@ from vanna.components import (
 from vanna.capabilities.sql_runner import SqlRunner, RunSqlToolArgs
 from vanna.capabilities.file_system import FileSystem
 from vanna.integrations.local import LocalFileSystem
+from .sql_errors import classify_sql_error, error_payload, hint_for_error
 from .sql_validation import _is_read_only_query, validate_sql
 
 # 喂给 LLM 的结果文本默认预算（字符），超出截断
@@ -125,9 +126,13 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
         )
         if not validation.ok:
             message = validation.reason or "SQL validation failed."
+            error_type = validation.error_type or "invalid_sql"
+            hint = hint_for_error(error_type)
+            # UI 显示人话，LLM 收到 JSON（error_type + hint），避免堆栈/长文本。
+            payload = error_payload(error_type, message, hint)
             return ToolResult(
                 success=False,
-                result_for_llm=message,
+                result_for_llm=payload,
                 ui_component=UiComponent(
                     rich_component=NotificationComponent(
                         type=ComponentType.NOTIFICATION,
@@ -137,7 +142,7 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
                     simple_component=SimpleTextComponent(text=message),
                 ),
                 error=message,
-                metadata={"error_type": validation.error_type or "invalid_sql"},
+                metadata={"error_type": error_type, "hint": hint},
             )
 
         # 执行查询（套超时；同步驱动走线程池，见 _run_sql）
@@ -153,9 +158,11 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
                 str(e).strip()
                 or f"Query timed out after {self.timeout_seconds} seconds."
             )
+            hint = classify_sql_error("timeout").hint
+            payload = error_payload("timeout", message, hint)
             return ToolResult(
                 success=False,
-                result_for_llm=message,
+                result_for_llm=payload,
                 ui_component=UiComponent(
                     rich_component=NotificationComponent(
                         type=ComponentType.NOTIFICATION,
@@ -165,7 +172,27 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
                     simple_component=SimpleTextComponent(text=message),
                 ),
                 error=message,
-                metadata={"error_type": "query_timeout"},
+                metadata={"error_type": "query_timeout", "hint": hint},
+            )
+        except Exception as e:
+            # 查询执行阶段的异常（字段不存在、语法错、连接失败等）必须回喂，
+            # 不能让它冒泡到 agent 层变成“工具崩溃”。
+            info = classify_sql_error(e)
+            error_message = f"Error executing query: {str(e)}"
+            payload = error_payload(info.error_type, error_message, info.hint)
+            return ToolResult(
+                success=False,
+                result_for_llm=payload,
+                ui_component=UiComponent(
+                    rich_component=NotificationComponent(
+                        type=ComponentType.NOTIFICATION,
+                        level="error",
+                        message=error_message,
+                    ),
+                    simple_component=SimpleTextComponent(text=error_message),
+                ),
+                error=str(e),
+                metadata={"error_type": info.error_type, "hint": info.hint},
             )
 
         try:
@@ -278,10 +305,12 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
             )
 
         except Exception as e:
+            info = classify_sql_error(e)
             error_message = f"Error executing query: {str(e)}"
+            payload = error_payload(info.error_type, error_message, info.hint)
             return ToolResult(
                 success=False,
-                result_for_llm=error_message,
+                result_for_llm=payload,
                 ui_component=UiComponent(
                     rich_component=NotificationComponent(
                         type=ComponentType.NOTIFICATION,
@@ -291,5 +320,5 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
                     simple_component=SimpleTextComponent(text=error_message),
                 ),
                 error=str(e),
-                metadata={"error_type": "sql_error"},
+                metadata={"error_type": info.error_type, "hint": info.hint},
             )
