@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**进行中（T2-1 ~ T2-4 完成，2026-10-26）**
+> - 状态：**进行中（T2-1 ~ T2-5 完成，2026-10-26）**
 > - 前置：Stage 1 完成（2026-10-25）
 > - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
@@ -610,13 +610,69 @@ L0 总长 **1,008 tokens**（Stage 2 起预算调整为 **1,100**；完整表述
 
 ## 8. T2-5：参数收敛
 
-- `sample_rows.n`：`Field(ge=1, le=20)`
-- `search_columns.limit`：`Field(ge=1, le=50)`
-- `describe_table.table`：字符串 + 白名单校验（Pydantic 动态枚举成本高，运行时校验更稳）
-- `explain_query.sql`：长度 ≤ 4,000，单语句
-- 未来若加 `time_range` / `granularity`，用 `Literal["day","week","month"]`，不要让模型自由填
+### 8.1 目标
 
-DoD：单测覆盖越界参数，错误信息明确告诉模型合法范围。
+参数不是“越自由越好”。模型能填的范围越窄，工具调用越稳定：
+
+- 数量类参数用 `ge` / `le` 明确上下界；
+- 表名用格式校验 + catalog 白名单双层保护；
+- 未知字段直接拒绝，避免模型把 `sql` 塞进 `sample_rows`；
+- 字符串先 strip 再校验，`"   "` 不算合法输入。
+
+### 8.2 参数表
+
+| 工具 | 字段 | 约束 | 越界时模型看到 |
+|---|---|---|---|
+| `search_columns` | `keyword` | 1~50 字符 | `String should have at least 1 character` |
+| | `limit` | 1~50 | `less than or equal to 50` |
+| `describe_table` | `table` | 1~60 + 表名格式 | `String should match pattern` |
+| `sample_rows` | `table` | 1~60 + 表名格式 | 同上 |
+| | `n` | 1~20 | `less than or equal to 20` |
+| `explain_query` | `sql` | 6~4,000 字符 + 单语句 | `String should have at least 6 characters` |
+| `get_metric_definition` | `name` | 1~50 字符 | `String should have at least 1 character` |
+
+表名格式：
+
+```text
+^[A-Za-z_][A-Za-z0-9_.]*$
+```
+
+允许 `orders`、`shop.orders`、`order_items`；拒绝空格、分号、反引号、`WHERE` 等注入型内容。
+格式校验不等于白名单：真正的表是否存在，仍由 `find_table` 查 catalog。
+
+### 8.3 公共基类
+
+```python
+class ToolArgs(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+```
+
+所有工具的 Args 都继承它：
+
+- `extra="forbid"`：多传字段直接报错，不会静默忽略；
+- `str_strip_whitespace=True`：`"  GMV  "` → `"GMV"`，`"   "` → 长度校验失败。
+
+### 8.4 未来参数约定
+
+若后续增加 `time_range` / `granularity`：
+
+```python
+TimeRange = Literal["last_7d", "last_30d", "mtd", "last_month"]
+Granularity = Literal["day", "week", "month"]
+```
+
+不要用自由字符串；枚举值同时写进参数 `description`，让模型知道合法取值。
+
+### 8.5 DoD
+
+- [x] 所有工具 Args 继承 `ToolArgs`（`extra="forbid"` + strip）
+- [x] 数量参数有明确上下界
+- [x] 表名有格式校验，且仍保留 catalog 白名单
+- [x] 单测覆盖越界、未知字段、空白字符串、注入型表名
+- [x] 错误信息包含字段名与合法范围（Pydantic 默认）
 
 ---
 
@@ -885,6 +941,9 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-4 | L0 增加“工具使用”段 | 完成 | 完整表述 1,008 tokens |
 | 2026-10-26 | T2-4 | 预算调整：L0 900 → 1,100 | 完成 | 完整提示词 2,902 tokens（总预算 4,500） |
 | 2026-10-26 | T2-4 | `PROMPT_VERSION` 升 `stage2-v2` | 完成 | 15 passed（含 7 工具描述校验） |
+| 2026-10-26 | T2-5 | 新增 `tools/params.py` 公共基类 | 完成 | `extra="forbid"` + strip；表名 pattern |
+| 2026-10-26 | T2-5 | 5 个工具 Args 迁移到 `ToolArgs` | 完成 | 上界/格式/未知字段统一 |
+| 2026-10-26 | T2-5 | 参数越界与注入测试 | 完成 | 31 passed（param 6 项） |
 
 ---
 

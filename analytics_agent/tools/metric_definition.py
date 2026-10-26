@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Type
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from vanna import Tool, ToolContext, ToolResult
 
 from analytics_agent.context.glossary import (
@@ -21,9 +21,10 @@ from analytics_agent.context.glossary import (
     list_metric_names,
     suggest_metrics,
 )
+from analytics_agent.tools.params import ToolArgs
 
 
-class GetMetricDefinitionArgs(BaseModel):
+class GetMetricDefinitionArgs(ToolArgs):
     name: str = Field(
         min_length=1,
         max_length=50,

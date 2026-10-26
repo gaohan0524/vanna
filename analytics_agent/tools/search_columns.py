@@ -13,13 +13,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Type
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from vanna import Tool, ToolContext, ToolResult
 
 from analytics_agent.context.search import search_columns
+from analytics_agent.tools.params import ToolArgs
 
 
-class SearchColumnsArgs(BaseModel):
+class SearchColumnsArgs(ToolArgs):
     """参数收敛：关键词必填且限长，limit 限制在 1~50，防止模型一次拉全库。"""
 
     keyword: str = Field(

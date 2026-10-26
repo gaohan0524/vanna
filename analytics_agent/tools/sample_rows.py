@@ -15,11 +15,12 @@ import re
 from typing import Any, Dict, Type
 
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import Field
 from vanna import Tool, ToolContext, ToolResult
 from vanna.capabilities.sql_runner import RunSqlToolArgs
 
 from analytics_agent.context.search import find_table, suggest_tables
+from analytics_agent.tools.params import TABLE_PATTERN, ToolArgs
 
 # 只用于“看起来像邮箱/手机号”的字符串；不处理纯数字列，避免误伤 ID。
 _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
@@ -29,10 +30,11 @@ MAX_STRING_LEN = 80
 MAX_RESULT_CHARS = 4_000
 
 
-class SampleRowsArgs(BaseModel):
+class SampleRowsArgs(ToolArgs):
     table: str = Field(
         min_length=1,
         max_length=60,
+        pattern=TABLE_PATTERN,
         description="表名，可带库名，如 orders 或 shop.orders",
     )
     n: int = Field(default=5, ge=1, le=20, description="返回行数（1~20）")

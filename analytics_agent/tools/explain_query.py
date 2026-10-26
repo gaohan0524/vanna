@@ -10,15 +10,17 @@ from __future__ import annotations
 
 from typing import Type
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from vanna import Tool, ToolContext, ToolResult
 from vanna.capabilities.sql_runner import RunSqlToolArgs
 from vanna.tools.sql_validation import validate_sql
 
+from analytics_agent.tools.params import ToolArgs
+
 MAX_RESULT_CHARS = 4_000
 
 
-class ExplainQueryArgs(BaseModel):
+class ExplainQueryArgs(ToolArgs):
     sql: str = Field(
         min_length=6,
         max_length=4_000,

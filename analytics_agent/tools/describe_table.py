@@ -14,18 +14,20 @@ from __future__ import annotations
 
 from typing import Any, Dict, Type
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 from vanna import Tool, ToolContext, ToolResult
 
 from analytics_agent.context.search import find_table, suggest_tables
+from analytics_agent.tools.params import TABLE_PATTERN, ToolArgs
 
 
-class DescribeTableArgs(BaseModel):
+class DescribeTableArgs(ToolArgs):
     """表名必填；允许带库名前缀（shop.orders），由 find_table 统一处理。"""
 
     table: str = Field(
         min_length=1,
         max_length=60,
+        pattern=TABLE_PATTERN,
         description="表名，可带库名，如 orders 或 shop.orders",
     )
 
