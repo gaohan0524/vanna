@@ -923,59 +923,121 @@ except Exception as e:
 
 ## 9. T2-6：`run_sql` 护栏改造
 
-### 9.1 AST 只读校验（`tools/guardrails.py`）
+### 9.0 职责与场景
+
+`run_sql` 只负责**执行**，不负责探索：
+
+- 用：表、字段、口径都已确定，需要拿结果；
+- 不要用：猜字段（`search_columns`）、确认取值（`sample_rows`）、查口径（`get_metric_definition`）、看执行计划（`explain_query`）。
+
+护栏的目标不是“限制模型”，而是让**越过权限/成本的调用在执行前失败**，并把原因回喂给模型。
+
+### 9.1 两层 AST 校验
+
+#### 9.1.1 应用侧：`tools/guardrails.py`
 
 ```python
-import sqlglot
-from sqlglot import exp
+def prepare_sql(sql: str, *, limit: int = 1000) -> tuple[str, str]:
+    text = sql.strip().rstrip(";").strip()
+    if _FORMAT_RE.search(text):
+        raise SqlGuardError("unsupported_format", ...)
 
-
-def is_read_only(sql: str) -> tuple[bool, str]:
-    try:
-        statements = sqlglot.parse(sql, read="clickhouse")
-    except Exception as exc:
-        return False, f"SQL 解析失败：{exc}"
+    statements = sqlglot.parse(text, read="clickhouse")
     if len(statements) != 1:
-        return False, "只允许单条语句"
+        raise SqlGuardError("multiple_statements", ...)
+
     node = statements[0]
-    if isinstance(node, (exp.Select, exp.Union, exp.Explain)):
-        return True, ""
-    return False, f"只允许 SELECT/WITH/EXPLAIN，收到 {type(node).__name__}"
+    if not isinstance(node, (exp.Select, exp.Union)):
+        raise SqlGuardError("read_only_violation", ...)
+
+    if node.args.get("limit") is not None:
+        return text, ""
+    return f"SELECT * FROM (\n{text}\n) AS _guarded LIMIT {limit}", "已自动追加 LIMIT ..."
 ```
 
-要点：
+应用侧是 **fail-closed**：解析失败直接报 `parse_error`，不执行。
 
-- 用 AST 而不是关键字：字符串字面量里的 `'delete'`、注释里的 `DROP` 不再误杀
-- `WITH ... INSERT` 会被解析成 `Insert`，正确拦截
-- 解析失败按失败处理，不放过
+#### 9.1.2 框架侧：`src/vanna/tools/sql_validation.py`
+
+框架的 `RunSqlTool` 内部还会调用 `validate_sql()`；如果只改应用侧，第二层仍会用关键字黑名单把 `'delete'` 误杀，所以框架侧也改为 AST 优先：
+
+```python
+def _ast_read_only(sql: str) -> Optional[bool]:
+    statements = sqlglot.parse(sql, read="clickhouse")
+    ...
+    if isinstance(node, (exp.Select, exp.Union)):
+        return True
+
+    write_nodes = (Insert, Update, Delete, Drop, Create, Alter, ...)
+    if isinstance(node, write_nodes):
+        return False
+    return None
+
+
+def _is_read_only_query(sql: str) -> bool:
+    ...
+    ast_result = _ast_read_only(sql)
+    if ast_result is not None:
+        return ast_result
+
+    # 无法判断（SHOW/EXPLAIN/Command 或解析失败）才回退关键字
+    upper = cleaned.upper()
+    return not any(re.search(rf"\b{kw}\b", upper) for kw in _WRITE_KEYWORDS)
+```
+
+三种返回值：
+
+| AST 结果 | 含义 | 后续 |
+|---|---|---|
+| `True` | 明确是 `SELECT/WITH` | 直接放行，跳过关键字扫描 |
+| `False` | 明确是 `Insert/Update/Delete/Drop/...` | 直接拒绝 |
+| `None` | `SHOW/EXPLAIN/Command` 或解析失败 | 回退到原关键字逻辑 |
+
+**为什么必须两层都改**：
+
+```text
+AnalyticsRunSqlTool.execute()
+  ├─ 1. guardrails.prepare_sql()          ← 应用侧 AST
+  └─ 2. super().execute()
+          └─ RunSqlTool.validate_sql()
+                └─ _is_read_only_query()   ← 框架侧关键字
+```
+
+只改第 1 层时，`SELECT 'delete' AS s` 会在第 2 层再次被拒绝。
+
+边界：
+
+- 应用侧：解析失败 **拒绝**（fail-closed）；
+- 框架侧：解析失败 **回退关键字**（兼容 `SHOW/EXPLAIN`），不是唯一防线。
 
 ### 9.2 LIMIT 注入
 
-```python
-def ensure_limit(sql: str, limit: int = 1000) -> str:
-    # 仅对最外层没有 LIMIT 的 SELECT 包装；EXPLAIN 不处理
-    ...
-    return f"SELECT * FROM (\n{sql}\n) LIMIT {limit}"
+无顶层 `LIMIT` 时包一层：
+
+```text
+SELECT * FROM (
+  <原 SQL>
+) AS _guarded LIMIT 1000
 ```
 
 注意：
 
-- 聚合结果加 LIMIT 无害
-- 含 `FORMAT` 的 SQL 直接拒绝（无法安全包装）
-- 返回给 LLM 时注明“已自动追加 LIMIT 1000”
+- 聚合结果加 LIMIT 无害；
+- 含 `FORMAT` 的 SQL 直接拒绝（无法安全包装）；
+- 返回给 LLM 时前置一行“已自动追加 LIMIT 1000（原 SQL 无 LIMIT）”；
+- 已有 `LIMIT 10` 的 SQL 不重复包装。
 
 ### 9.3 服务端超时
 
-`ClickHouseRunner` 增加 `query_settings`：
+`ClickHouseRunner` 增加 `run_query(sql, settings=...)`：
 
 ```python
-class ClickHouseRunner(SqlRunner):
-    def __init__(..., query_settings=None):
-        self.query_settings = query_settings or {}
-
-    async def run_sql(self, args, context):
-        ...
-        result = client.query(args.sql, settings=self.query_settings)
+async def run_query(self, sql, settings=None):
+    ...
+    result = client.query(
+        sql,
+        settings=self.query_settings if settings is None else settings,
+    )
 ```
 
 工厂：
@@ -985,29 +1047,49 @@ ClickHouseRunner(..., query_settings={"max_execution_time": 30})
 ```
 
 **不要依赖 `asyncio.wait_for`**：`BLOCKING=True` 时它打不断线程，必须让 ClickHouse 自己超时。
+`sample_rows` / `explain_query` 每次覆盖为 10s，`run_sql` 用默认 30s。
 
 ### 9.4 截断说明
 
-结果超过 `max_result_chars` 时，回喂文本必须包含：
+结果超过 `max_result_chars` 时，回喂文本包含：
 
 ```text
-（结果已截断：共 12,345 行 × 8 列，仅展示前 1,000 字符）
+(Results truncated to 1,000 characters: total 12,345 rows x 8 columns. ...)
 ```
 
-避免模型把截断结果当成全量。
+保留原“Results truncated to N characters”前缀（兼容既有提示词/测试），补充总行数与列数，避免模型把截断结果当成全量。元数据同时增加 `results_truncated`。
 
-### 9.5 绕过测试（必须全过）
+### 9.5 绕过测试（全部通过）
 
-| 输入 | 期望 |
+| 输入 | 期望 | 结果 |
+|---|---|---|
+| `SELECT 'delete' AS s` | 允许（字符串不是写操作） | ✅ |
+| `SELECT 1; DROP TABLE shop.orders` | 拒绝（多语句） | ✅ |
+| `WITH x AS (SELECT 1) INSERT INTO ...` | 拒绝（AST 是 Insert） | ✅ |
+| `/* DROP */ SELECT 1` | 允许 | ✅ |
+| `SELECT * FROM shop.orders` | 允许，并追加 LIMIT | ✅ |
+| `SELECT * FROM shop.orders FORMAT JSON` | 拒绝（无法安全 LIMIT） | ✅ |
+
+### 9.6 实现与测试位置
+
+| 层 | 位置 |
 |---|---|
-| `SELECT 'delete' AS s` | 允许（字符串不是写操作） |
-| `SELECT 1; DROP TABLE shop.orders` | 拒绝（多语句） |
-| `WITH x AS (SELECT 1) INSERT INTO ...` | 拒绝（AST 是 Insert） |
-| `/* DROP */ SELECT 1` | 允许 |
-| `SELECT * FROM shop.orders` | 允许，并追加 LIMIT |
-| `SELECT * FROM shop.orders FORMAT JSON` | 拒绝（无法安全 LIMIT） |
+| 应用侧护栏 | `analytics_agent/tools/guardrails.py` |
+| 应用侧工具 | `analytics_agent/tools/run_sql.py`（`AnalyticsRunSqlTool`） |
+| 框架侧 AST | `src/vanna/tools/sql_validation.py` |
+| 框架侧截断 | `src/vanna/tools/run_sql.py` |
+| 绕过测试 | `tests/test_sql_guardrails.py`（10 项） |
+| 框架回归 | `tests/test_run_sql_guardrails.py` |
 
-DoD：`tests/test_sql_guardrails.py` 覆盖以上 6 条 + 超长 SQL + 空 SQL。
+### 9.7 DoD
+
+- [x] `sqlglot` 加入依赖，AST 只读校验生效
+- [x] 字符串字面量 `'delete'` 不再误杀；`WITH ... INSERT` 正确拦截
+- [x] 无 LIMIT 自动追加，并在回喂文本中说明
+- [x] `run_sql` 使用服务端 30s 超时；sample/explain 10s
+- [x] 截断文本包含总行数/列数
+- [x] 6 条绕过用例全部通过（10 项单测）
+- [x] 框架侧同步改为 AST 优先，避免二次误杀
 
 ---
 
@@ -1194,6 +1276,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-6 | 引入 `sqlglot`，实现 `guardrails.prepare_sql` | 完成 | AST 只读 + LIMIT 注入 + FORMAT 拒绝 |
 | 2026-10-26 | T2-6 | `AnalyticsRunSqlTool` 接入；框架 `sql_validation` AST 优先 | 完成 | `'delete'` 字符串不再误杀；`WITH...INSERT` 拦截 |
 | 2026-10-26 | T2-6 | 服务端 30s 超时 + 截断总行数/列数 | 完成 | 10 项护栏测试；框架回归 39 passed |
+| 2026-10-26 | T2-6 | 文档补充两层 AST 校验（应用侧 + 框架侧） | 完成 | 见 9.1；含三态返回值与边界说明 |
 
 ---
 
