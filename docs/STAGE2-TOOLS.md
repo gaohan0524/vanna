@@ -608,7 +608,7 @@ L0 总长 **1,008 tokens**（Stage 2 起预算调整为 **1,100**；完整表述
 
 ---
 
-## 8. T2-5：参数收敛
+## 8. T2-5：参数收敛（实际就是用Pydantic做工具参数校验）
 
 ### 8.1 目标
 
@@ -715,16 +715,11 @@ SampleRowsArgs(table="orders", sql="SELECT 1")
 
 **`str_strip_whitespace=True`**：字符串先 strip，再做长度/正则校验：
 
-```python
-SampleRowsArgs(table="  shop.orders  ")   # -> table="shop.orders"
-SearchColumnsArgs(keyword="   ")          # -> 长度 0，报 string_too_short
-```
-
 顺序很重要：如果先校验长度再 strip，`"   "` 会通过；Pydantic 不是这个顺序。
 
 假设我们有这样一个模型：
 
-```
+```python
 from pydantic import BaseModel, ConfigDict
 
 class SearchColumnsArgs(BaseModel):
@@ -740,7 +735,7 @@ class SearchColumnsArgs(BaseModel):
 
 python
 
-```
+```python
 # 传入带空格的字符串
 args = SearchColumnsArgs(keyword="  gmv  ")
 print(args.keyword) 
@@ -749,7 +744,7 @@ print(args.keyword)
 
 **❌ 失败情况（多余字段被拦截）：**
 
-```
+```python
 # LLM 幻觉多传了字段
 try:
     args = SearchColumnsArgs(keyword="gmv", limitt=10) 
