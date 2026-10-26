@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**进行中（T2-1 / T2-2 完成，2026-10-26）**
+> - 状态：**进行中（T2-1 ~ T2-3 完成，2026-10-26）**
 > - 前置：Stage 1 完成（2026-10-25）
 > - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
@@ -458,29 +458,92 @@ async def execute(self, context, args):
 
 ## 6. T2-3：`get_metric_definition`
 
-数据源：`analytics_agent/context/glossary.yaml`（与 Stage 1 共用）。
+### 6.1 职责与使用场景（先读这一节）
 
-```python
-class GetMetricArgs(BaseModel):
-    name: str = Field(description="指标名或别名，如 GMV、净收入、复购率")
-```
+#### 6.1.1 定位
 
-返回：
+`get_metric_definition` 回答的是：**这个指标到底怎么算？**
+
+- 只读 `analytics_agent/context/glossary.yaml`，**不查数据库**；
+- 返回四段：指标名、定义、公式、易错点；
+- 与 L2 同源：L2 渲染的是 `short`（进提示词），工具返回的是完整 `formula` + `pitfalls`（按需查）。
+
+适用：
+
+- 用户说“GMV”“净收入”“复购率”，模型不确定口径；
+- 容易混淆的指标：GMV vs 净收入、支付金额 vs 退款金额；
+- 需要确认退款归属、时间窗口、是否排除测试。
+
+不适用：
+
+- 查字段名 → `search_columns`；
+- 查表结构 → `describe_table`；
+- 拿数据 → `run_sql`。
+
+示例输出：
 
 ```text
 指标：净收入
-定义：GMV − 已批准退款
-公式：GMV − SUM(refunds.amount_cents)/100 WHERE refunds.status='approved'
+定义：GMV - approved 退款
+公式：GMV - SUM(refunds.amount_cents)/100 WHERE refunds.status='approved'
 易错点：公司级按退款发生月；品类级按订单 cohort，并按商品金额占比分摊
 ```
 
-找不到时返回候选指标列表（按包含关系匹配），不要编造。
+#### 6.1.2 匹配顺序
 
-DoD：
+`find_metric` 按以下顺序查找，避免“猜错指标”：
 
-- [ ] 9 个指标全部可查
-- [ ] 支持别名（大小写、中文名）
-- [ ] 未命中返回候选，不返回空字符串
+1. **key / 中文名精确匹配**（大小写不敏感）：`gmv`、`GMV`、`净收入`；
+2. **同义词表** `_METRIC_ALIASES`：`成交额` → GMV、`复购` → 复购率；
+3. **查询包含 key/name**：`各渠道 GMV 是多少` → GMV；
+4. 命中多个 → 返回 `None`，由工具列出候选，**不猜**。
+
+未命中时：
+
+```text
+未找到指标 'gpm'。候选：GMV
+请从候选里选一个；不要自行编造公式。
+```
+
+#### 6.1.3 与 L2 的关系
+
+| | L2（提示词） | 工具 |
+|---|---|---|
+| 数据源 | `glossary.yaml` | 同一份 |
+| 内容 | 只渲染 `short`（约 170 tokens） | 定义 + 完整 `formula` + `pitfalls` |
+| 时机 | 每轮常驻 | 模型按需调用 |
+| 作用 | 让模型“知道有这些指标” | 让模型“确认具体公式” |
+
+维护约定：两边同源，改 `glossary.yaml` 即同时生效；不要在工具里另写一份公式。
+
+### 6.2 实现
+
+```python
+class GetMetricDefinitionArgs(BaseModel):
+    name: str = Field(
+        min_length=1,
+        max_length=50,
+        description="指标名或别名，如 GMV、净收入、客单价、复购率、MRR",
+    )
+```
+
+`context/glossary.py` 新增三个纯函数：
+
+| 函数 | 作用 |
+|---|---|
+| `find_metric` | 按 key/name/别名/包含关系查找，返回 `(key, metric)` |
+| `suggest_metrics` | 未命中时给候选（编辑距离 + 包含关系） |
+| `list_metric_names` | 列出全部指标展示名 |
+
+工具只负责格式化输出与候选提示，不查库、不生成 SQL。
+
+### 6.3 DoD
+
+- [x] 9 个指标全部可查
+- [x] 支持 key、中文名、别名、大小写（`GMV` / `gmv` / `成交额`）
+- [x] 支持“各渠道 GMV 是多少”这类包含式查询
+- [x] 未命中返回候选，不返回空字符串、不编造公式
+- [x] 输出包含定义、公式、易错点
 
 ---
 
@@ -786,6 +849,9 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-2 | 实现 `sample_rows` | 完成 | 白名单、LIMIT、脱敏、80 字截断、10s 超时 |
 | 2026-10-26 | T2-2 | 实现 `explain_query` | 完成 | 仅 SELECT/WITH、EXPLAIN PLAN、4,000 字符截断 |
 | 2026-10-26 | T2-2 | 注册到 `build_agent` | 完成 | 24 passed；viewer 仍无工具 |
+| 2026-10-26 | T2-3 | `context/glossary.py` 增加查找/候选函数 | 完成 | key/中文名/别名/包含式匹配 |
+| 2026-10-26 | T2-3 | 实现 `get_metric_definition` | 完成 | 定义 + 公式 + 易错点；未命中给候选 |
+| 2026-10-26 | T2-3 | 注册并验证 | 完成 | 17 passed；真实 glossary：净收入/复购率/gpm 均正常 |
 
 ---
 

@@ -40,6 +40,9 @@ def test_catalog_tools_are_registered(monkeypatch):
 
     assert asyncio.run(agent.tool_registry.get_tool("search_columns")) is not None
     assert asyncio.run(agent.tool_registry.get_tool("describe_table")) is not None
+    assert (
+        asyncio.run(agent.tool_registry.get_tool("get_metric_definition")) is not None
+    )
 
 
 def test_missing_catalog_fails_fast(monkeypatch, tmp_path):

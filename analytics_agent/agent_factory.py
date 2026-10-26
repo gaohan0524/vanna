@@ -25,6 +25,7 @@ from .context.schema_catalog import load_catalog
 from .prompts.builder import AnalyticsPromptBuilder
 from .tools.describe_table import DescribeTableTool
 from .tools.explain_query import ExplainQueryTool
+from .tools.metric_definition import GetMetricDefinitionTool
 from .tools.sample_rows import SampleRowsTool
 from .tools.search_columns import SearchColumnsTool
 
@@ -105,6 +106,7 @@ def build_tool_registry(
     *,
     enable_memory_tools: bool = False,
     catalog: Optional[dict] = None,
+    glossary: Optional[dict] = None,
 ) -> ToolRegistry:
     """Register the tools available to the agent.
 
@@ -124,6 +126,7 @@ def build_tool_registry(
     )
 
     catalog = catalog or load_catalog(settings.schema_catalog_path)
+    glossary = glossary or load_glossary(settings.glossary_path)
 
     registry = ToolRegistry()
     registry.register_local_tool(
@@ -143,6 +146,9 @@ def build_tool_registry(
     )
     registry.register_local_tool(
         ExplainQueryTool(runner), access_groups=["admin", "analyst"]
+    )
+    registry.register_local_tool(
+        GetMetricDefinitionTool(glossary), access_groups=["admin", "analyst"]
     )
     if enable_memory_tools:
         registry.register_local_tool(
