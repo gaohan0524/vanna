@@ -67,8 +67,56 @@ def split_statements(sql: str) -> List[str]:
     return [statement for statement in sqlparse.split(sql) if statement.strip()]
 
 
+def _ast_read_only(sql: str) -> Optional[bool]:
+    """用 sqlglot 做 AST 级只读判断。
+
+    - True：明确的 SELECT/WITH（不会误杀字符串里的 ``'delete'``）；
+    - False：明确的 Insert/Update/Delete/Drop 等写操作；
+    - None：解析失败或无法判断（SHOW/EXPLAIN 等），由关键字逻辑兜底。
+    """
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except ImportError:  # pragma: no cover - 主依赖已包含
+        return None
+
+    try:
+        statements = [
+            statement
+            for statement in sqlglot.parse(sql, read="clickhouse")
+            if statement is not None
+        ]
+    except Exception:
+        return None
+
+    if len(statements) != 1:
+        return None
+
+    node = statements[0]
+    if isinstance(node, (exp.Select, exp.Union)):
+        return True
+
+    write_nodes = tuple(
+        cls
+        for name in (
+            "Insert",
+            "Update",
+            "Delete",
+            "Drop",
+            "Create",
+            "Alter",
+            "TruncateTable",
+            "Merge",
+        )
+        if (cls := getattr(exp, name, None)) is not None
+    )
+    if write_nodes and isinstance(node, write_nodes):
+        return False
+    return None
+
+
 def _is_read_only_query(sql: str) -> bool:
-    """判断 SQL 是否为只读查询（首关键字属于只读白名单且全文不含写关键字）。"""
+    """判断 SQL 是否为只读查询（AST 优先，无法判断时回退到关键字）。"""
     cleaned = _strip_sql_comments(sql).strip()
     if not cleaned:
         return False
@@ -76,6 +124,10 @@ def _is_read_only_query(sql: str) -> bool:
     leading = cleaned.split(None, 1)[0].upper()
     if leading not in _READ_ONLY_LEADING_KEYWORDS:
         return False
+
+    ast_result = _ast_read_only(sql)
+    if ast_result is not None:
+        return ast_result
 
     upper = cleaned.upper()
     return not any(re.search(rf"\b{kw}\b", upper) for kw in _WRITE_KEYWORDS)

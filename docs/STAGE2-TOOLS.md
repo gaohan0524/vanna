@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**进行中（T2-1 ~ T2-5 完成，2026-10-26）**
+> - 状态：**进行中（T2-1 ~ T2-6 完成，2026-10-26）**
 > - 前置：Stage 1 完成（2026-10-25）
 > - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
@@ -722,6 +722,44 @@ SearchColumnsArgs(keyword="   ")          # -> 长度 0，报 string_too_short
 
 顺序很重要：如果先校验长度再 strip，`"   "` 会通过；Pydantic 不是这个顺序。
 
+假设我们有这样一个模型：
+
+```
+from pydantic import BaseModel, ConfigDict
+
+class SearchColumnsArgs(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+        str_strip_whitespace=True,
+    )
+    keyword: str
+    limit: int = 5
+```
+
+**✅ 成功情况（自动去空格）：**
+
+python
+
+```
+# 传入带空格的字符串
+args = SearchColumnsArgs(keyword="  gmv  ")
+print(args.keyword) 
+# 输出: "gmv" (空格被自动清理了)
+```
+
+**❌ 失败情况（多余字段被拦截）：**
+
+```
+# LLM 幻觉多传了字段
+try:
+    args = SearchColumnsArgs(keyword="gmv", limitt=10) 
+except Exception as e:
+    print(e)
+# 输出报错: 1 validation error for SearchColumnsArgs
+# limitt
+#   Extra inputs are not permitted [type=extra_forbidden, ...]
+```
+
 #### 8.3.5 `TABLE_PATTERN` 的含义
 
 ```python
@@ -1158,6 +1196,9 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-5 | 参数越界与注入测试 | 完成 | 31 passed（param 6 项） |
 | 2026-10-26 | T2-5 | 记录参数校验链路（Schema → Pydantic → execute） | 完成 | 见 8.5；含代码路径与测试位置 |
 | 2026-10-26 | T2-5 | 补充 8.3：字段声明、`model_fields`、`TABLE_PATTERN` 与报错示例 | 完成 | 基类只声明配置，字段在子类类体 |
+| 2026-10-26 | T2-6 | 引入 `sqlglot`，实现 `guardrails.prepare_sql` | 完成 | AST 只读 + LIMIT 注入 + FORMAT 拒绝 |
+| 2026-10-26 | T2-6 | `AnalyticsRunSqlTool` 接入；框架 `sql_validation` AST 优先 | 完成 | `'delete'` 字符串不再误杀；`WITH...INSERT` 拦截 |
+| 2026-10-26 | T2-6 | 服务端 30s 超时 + 截断总行数/列数 | 完成 | 10 项护栏测试；框架回归 39 passed |
 
 ---
 

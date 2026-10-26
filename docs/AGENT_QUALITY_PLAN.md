@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 2 进行中**——T2-1 ~ T2-5 已完成（2026-10-26），下一步 T2-6 `run_sql` 护栏（AST / LIMIT / 超时）。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)
+- **当前进度**：**Stage 2 进行中**——T2-1 ~ T2-6 已完成（2026-10-26），下一步 T2-7 结构化错误回喂 + 评测。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -640,7 +640,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [x] T2-3 `get_metric_definition`——2026-10-26：定义/公式/易错点 + 候选，6 项单测通过
 - [x] T2-4 工具 description 重写——2026-10-26：7 个工具四段式；L0 1,008 tokens（预算 1,100）；`stage2-v2`
 - [x] T2-5 参数收敛——2026-10-26：`ToolArgs` 统一 forbid/strip；范围与表名格式；6 项单测
-- [ ] T2-6 `run_sql` 护栏改造
+- [x] T2-6 `run_sql` 护栏改造——2026-10-26：AST 只读 + LIMIT + 30s 超时 + 截断说明；10 项测试
 - [ ] T2-7 结构化错误回喂
 - [ ] G2：EX ≥ 70%、`TOOL_MISUSE` < 5%、平均轮次 ≤ 3.5、护栏绕过测试全过
 - [ ] 平均轮次：`____`

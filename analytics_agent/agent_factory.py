@@ -12,7 +12,7 @@ from vanna.core.registry import ToolRegistry
 from vanna.core.user import RequestContext, User, UserResolver
 from vanna.integrations.clickhouse import ClickHouseRunner
 from vanna.integrations.local.agent_memory import DemoAgentMemory
-from vanna.tools import RunSqlTool
+from .tools.run_sql import AnalyticsRunSqlTool
 from vanna.tools.agent_memory import (
     SaveQuestionToolArgsTool,
     SearchSavedCorrectToolUsesTool,
@@ -125,6 +125,8 @@ def build_tool_registry(
         database=settings.ch_database,
         user=settings.ch_user,
         password=settings.ch_password,
+        # 服务端超时：BLOCKING=True 时 asyncio.wait_for 打不断线程
+        query_settings={"max_execution_time": 30},
     )
 
     catalog = catalog or load_catalog(settings.schema_catalog_path)
@@ -132,9 +134,10 @@ def build_tool_registry(
 
     registry = ToolRegistry()
     registry.register_local_tool(
-        RunSqlTool(
+        AnalyticsRunSqlTool(
             sql_runner=runner,
             custom_tool_description=RUN_SQL_DESCRIPTION,
+            auto_limit=1000,
         ),
         access_groups=["admin", "analyst"],
     )

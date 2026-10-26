@@ -214,10 +214,14 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
 
                     # Create result text for LLM with truncated results
                     results_preview = csv_content
-                    if len(results_preview) > self.max_result_chars:
+                    results_truncated = len(results_preview) > self.max_result_chars
+                    if results_truncated:
+                        # 保留原前缀（兼容旧测试/提示词），补充总行数与列数，
+                        # 避免模型把截断结果当成全量。
                         results_preview = (
                             results_preview[: self.max_result_chars]
-                            + f"\n(Results truncated to {self.max_result_chars} characters. "
+                            + f"\n(Results truncated to {self.max_result_chars} characters: "
+                            f"total {total_rows} rows x {len(columns)} columns. "
                             "FOR LARGE RESULTS YOU DO NOT NEED TO SUMMARIZE THESE RESULTS "
                             "OR PROVIDE OBSERVATIONS. THE NEXT STEP SHOULD BE A "
                             "VISUALIZE_DATA CALL)"
@@ -248,6 +252,7 @@ class RunSqlTool(Tool[RunSqlToolArgs]):
                         "output_file": filename,
                         "total_rows": total_rows,
                         "rows_truncated": rows_truncated,
+                        "results_truncated": results_truncated,
                     }
             else:
                 # For non-SELECT queries (INSERT, UPDATE, DELETE, etc.)
