@@ -72,7 +72,7 @@
 
 | 层 | 内容 | 放置位置 | 预算（tokens） |
 |---|---|---|---|
-| L0 | 角色、ClickHouse 方言、硬约束、行为规则、工作流 | `prompts/templates.py` → 系统提示词 | ≤ 900 |
+| L0 | 角色、ClickHouse 方言、硬约束、行为规则、工具路由、工作流 | `prompts/templates.py` → 系统提示词 | ≤ 1,100（Stage 2 起） |
 | L1 | 12 张表的紧凑 schema（表用途 + 字段 + 枚举） | `context/render.py` 渲染 | ≤ 2,200 |
 | L2 | 指标定义与业务术语（GMV、净收入、有效订单……） | `context/glossary.yaml` 渲染 | ≤ 300 |
 | L3 | 按需事实（`describe_table` / `sample_rows` / golden SQL） | Stage 2/3 才做 | 0 |

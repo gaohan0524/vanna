@@ -638,7 +638,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [x] T2-1 `search_columns` / `describe_table`——2026-10-26：catalog 搜索 + 单表描述，10 项单测通过
 - [x] T2-2 `sample_rows` / `explain_query`——2026-10-26：白名单/脱敏/10s 超时；9 项单测通过
 - [x] T2-3 `get_metric_definition`——2026-10-26：定义/公式/易错点 + 候选，6 项单测通过
-- [x] T2-4 工具 description 重写——2026-10-26：7 个工具四段式；L0 工具段 804 tokens；`stage2-v1`
+- [x] T2-4 工具 description 重写——2026-10-26：7 个工具四段式；L0 1,008 tokens（预算 1,100）；`stage2-v2`
 - [ ] T2-5 参数收敛
 - [ ] T2-6 `run_sql` 护栏改造
 - [ ] T2-7 结构化错误回喂

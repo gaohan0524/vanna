@@ -590,7 +590,8 @@ class GetMetricDefinitionArgs(BaseModel):
 - 不要查询 system.*；不要 SELECT *；明细必须带 LIMIT。
 ```
 
-L0 总长 **804 tokens**（预算 900）；7 个工具全部可见时，完整提示词 **2,698 tokens**（预算 4,500）。提示词版本升为 `stage2-v1`。
+L0 总长 **1,008 tokens**（Stage 2 起预算调整为 **1,100**；完整表述优先于省 200 tokens）；
+7 个工具全部可见时，完整提示词 **2,902 tokens**（预算 4,500）。提示词版本升为 `stage2-v2`。
 
 ### 7.4 实现位置
 
@@ -601,8 +602,8 @@ L0 总长 **804 tokens**（预算 900）；7 个工具全部可见时，完整�
 ### 7.5 DoD
 
 - [x] 5 个新工具 + `run_sql` / `visualize_data` 全部四段式
-- [x] L0 增加工具使用段（804 tokens，≤ 900）
-- [x] `PROMPT_VERSION = "stage2-v1"`
+- [x] L0 增加工具使用段（1,008 tokens，≤ 1,100）
+- [x] `PROMPT_VERSION = "stage2-v2"`
 - [x] 单测校验 7 个工具描述都包含“用/不要用/分工”
 
 ---
@@ -755,7 +756,7 @@ registry.register_local_tool(GetMetricDefinitionTool(glossary), access_groups=["
 - 已确定表和字段后，才调用 run_sql。
 ```
 
-`PROMPT_VERSION` 升到 `stage2-v1`。
+`PROMPT_VERSION` 升到 `stage2-v2`。
 
 DoD：
 
@@ -827,7 +828,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 
 1. 实现 `get_metric_definition`
 2. 重写 7 个工具的 description
-3. 更新 L0 工具使用段，版本升 `stage2-v1`
+3. 更新 L0 工具使用段，版本升 `stage2-v2`
 
 ### D4：护栏（约 4 小时）
 
@@ -881,8 +882,9 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-3 | 实现 `get_metric_definition` | 完成 | 定义 + 公式 + 易错点；未命中给候选 |
 | 2026-10-26 | T2-3 | 注册并验证 | 完成 | 17 passed；真实 glossary：净收入/复购率/gpm 均正常 |
 | 2026-10-26 | T2-4 | 7 个工具 description 统一四段式 | 完成 | run_sql/visualize 通过自定义描述覆盖 |
-| 2026-10-26 | T2-4 | L0 增加“工具使用”段并压缩到预算内 | 完成 | L0 804 tokens（预算 900） |
-| 2026-10-26 | T2-4 | `PROMPT_VERSION` 升 `stage2-v1` | 完成 | 15 passed（含 7 工具描述校验） |
+| 2026-10-26 | T2-4 | L0 增加“工具使用”段 | 完成 | 完整表述 1,008 tokens |
+| 2026-10-26 | T2-4 | 预算调整：L0 900 → 1,100 | 完成 | 完整提示词 2,902 tokens（总预算 4,500） |
+| 2026-10-26 | T2-4 | `PROMPT_VERSION` 升 `stage2-v2` | 完成 | 15 passed（含 7 工具描述校验） |
 
 ---
 

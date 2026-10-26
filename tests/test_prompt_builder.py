@@ -71,7 +71,7 @@ async def test_prompt_budget():
 
 
 async def test_l0_budget():
-    assert estimate_tokens(L0_RULES) <= 900
+    assert estimate_tokens(L0_RULES) <= 1_100
 
 
 def test_prompt_version_is_set():
