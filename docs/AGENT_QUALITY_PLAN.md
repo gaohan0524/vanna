@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 1 完成**——第 5/6 次同配置 EX 均 **61.9%**、behavior **88.9%**、两次差异 **0pt**，G1 全绿；可进入 Stage 2。详见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 9/13 节
+- **当前进度**：**Stage 1 完成**（EX 61.9%、behavior 88.9%、两次差异 0pt）；**Stage 2 执行手册已就绪**（[`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)），待开始 T2-1。详见 [`STAGE1-CONTEXT.md`](./STAGE1-CONTEXT.md) 第 9/13 节
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -359,6 +359,10 @@ L0_RULES = """
 
 ### Stage 2：工具面重构（P2，1 周）
 
+> **详细执行步骤见 [`docs/STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)**（含 5 个工具的代码骨架、
+> description 模板、AST 护栏、LIMIT/超时/截断方案、绕过测试、D1~D6 每日任务与 G2）。
+> 本章只保留总体要求。
+
 **目标**：让模型能“先探查、再写 SQL”，而不是靠猜；同时把护栏做对。
 
 #### 工具清单
@@ -630,7 +634,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [x] G1：EX ≥ 25% ✅（61.9%）、behavior ≥ 70% ✅（88.9%）、平均轮次 ≤ 5 ✅（1.07~1.23）、schema < 5% ✅、两次差异 ≤ 5pt ✅（0pt）
 - [ ] EX：`____%`（基线 15% 估算）
 
-### Stage 2
+### Stage 2（执行细节见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)）
 - [ ] T2-1 `search_columns` / `describe_table`
 - [ ] T2-2 `sample_rows` / `explain_query`
 - [ ] T2-3 `get_metric_definition`
@@ -638,6 +642,7 @@ class SearchColumnsTool(Tool[SearchColumnsArgs]):
 - [ ] T2-5 参数收敛
 - [ ] T2-6 `run_sql` 护栏改造
 - [ ] T2-7 结构化错误回喂
+- [ ] G2：EX ≥ 70%、`TOOL_MISUSE` < 5%、平均轮次 ≤ 3.5、护栏绕过测试全过
 - [ ] 平均轮次：`____`
 
 ### Stage 3
