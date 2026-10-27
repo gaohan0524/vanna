@@ -49,3 +49,4 @@
 8. 时间窗口统一左闭右开（`>= start AND < end`），并显式写出上界；聚合前用 `ifNull(SUM(...), 0)` 兜住空区间，除法用 `nullIf` 防零。
 9. 「上月同期」的右边界必须用 `least(addDays(上月1号, toDayOfMonth(today())), 本月1号)` 封顶，否则 29~31 号跑时上界会溢出到下个月（12-31 → 12-02），把本月数据算进上月。
 10. 「近 N 天」= **最近 N 个完整自然日**：`>= toStartOfDay(now()) - INTERVAL N DAY AND < toStartOfDay(now())`，不用滚动 24h 窗口（`now() - INTERVAL N DAY`）。
+11. 任何周粒度/周窗口统一以**周一**为起点：`toStartOfWeek(x, 1)`；「上周」= 上一个完整自然周（周一~周日），不要用 ClickHouse 默认的周日。

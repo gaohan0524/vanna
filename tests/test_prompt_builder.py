@@ -53,6 +53,14 @@ async def test_no_tool_block_when_tools_empty():
     assert "当前账号无权限查询" in prompt
 
 
+async def test_prompt_declares_monday_week_start():
+    prompt = await _build()
+
+    assert "周一" in prompt
+    assert "toStartOfWeek(x, 1)" in prompt
+    assert "不要使用默认的周日" in prompt
+
+
 async def test_prompt_contains_tool_routing():
     prompt = await _build()
 
