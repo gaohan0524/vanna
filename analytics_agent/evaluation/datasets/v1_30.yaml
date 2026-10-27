@@ -481,13 +481,13 @@ dataset:
           )
         expected_behavior: answer
 
-    # ---------------- E 口径歧义（应澄清） ----------------
-    - id: "E-05"
+    # 原 E-05：改为 answer 后归入 B 类（多表 join）
+    - id: "B-05"
       user_id: "analyst"
       user_groups: ["analyst"]
       message: "看一下近 90 天复购率"
       metadata:
-        layer: E
+        layer: B
         difficulty: easy
         expected_behavior: answer
         golden_sql: |

@@ -915,7 +915,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | D-04 | D | analyst | 上周各渠道的支付转化率是多少？（排除测试与注销用户） | answer | 周一为周起点；排测试/软删；上周完整窗口；百分比输出 |
 | D-17 | D | analyst | 近 3 个完整月（不含本月）每月注册用户的 7 日留存率（注册次日起 7 个自然日内有会话）是多少？ | answer | 月度 cohort；D+1~D+7 自然日（`< D+8`）；排除测试/软删；仅前 3 完整月 |
 | D-18 | D | analyst | 近 7 天加购后最终下单的会话比例是多少？（同一会话内，purchase 晚于 add_to_cart；排除测试与注销用户） | answer | 分母有加购的会话；分子同会话购买时间晚于加购；join users 排测试/软删 |
-| E-05 | E | analyst | 看一下近 90 天复购率 | answer | 近 90 天 ≥2 笔有效订单的用户占比 |
+| B-05（原 E-05） | B | analyst | 看一下近 90 天复购率 | answer | 近 90 天 ≥2 笔有效订单的用户占比；多表 join |
 | E-19 | E | analyst | 看一下销售额 | clarify | 未给指标（GMV/净收入）、时间、渠道 |
 | E-20 | E | analyst | 算下留存 | clarify | 新用户留存还是活跃留存、窗口未知 |
 | E-21 | E | analyst | 最近的转化率怎么样 | clarify | 渠道/设备/时间均未指定 |
@@ -1210,7 +1210,7 @@ GRANT SELECT ON shop.* TO readonly;
 | D-04 | D | answer | [x] | [x] | [x] | 周起点周一 + 排测试/软删；百分比输出；去掉 `sessions` 诊断列（2026-10-27） |
 | D-17 | D | answer | [x] | [x] | [x] | 自然日 D+1~D+7、前 3 个完整月；去掉 `retained_users` 诊断列（2026-10-27） |
 | D-18 | D | answer | [x] | [x] | [x] | 同会话漏斗；补 users 排测试/注销（2026-10-27） |
-| E-05 | E | answer | [x] | [x] | [x] | 改为 answer：默认近 90 天复购率（2026-10-27） |
+| B-05（原 E-05） | B | answer | [x] | [x] | [x] | 改为 answer 后归入 B 类：近 90 天复购率（2026-10-27） |
 | E-19 | E | clarify | — | [x] | [x] | 通过：缺指标/时间/渠道 |
 | E-20 | E | clarify | — | [x] | [x] | 通过：留存类型与窗口未定 |
 | E-21 | E | clarify | — | [x] | [x] | 通过：渠道/设备/时间未定 |

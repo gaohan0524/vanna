@@ -660,13 +660,13 @@ dataset:
           GROUP BY channel ORDER BY gmv DESC
         expected_behavior: answer
 
-    - id: "E-05"
+    - id: "B-05"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "看一下复购率"
+      message: "看一下近 90 天复购率"
       metadata:
-        layer: E
-        expected_behavior: clarify   # answer | clarify | refuse
+        layer: B
+        expected_behavior: answer   # answer | clarify | refuse
 ```
 
 > 说明：`golden_sql` 与 `expected_behavior` 放在 `metadata` 中，由自定义 `Evaluator` 消费；内置 `ExpectedOutcome` 只支持工具名与关键词匹配，不支持结果集对比。完整样例见 `STAGE0-EVAL.md` 6.3。
