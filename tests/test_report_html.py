@@ -14,6 +14,7 @@ def test_html_keeps_full_executed_sql_and_reason(tmp_path):
         "expected_behavior": "answer",
         "passed": False,
         "first_try": False,
+        "eventual": True,
         "taxonomy": "METRIC_WRONG",
         "tool_calls": 1,
         "latency_ms": 100,
@@ -35,3 +36,6 @@ def test_html_keeps_full_executed_sql_and_reason(tmp_path):
     assert long_sql in text
     assert "very_long_column_name" in text
     assert long_reason in text
+    assert "Eventual EX" in text
+    assert payload["summary"]["eventual_ex"] == 1.0
+    assert payload["summary"]["eventual_accuracy"] == 1.0

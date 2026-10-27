@@ -31,11 +31,21 @@ def build_payload(
 
     def _rate(items: List[Dict[str, Any]], key: str) -> float | None:
         # 没有任何该类用例时返回 None，避免把“不适用”显示成 0%
+        if key == "eventual":
+            return (
+                round(sum(1 for item in items if _eventual(item)) / len(items), 4)
+                if items
+                else None
+            )
         return (
             round(sum(1 for item in items if item[key]) / len(items), 4)
             if items
             else None
         )
+
+    def _eventual(record: Dict[str, Any]) -> bool:
+        # 老报告/测试 fixture 可能没有 eventual；回退到 passed，保持兼容。
+        return bool(record.get("eventual", record.get("passed", False)))
 
     by_layer: Dict[str, Dict[str, int]] = {}
     for record in records:
@@ -56,7 +66,14 @@ def build_payload(
             "cases": len(records),
             "ex": _rate(answer, "passed"),
             "first_try": _rate(answer, "first_try"),
+            "eventual_ex": _rate(answer, "eventual"),
             "behavior_accuracy": _rate(other, "passed"),
+            "eventual_behavior_accuracy": _rate(other, "eventual"),
+            "eventual_accuracy": round(
+                sum(1 for record in records if _eventual(record)) / len(records), 4
+            )
+            if records
+            else None,
             "avg_tool_calls": round(
                 statistics.fmean([record["tool_calls"] for record in records]), 2
             )
@@ -93,7 +110,7 @@ def _render_html(payload: Dict[str, Any]) -> str:
         rows.append(
             "<tr class='{css}'>"
             "<td>{id}</td><td>{layer}</td><td>{behavior}</td><td>{status}</td>"
-            "<td>{first}</td><td>{calls}</td><td>{taxonomy}</td>"
+            "<td>{first}</td><td>{final}</td><td>{calls}</td><td>{taxonomy}</td>"
             "<td><code>{sql}</code></td><td>{reason}</td></tr>".format(
                 css=css,
                 id=html.escape(record["id"]),
@@ -101,6 +118,7 @@ def _render_html(payload: Dict[str, Any]) -> str:
                 behavior=html.escape(record["expected_behavior"]),
                 status=status,
                 first="Y" if record["first_try"] else "N",
+                final="Y" if record.get("eventual", record["passed"]) else "N",
                 calls=record["tool_calls"],
                 taxonomy=html.escape(record["taxonomy"]),
                 sql=html.escape(record.get("executed_sql") or ""),
@@ -121,7 +139,7 @@ def _render_html(payload: Dict[str, Any]) -> str:
 
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
-<title>Stage 0 evaluation report</title>
+<title>Analytics evaluation report</title>
 <style>
 body {{ font-family: -apple-system, "Segoe UI", sans-serif; margin: 24px; color: #1f2933; }}
 h1 {{ font-size: 20px; }}
@@ -134,11 +152,13 @@ code {{ font-size: 12px; white-space: pre-wrap; word-break: break-word; }}
 tr.fail td {{ background: #fff5f5; }}
 tr.pass td {{ background: #f7fdf9; }}
 </style></head><body>
-<h1>Stage 0 evaluation report — {html.escape(payload["dataset"]["name"])}</h1>
+<h1>Analytics evaluation report — {html.escape(payload["dataset"]["name"])}</h1>
 <div class="metrics">
   <div class="metric">EX<b>{_pct(summary["ex"])}</b></div>
   <div class="metric">First-try<b>{_pct(summary["first_try"])}</b></div>
+  <div class="metric">Eventual EX<b>{_pct(summary["eventual_ex"])}</b></div>
   <div class="metric">Behavior<b>{_pct(summary["behavior_accuracy"])}</b></div>
+  <div class="metric">Eventual overall<b>{_pct(summary["eventual_accuracy"])}</b></div>
   <div class="metric">Avg tool calls<b>{summary["avg_tool_calls"]}</b></div>
   <div class="metric">P95 latency<b>{summary["p95_latency_ms"]} ms</b></div>
   <div class="metric">Est. tokens/case<b>{summary["est_tokens_per_case"]}</b></div>
@@ -146,7 +166,7 @@ tr.pass td {{ background: #f7fdf9; }}
 <h2>By layer</h2><table><tr><th>Layer</th><th>Passed</th></tr>{layer_rows}</table>
 <h2>Failures by taxonomy</h2><table><tr><th>Code</th><th>Count</th></tr>{taxonomy_rows}</table>
 <h2>Cases</h2>
-<table><tr><th>ID</th><th>Layer</th><th>Expected</th><th>Result</th><th>First</th>
+<table><tr><th>ID</th><th>Layer</th><th>Expected</th><th>Result</th><th>First</th><th>Final</th>
 <th>Calls</th><th>Taxonomy</th><th>Executed SQL</th><th>Reason</th></tr>
 {"".join(rows)}
 </table></body></html>
@@ -160,6 +180,7 @@ def _write_csv(path: Path, records: List[Dict[str, Any]]) -> None:
         "expected_behavior",
         "passed",
         "first_try",
+        "eventual",
         "taxonomy",
         "tool_calls",
         "latency_ms",

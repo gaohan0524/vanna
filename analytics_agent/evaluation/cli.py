@@ -318,6 +318,11 @@ async def _cmd_run(args: argparse.Namespace) -> int:
             (item for item in test_case_result.evaluations if not item.passed), None
         )
         skipped_first_try = bool(first_try and first_try.metrics.get("skipped"))
+        clarification = evaluations.get("clarification")
+        if behavior_of(case) == "answer":
+            eventual = bool(result_set and result_set.passed)
+        else:
+            eventual = bool(clarification and clarification.passed)
 
         records.append(
             {
@@ -325,6 +330,7 @@ async def _cmd_run(args: argparse.Namespace) -> int:
                 "layer": str((case.metadata or {}).get("layer", "")),
                 "expected_behavior": behavior_of(case),
                 "passed": passed,
+                "eventual": eventual,
                 "first_try": bool(
                     first_try and first_try.passed and not skipped_first_try
                 ),
@@ -392,7 +398,9 @@ async def _cmd_run(args: argparse.Namespace) -> int:
 
     print(
         f"\nEX={_pct(summary['ex'])}  first_try={_pct(summary['first_try'])}  "
+        f"eventual_ex={_pct(summary['eventual_ex'])}  "
         f"behavior={_pct(summary['behavior_accuracy'])}  "
+        f"eventual_acc={_pct(summary['eventual_accuracy'])}  "
         f"avg_tools={summary['avg_tool_calls']}  p95={summary['p95_latency_ms']}ms"
     )
     print(f"report: {paths['html']}")

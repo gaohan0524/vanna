@@ -1297,14 +1297,20 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | `TOOL_MISUSE` | — | 未统计 | 未统计 | 未统计 |
 | 复杂查询通过率 | 5/12 | 未统计 | 未统计 | 未统计 |
 | 两次 EX 差异 | — | — | — | **4.5pt** |
+| **Eventual EX（新增）** | — | — | 待重跑 | 待重跑 |
 
 > 复杂查询定义：B/C/D 层中涉及 ≥3 表 join 或时间窗口的用例；先人工列出，再统计。
 >
 > v8 核心门槛（EX、behavior、轮次、P95、两次差异）已达标；`TOOL_MISUSE` 与复杂查询通过率待人工抽检后补。
 > v8 两次失败：第 1 次 B-02/B-05/D-04/I-30；第 2 次 B-02/C-15/I-30。B-02、I-30 两次均失败，需单独定位。
 >
-> 报告：第 1 次 `reports/20261027-165653/report.html`；第 2 次 `reports/20261027-170011/report.html`。
+> 报告：第 1 次 `reports/20261027-165653/report.html`；第 2 次 `reports/20261027-170011/report.html`。  
 > 详细失败原因、待修项与未做人工项见 **附录 D**。
+>
+> **指标口径**：`EX` 仍是严格 first-try（`overall_passed` 包含 `FirstTryEvaluator`）；  
+> 新增 `Eventual EX` = answer 用例的 `result_set` 是否最终正确（允许重试）；  
+> `Eventual overall` = answer 看 `result_set`、behavior 看 `clarification`。  
+> 报告 HTML/JSON、控制台和 `failures.csv` 都会输出该字段。
 
 ### 12.3 人工轨迹抽检（20 条）
 
