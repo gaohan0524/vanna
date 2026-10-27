@@ -1394,6 +1394,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-27 | D-17 | golden 改为 retained CTE + LEFT JOIN | 完成 | 先 DISTINCT 再 JOIN，避免 sessions 展开；结果不变；41/41 |
 | 2026-10-27 | D-17 | 同步 L2 术语 `retention_d7` | 完成 | 自然日 D+1~D+7；提示词升 `stage2-v3`（2,906 tokens） |
 | 2026-10-27 | D-18 | 修正加购→下单漏斗 golden | 完成 | 同会话且 purchase 晚于 cart；526 → 27，5.13%；41/41 |
+| 2026-10-27 | D-18 | `conversion_rate` pitfalls 澄清 | 完成 | 支付转化率不可复用于加购漏斗；术语数量与提示词不变 |
 
 ---
 

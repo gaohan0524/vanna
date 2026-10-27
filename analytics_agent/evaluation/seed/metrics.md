@@ -13,6 +13,7 @@
 | 次日留存 | 当日新增用户次日有会话的比例 | `users.signup_at` 与 `sessions.started_at` 按天对齐 | 时区、日期边界 |
 | 7日留存 | 注册后 D+1~D+7 自然日内有会话的用户占比 | `users.signup_at` 与 `sessions.started_at` 按自然日对齐；cohort 必须满 7 天 | 时区、日期边界、观察窗不完整 |
 | 转化率 | 下单会话 / 总会话 | `sessions.converted=1` 占比 | 分子分母口径不一致 |
+| 加购→下单转化率 | 同会话 `add_to_cart` 后 `purchase` 的会话占比 | `events` 按 `session_id` 聚合；`purchase_time >= cart_time` | 不能复用支付转化率；必须同会话且有时序 |
 | MRR | 月度经常性收入 | `accounts.status='active'` 的 `mrr_cents` 之和 | 含 paused/churned |
 | 渠道归因 | 订单归因到首触渠道 | 本库 `orders.channel` 即首触渠道 | 误用 `events` 做末触归因 |
 

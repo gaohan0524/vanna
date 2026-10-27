@@ -36,7 +36,7 @@ metrics:
     name: "支付转化率"
     short: "converted 会话 ÷ 全部会话"
     formula: "countIf(sessions.converted=1) / count()"
-    pitfalls: "分母是会话，不是用户；不要用 payments 表"
+    pitfalls: "分母是会话，不是用户；不要用 payments 表；加购→下单是 events 漏斗，不能复用本指标"
   retention_d7:
     name: "7日留存率"
     short: "注册后 D+1~D+7 自然日内有会话占比"

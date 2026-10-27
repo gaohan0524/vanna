@@ -54,6 +54,15 @@ async def test_metric_tool_returns_definition_formula_pitfalls():
     assert "易错点：" in result.result_for_llm
 
 
+async def test_conversion_pitfall_does_not_confuse_cart_funnel():
+    tool = GetMetricDefinitionTool(load_glossary())
+
+    result = await tool.execute(None, GetMetricDefinitionArgs(name="支付转化率"))
+
+    assert "加购" in result.result_for_llm
+    assert "不能复用" in result.result_for_llm
+
+
 async def test_metric_tool_unknown_lists_candidates():
     tool = GetMetricDefinitionTool(load_glossary())
 
