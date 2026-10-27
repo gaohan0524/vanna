@@ -29,6 +29,14 @@ def test_glossary_budget():
     assert glossary_tokens(load_glossary()) <= 300
 
 
+def test_retention_definition_uses_natural_days():
+    metric = load_glossary()["metrics"]["retention_d7"]
+
+    assert "D+1~D+7" in metric["short"]
+    assert "< addDays(toDate(signup_at), 8)" in metric["formula"]
+    assert "含 D+7" in metric["pitfalls"]
+
+
 def test_missing_file_raises(tmp_path):
     with pytest.raises(FileNotFoundError, match="glossary not found"):
         load_glossary(tmp_path / "missing.yaml")

@@ -39,9 +39,9 @@ metrics:
     pitfalls: "分母是会话，不是用户；不要用 payments 表"
   retention_d7:
     name: "7日留存率"
-    short: "注册后 [D+1,D+7) 回访占比"
-    formula: "uniqExactIf(user_id, started_at >= signup_at + INTERVAL 1 DAY AND started_at < signup_at + INTERVAL 7 DAY) / uniqExact(user_id)"
-    pitfalls: "窗口是左闭右开；排除测试与软删"
+    short: "注册后 D+1~D+7 自然日内有会话占比"
+    formula: "uniqExactIf(user_id, toDate(started_at) >= addDays(toDate(signup_at), 1) AND toDate(started_at) < addDays(toDate(signup_at), 8)) / uniqExact(user_id)"
+    pitfalls: "自然日对齐，含 D+7；cohort 必须满 7 天；排除测试与软删"
   mrr:
     name: "MRR"
     short: "active 账户 mrr 之和"

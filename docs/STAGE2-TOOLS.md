@@ -44,7 +44,7 @@
 
 - 30 条用例与 golden（除发现真实错误）
 - 评分规则、自然日窗口、数据锚点语义
-- Stage 1 的 L0/L1/L2 结构（Stage 2 只追加工具使用规则，版本升到 `stage2-v2`，不重写主体）
+- Stage 1 的 L0/L1/L2 结构（Stage 2 只追加工具使用规则，版本升到 `stage2-v3`，不重写主体）
 
 ---
 
@@ -78,7 +78,7 @@
 
 ## 2. 设计原则
 
-1. **保留 L1 schema**：12 张表渲染约 **1,556 tokens**，完整提示词 **2,902 tokens**（预算 4,500），全量放进提示词仍然划算；工具用于“深挖”，不是替代。
+1. **保留 L1 schema**：12 张表渲染约 **1,556 tokens**，完整提示词 **2,906 tokens**（预算 4,500），全量放进提示词仍然划算；工具用于“深挖”，不是替代。
 2. **catalog 优先**：`search_columns` / `describe_table` / `get_metric_definition` 只读 `schema_catalog.json` 与 `glossary.yaml`，不查数据库。
 3. **只有 sample / explain 查库**：必须强制 `LIMIT`、超时、表名白名单、结果脱敏。
 4. **工具描述即路由**：description 写清“什么时候用、什么时候不要用、和谁分工”，比参数名更重要。
@@ -524,7 +524,7 @@ async def execute(self, context, args):
 | | L2（提示词） | 工具 |
 |---|---|---|
 | 数据源 | `glossary.yaml` | 同一份 |
-| 内容 | 只渲染 `short`（约 173 tokens） | 定义 + 完整 `formula` + `pitfalls` |
+| 内容 | 只渲染 `short`（约 178 tokens） | 定义 + 完整 `formula` + `pitfalls` |
 | 时机 | 每轮常驻 | 模型按需调用 |
 | 作用 | 让模型“知道有这些指标” | 让模型“确认具体公式” |
 
@@ -606,7 +606,7 @@ class GetMetricDefinitionArgs(ToolArgs):
 ```
 
 L0 总长 **1,008 tokens**（Stage 2 起预算调整为 **1,100**；完整表述优先于省 200 tokens）；
-7 个工具全部可见时，完整提示词 **2,902 tokens**（预算 4,500）。提示词版本升为 `stage2-v2`。
+7 个工具全部可见时，完整提示词 **2,906 tokens**（预算 4,500）。提示词版本升为 `stage2-v3`。
 
 ### 7.4 实现位置
 
@@ -618,7 +618,7 @@ L0 总长 **1,008 tokens**（Stage 2 起预算调整为 **1,100**；完整表述
 
 - [x] 5 个新工具 + `run_sql` / `visualize_data` 全部四段式
 - [x] L0 增加工具使用段（1,008 tokens，≤ 1,100）
-- [x] `PROMPT_VERSION = "stage2-v2"`
+- [x] `PROMPT_VERSION = "stage2-v3"`
 - [x] 单测校验 7 个工具描述都包含“用/不要用/分工”
 
 ---
@@ -1241,7 +1241,7 @@ L0 已包含工具使用段（不是额外独立段落，预算仍受 1,100 限�
 - 不要用 run_sql 查 system.*；不要用 search_columns 执行查询。
 ```
 
-`PROMPT_VERSION` 升到 `stage2-v2`，L0 1,008 tokens，完整提示词 2,902 tokens。
+`PROMPT_VERSION` 升到 `stage2-v3`，L0 1,008 tokens，完整提示词 2,906 tokens。
 
 DoD：
 
@@ -1317,7 +1317,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 
 1. 实现 `get_metric_definition`
 2. 重写 7 个工具的 description
-3. 更新 L0 工具使用段，版本升 `stage2-v2`
+3. 更新 L0 工具使用段，版本升 `stage2-v3`
 
 ### D4：护栏（约 4 小时）
 
@@ -1392,6 +1392,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-27 | 数据 | 重灌至锚点 `2026-10-26` | 完成 | 12 表；`check --strict` 41/41 |
 | 2026-10-27 | D-17 | 修正 7 日留存 golden | 完成 | 自然日 D+1~D+7；仅前 3 完整月；结果 42.86/45.02/43.16 |
 | 2026-10-27 | D-17 | golden 改为 retained CTE + LEFT JOIN | 完成 | 先 DISTINCT 再 JOIN，避免 sessions 展开；结果不变；41/41 |
+| 2026-10-27 | D-17 | 同步 L2 术语 `retention_d7` | 完成 | 自然日 D+1~D+7；提示词升 `stage2-v3`（2,906 tokens） |
 
 ---
 
