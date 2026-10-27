@@ -44,7 +44,7 @@
 
 - 30 条用例与 golden（除发现真实错误）
 - 评分规则、自然日窗口、数据锚点语义
-- Stage 1 的 L0/L1/L2 结构（Stage 2 只追加工具使用规则，版本升到 `stage2-v7`，不重写主体）
+- Stage 1 的 L0/L1/L2 结构（Stage 2 只追加工具使用规则，版本升到 `stage2-v8`，不重写主体）
 
 ---
 
@@ -59,7 +59,7 @@
 
 ### 1.2 G2 验收
 
-- [ ] EX ≥ **70%**（21 条 answer，至少 15 条）
+- [ ] EX ≥ **70%**（22 条 answer，至少 16 条；E-05 改为 answer 后口径）
 - [ ] 相对 Stage 1 基线（61.9%）**不回落**；两次同配置差异 ≤ 5pt
 - [ ] behavior ≥ **85%**
 - [ ] 平均工具轮次 ≤ **3.5**（当前已 1.1，主要防工具滥用）
@@ -70,7 +70,7 @@
 - [ ] P95 ≤ **20s**（待评测）
 - [x] 工具单测覆盖：catalog 搜索、脱敏、LIMIT 注入、超时透传、错误结构
 
-> 统计提醒：21 条 answer 每条≈4.8pt；从 61.9% 到 70% 约 2 条用例。Stage 2 的真实价值更多在“护栏正确性”与“轨迹质量”，不要只盯 EX。
+> 统计提醒：E-05 改为 answer 后共 22 条 answer，每条≈4.5pt；从 61.9% 到 70% 约需 2~3 条用例。Stage 2 的真实价值更多在“护栏正确性”与“轨迹质量”，不要只盯 EX。
 >
 > 代码/单测项已满足；EX、behavior、P95、复杂查询等指标项需等 G2 评测。
 
@@ -606,7 +606,7 @@ class GetMetricDefinitionArgs(ToolArgs):
 ```
 
 L0 总长 **1,100 tokens**（Stage 2 起预算调整为 **1,100**；已到上限，后续加规则需先删旧规则）；
-7 个工具全部可见时，完整提示词 **3,004 tokens**（预算 4,500）。提示词版本升为 `stage2-v7`。
+7 个工具全部可见时，完整提示词 **3,004 tokens**（预算 4,500）。提示词版本升为 `stage2-v8`。
 
 ### 7.4 实现位置
 
@@ -618,7 +618,7 @@ L0 总长 **1,100 tokens**（Stage 2 起预算调整为 **1,100**；已到上限
 
 - [x] 5 个新工具 + `run_sql` / `visualize_data` 全部四段式
 - [x] L0 增加工具使用段（1,100 tokens，≤ 1,100）
-- [x] `PROMPT_VERSION = "stage2-v7"`
+- [x] `PROMPT_VERSION = "stage2-v8"`
 - [x] 单测校验 7 个工具描述都包含“用/不要用/分工”
 
 ---
@@ -1241,7 +1241,7 @@ L0 已包含工具使用段（不是额外独立段落，预算仍受 1,100 限�
 - 不要用 run_sql 查 system.*；不要用 search_columns 执行查询。
 ```
 
-`PROMPT_VERSION` 升到 `stage2-v7`，L0 1,100 tokens，完整提示词 3,004 tokens。
+`PROMPT_VERSION` 升到 `stage2-v8`，L0 1,100 tokens，完整提示词 3,004 tokens。
 
 DoD：
 
@@ -1317,7 +1317,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 
 1. 实现 `get_metric_definition`
 2. 重写 7 个工具的 description
-3. 更新 L0 工具使用段，版本升 `stage2-v7`
+3. 更新 L0 工具使用段，版本升 `stage2-v8`
 
 ### D4：护栏（约 4 小时）
 
@@ -1402,6 +1402,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-27 | C-16 | 改为前 12 个完整月（不含本月） | 完成 | 12 行；首月 NULL；L0 增补“近 N 月”规则 |
 | 2026-10-27 | 评测修复 | A-09 排注销、C-03 MTD 对齐、C-16 首月 NULL、D-04/D-17 去掉诊断列 | 完成 | 提示词升 `stage2-v7`；41/41；准备复跑 |
 | 2026-10-27 | G2 | `stage2-v7` 第一轮（30 条） | 完成 | **EX 76.2%（16/21）、behavior 88.9%、avg 1.33、P95 18.6s**；6 条失败 |
+| 2026-10-27 | 评测修复 | B-02/C-14 题面明确、D-18 补 users 过滤、E-05 改 answer、多轮形状规则 | 完成 | `stage2-v8`；42/42；E-05 使 answer 增至 22 条；待复跑 |
 
 ---
 

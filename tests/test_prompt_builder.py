@@ -30,7 +30,7 @@ async def test_prompt_contains_date_and_core_rules():
     assert "ClickHouse" in prompt
     assert "有效订单" in prompt
     assert "当前账号无权限" in prompt
-    assert "不要查询 system.*" in prompt
+    assert "不查 system.*" in prompt
 
 
 async def test_prompt_order_is_rules_then_schema_then_glossary():
@@ -61,6 +61,7 @@ async def test_prompt_declares_monday_week_start():
     assert "不要使用默认的周日" in prompt
     assert "近 N 个月" in prompt
     assert "不含本月" in prompt
+    assert "多轮追问" in prompt
 
 
 async def test_prompt_contains_tool_routing():

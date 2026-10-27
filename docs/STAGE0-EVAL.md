@@ -903,19 +903,19 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | A-07 | A | analyst | 近 30 天各支付方式的成功支付金额分别是多少？ | answer | join orders 限 `CNY`/排测试；`status='succeeded' AND is_retry=0`；近 30 自然日 |
 | A-08 | A | analyst | 近 7 天各渠道新增用户数是多少？ | answer | `is_test=0`、`deleted_at IS NULL`、相对时间 |
 | A-09 | A | analyst | 当前各套餐的 MRR 是多少？（排除测试与注销用户） | answer | 仅 `active`；join users 排测试与注销；不按用户去重 |
-| B-02 | B | analyst | 按品类看最近一个月的净收入 | answer | 订单 cohort；approved 退款**按商品金额占比分摊**到 items，禁止直接 SUM 订单级退款 |
+| B-02 | B | analyst | 近 30 天各品类的净收入是多少？ | answer | 订单 cohort；approved 退款**按商品金额占比分摊**到 items，禁止直接 SUM 订单级退款 |
 | B-10 | B | analyst | 近 90 天各渠道的退款金额是多少？ | answer | 退款 approved；币种/测试过滤；按订单渠道归因 |
 | B-11 | B | analyst | 近 30 天销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；并列按 `product_id` 升序；`LIMIT 10` |
 | B-12 | B | analyst | 近 30 天各国家用户的支付转化率是多少？ | answer | sessions join users；排测试/软删；输出百分比；近 30 自然日 |
 | B-13 | B | analyst | 近 30 天各品类的客单价（该品类收入 ÷ 含该品类商品的订单数）是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；金额 `/100`；aov 取 2 位 |
 | C-03 | C | analyst | 本月至今的 GMV，跟上月同期比增长了多少？（截至今天 0 点，上月按相同自然日天数对齐） | answer | 本月止于今天 0 点；上月用 `dateDiff` 天数 + `least` 封顶 |
-| C-14 | C | analyst | 近 4 周每周的有效订单数是多少？ | answer | 周一为周起点（`toStartOfWeek(..., 1)`）；4 个完整周（不含本周） |
+| C-14 | C | analyst | 近 4 周每周的有效订单数（仅 CNY）是多少？ | answer | 周一为周起点（`toStartOfWeek(..., 1)`）；4 个完整周（不含本周）；仅 CNY |
 | C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？（截至今天 0 点，上月按相同自然日天数对齐） | answer | GMV − approved 退款；本月止于今天 0 点；上月同期用 `dateDiff` 天数 + `least` 封顶 |
 | C-16 | C | analyst | 近 12 个完整月（不含本月）每月新增用户数及环比是多少？（首月无环比） | answer | 前 12 个完整月；无数据月份补 0；首月环比为 `NULL` |
 | D-04 | D | analyst | 上周各渠道的支付转化率是多少？（排除测试与注销用户） | answer | 周一为周起点；排测试/软删；上周完整窗口；百分比输出 |
 | D-17 | D | analyst | 近 3 个完整月（不含本月）每月注册用户的 7 日留存率（注册次日起 7 个自然日内有会话）是多少？ | answer | 月度 cohort；D+1~D+7 自然日（`< D+8`）；排除测试/软删；仅前 3 完整月 |
-| D-18 | D | analyst | 近 7 天加购后最终下单的会话比例是多少？（同一会话内，purchase 晚于 add_to_cart） | answer | 分母有加购的会话；分子同会话购买时间晚于加购；`nullIf` 防除零 |
-| E-05 | E | analyst | 看一下复购率 | clarify | 未给时间窗口与“复购”口径 |
+| D-18 | D | analyst | 近 7 天加购后最终下单的会话比例是多少？（同一会话内，purchase 晚于 add_to_cart；排除测试与注销用户） | answer | 分母有加购的会话；分子同会话购买时间晚于加购；join users 排测试/软删 |
+| E-05 | E | analyst | 看一下近 90 天复购率 | answer | 近 90 天 ≥2 笔有效订单的用户占比 |
 | E-19 | E | analyst | 看一下销售额 | clarify | 未给指标（GMV/净收入）、时间、渠道 |
 | E-20 | E | analyst | 算下留存 | clarify | 新用户留存还是活跃留存、窗口未知 |
 | E-21 | E | analyst | 最近的转化率怎么样 | clarify | 渠道/设备/时间均未指定 |
@@ -1198,19 +1198,19 @@ GRANT SELECT ON shop.* TO readonly;
 | A-07 | A | answer | [x] | [x] | [x] | 补 30 天窗口 + join orders 限 CNY/排测试（2026-10-25） |
 | A-08 | A | answer | [x] | [x] | [x] | |
 | A-09 | A | answer | [x] | [x] | [x] | 补 join users 排测试与注销（2026-10-27） |
-| B-02 | B | answer | [x] | [x] | [x] | 通过（2026-10-23）：退款按商品金额占比分摊；订单 cohort 口径已确认 |
+| B-02 | B | answer | [x] | [x] | [x] | 题面明确“近 30 天”；退款分摊口径已确认（2026-10-27） |
 | B-10 | B | answer | [x] | [x] | [x] | |
 | B-11 | B | answer | [x] | [x] | [x] | 补 30 天窗口 + 并列按 `product_id` 升序（2026-10-25） |
 | B-12 | B | answer | [x] | [x] | [x] | 补 30 天窗口 + 排软删，输出百分比（2026-10-25） |
 | B-13 | B | answer | [x] | [x] | [x] | 题面明确口径；aov 取 2 位小数（2026-10-25） |
 | C-03 | C | answer | [x] | [x] | [x] | 本月止于今天 0 点；上月按 `dateDiff` 对齐（2026-10-27） |
-| C-14 | C | answer | [x] | [x] | [x] | 已调整：周起点改为周一（`toStartOfWeek(..., 1)`，2026-10-23） |
+| C-14 | C | answer | [x] | [x] | [x] | 周起点周一；题面明确仅 CNY（2026-10-27） |
 | C-15 | C | answer | [x] | [x] | [x] | 本月止于今天 0 点；上月同期按 `dateDiff` 对齐 + `least` 封顶（2026-10-27） |
 | C-16 | C | answer | [x] | [x] | [x] | 前 12 个完整月（不含本月）；首月环比 `NULL`（2026-10-27） |
 | D-04 | D | answer | [x] | [x] | [x] | 周起点周一 + 排测试/软删；百分比输出；去掉 `sessions` 诊断列（2026-10-27） |
 | D-17 | D | answer | [x] | [x] | [x] | 自然日 D+1~D+7、前 3 个完整月；去掉 `retained_users` 诊断列（2026-10-27） |
-| D-18 | D | answer | [x] | [x] | [x] | 改为同会话漏斗：购买时间晚于加购（2026-10-27） |
-| E-05 | E | clarify | — | [x] | [x] | 通过：缺时间窗口与“复购”定义 |
+| D-18 | D | answer | [x] | [x] | [x] | 同会话漏斗；补 users 排测试/注销（2026-10-27） |
+| E-05 | E | answer | [x] | [x] | [x] | 改为 answer：默认近 90 天复购率（2026-10-27） |
 | E-19 | E | clarify | — | [x] | [x] | 通过：缺指标/时间/渠道 |
 | E-20 | E | clarify | — | [x] | [x] | 通过：留存类型与窗口未定 |
 | E-21 | E | clarify | — | [x] | [x] | 通过：渠道/设备/时间未定 |

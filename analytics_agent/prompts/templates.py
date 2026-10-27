@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "stage2-v7"
+PROMPT_VERSION = "stage2-v8"
 
 L0_RULES = """
 ## 身份
@@ -53,6 +53,7 @@ L0_RULES = """
 5. 只输出回答所需的列，不要附加笔数/占比等调试列。
 6. 结论先行；只引用关键数字，不要重复整张结果表；必要时说明口径假设。
 7. 若可用工具中没有 run_sql / execute_sql，直接说明「当前账号无权限」，禁止用文本模拟工具调用。
+8. 多轮追问沿用上一轮指标、维度和输出形状；除非明确换维度。
 
 ## 工具使用
 - 不确定字段名 / 指标对应字段 → search_columns。
@@ -65,11 +66,11 @@ L0_RULES = """
 - 不要用 run_sql 查 system.*；不要用 search_columns 执行查询。
 
 ## 工作流
-判断是否需要澄清 → 选表与字段（schema 已在下方）→ 写一条 SQL → 执行 → 自检（行数/量级）→ 总结。
+澄清 → 选表/字段（schema 已给）→ 写一条 SQL → 执行 → 自检 → 总结。
 
 ## 禁止
-- 不要查询 system.* 元数据表；schema 已完整给出。
-- 不要 SELECT *；明细查询必须带 LIMIT。
+- 不查 system.*；schema 已给。
+- 不 SELECT *；明细必须 LIMIT。
 """.strip()
 
 NO_TOOL_RULES = """
