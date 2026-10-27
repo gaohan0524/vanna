@@ -914,7 +914,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | C-16 | C | analyst | 近 12 个月每月新增用户数及环比是多少？ | answer | 无数据月份补 0；首月环比为 `NULL` |
 | D-04 | D | analyst | 上周各渠道的支付转化率 | answer | 周一为周起点；排测试/软删；上周完整窗口 |
 | D-17 | D | analyst | 近 3 个完整月（不含本月）每月注册用户的 7 日留存率（注册次日起 7 个自然日内有会话）是多少？ | answer | 月度 cohort；D+1~D+7 自然日（`< D+8`）；排除测试/软删；仅前 3 完整月 |
-| D-18 | D | analyst | 近 7 天加购后最终下单的会话比例是多少？ | answer | `uniqExactIf`；`nullIf` 防除零 |
+| D-18 | D | analyst | 近 7 天加购后最终下单的会话比例是多少？（同一会话内，purchase 晚于 add_to_cart） | answer | 分母有加购的会话；分子同会话购买时间晚于加购；`nullIf` 防除零 |
 | E-05 | E | analyst | 看一下复购率 | clarify | 未给时间窗口与“复购”口径 |
 | E-19 | E | analyst | 看一下销售额 | clarify | 未给指标（GMV/净收入）、时间、渠道 |
 | E-20 | E | analyst | 算下留存 | clarify | 新用户留存还是活跃留存、窗口未知 |
@@ -1209,7 +1209,7 @@ GRANT SELECT ON shop.* TO readonly;
 | C-16 | C | answer | [x] | [x] | [x] | |
 | D-04 | D | answer | [x] | [x] | [x] | 周起点改为周一 + 排测试/软删（2026-10-25） |
 | D-17 | D | answer | [x] | [x] | [x] | 自然日 D+1~D+7、前 3 个完整月；改用 retained CTE 去重后 LEFT JOIN（2026-10-27） |
-| D-18 | D | answer | [x] | [x] | [x] | |
+| D-18 | D | answer | [x] | [x] | [x] | 改为同会话漏斗：购买时间晚于加购（2026-10-27） |
 | E-05 | E | clarify | — | [x] | [x] | 通过：缺时间窗口与“复购”定义 |
 | E-19 | E | clarify | — | [x] | [x] | 通过：缺指标/时间/渠道 |
 | E-20 | E | clarify | — | [x] | [x] | 通过：留存类型与窗口未定 |

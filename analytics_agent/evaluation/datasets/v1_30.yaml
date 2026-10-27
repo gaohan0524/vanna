@@ -436,19 +436,31 @@ dataset:
     - id: "D-18"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "近 7 天加购后最终下单的会话比例是多少？"
+      message: "近 7 天加购后最终下单的会话比例是多少？（同一会话内，purchase 事件需晚于 add_to_cart）"
       metadata:
         layer: D
         difficulty: hard
         golden_sql: |
-          SELECT cart_sessions, purchase_sessions,
-                 round(purchase_sessions / nullIf(cart_sessions, 0) * 100, 2) AS cvr_pct
+          SELECT countIf(has_cart = 1) AS cart_sessions,
+                 countIf(has_cart = 1 AND has_purchase = 1 AND is_ordered = 1)
+                     AS cart_then_purchase_sessions,
+                 round(
+                     100.0 * countIf(has_cart = 1 AND has_purchase = 1 AND is_ordered = 1)
+                     / nullIf(countIf(has_cart = 1), 0),
+                     2
+                 ) AS cvr_pct
           FROM (
-              SELECT uniqExactIf(session_id, event_name = 'add_to_cart') AS cart_sessions,
-                     uniqExactIf(session_id, event_name = 'purchase') AS purchase_sessions
+              SELECT session_id,
+                     max(event_name = 'add_to_cart') AS has_cart,
+                     max(event_name = 'purchase') AS has_purchase,
+                     minIf(event_time, event_name = 'add_to_cart') AS cart_time,
+                     minIf(event_time, event_name = 'purchase') AS purchase_time,
+                     purchase_time >= cart_time AS is_ordered
               FROM shop.events
-              WHERE event_time >= toStartOfDay(now()) - INTERVAL 7 DAY
+              WHERE event_time >= toStartOfDay(now()) - toIntervalDay(7)
                 AND event_time <  toStartOfDay(now())
+                AND event_name IN ('add_to_cart', 'purchase')
+              GROUP BY session_id
           )
         expected_behavior: answer
 
