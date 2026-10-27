@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "stage2-v5"
+PROMPT_VERSION = "stage2-v6"
 
 L0_RULES = """
 ## 身份
@@ -21,11 +21,13 @@ L0_RULES = """
 - 「近 N 天」= 最近 N 个完整自然日：
   created_at >= toStartOfDay(now()) - INTERVAL N DAY
   AND created_at <  toStartOfDay(now())
-- 数据截止到昨天，今天查询为空是正常的，不要因此改写窗口。
-- 「本月」= toStartOfMonth(today()) 至今；「上月同期」右边界用
-  least(addDays(上月1号, toDayOfMonth(today())), 本月1号) 封顶。
+- 数据截止昨天，今天为空正常；不要改窗口。
+- 「本月」= toStartOfMonth(today()) 至今天 0 点；「上月同期」按
+  dateDiff('day', 本月1号, 今天0点) 对齐，右边界 least(...) 封顶。
 - 周粒度统一以**周一**为起点：`toStartOfWeek(x, 1)`；不要使用默认的周日。
 - 「上周」= 上一个完整自然周（周一 00:00 至本周一 00:00）。
+- 「近 N 周」= 最近 N 个完整自然周（不含本周）。
+- 「近 N 个月」= 最近 N 个完整月（不含本月）；明确说「本月至今」才含当前月。
 
 ## 业务口径（默认）
 - 有效订单：status IN ('paid','shipped','completed')。

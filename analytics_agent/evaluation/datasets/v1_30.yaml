@@ -353,7 +353,7 @@ dataset:
     - id: "C-16"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "近 12 个月每月新增用户数及环比是多少？"
+      message: "近 12 个完整月（不含本月）每月新增用户数及环比是多少？"
       metadata:
         layer: C
         difficulty: hard
@@ -361,13 +361,14 @@ dataset:
         golden_sql: |
           WITH
               months AS (
-                  SELECT toStartOfMonth(today()) - toIntervalMonth(number) AS month
+                  SELECT toStartOfMonth(today()) - toIntervalMonth(number + 1) AS month
                   FROM numbers(12)
               ),
               counts AS (
                   SELECT toStartOfMonth(signup_at) AS month, count() AS new_users
                   FROM shop.users
                   WHERE signup_at >= toStartOfMonth(today()) - INTERVAL 13 MONTH
+                    AND signup_at <  toStartOfMonth(today())
                     AND is_test = 0 AND deleted_at IS NULL
                   GROUP BY month
               )
