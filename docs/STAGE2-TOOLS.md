@@ -1265,6 +1265,17 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/v1_30.yaml
 ```
 
+`run` 现在会**逐条实时输出**（不需要等全部结束）：
+
+- `[03/30] C-14 FAIL[METRIC_WRONG] 3.9s tools=1`
+- 调用了哪些工具、参数是什么
+- 每条 SQL 全文
+- ACTUAL / GOLDEN 的列与最多 5 行预览
+- `COMPARE: MATCH` 或 `MISMATCH columns/values/shape: ...`
+- 失败 evaluator 的 reason 与最终回答摘要
+
+全部跑完后会再输出一张按数据集顺序排列的 Summary 表；HTML/JSON 报告仍按原逻辑生成。
+
 ### 12.2 记录指标
 
 | 指标 | Stage 1 | v7 第 1 次（历史） | v8 第 1 次 | v8 第 2 次 |

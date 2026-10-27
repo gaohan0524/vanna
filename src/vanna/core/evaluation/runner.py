@@ -142,6 +142,41 @@ class EvaluationRunner:
             timestamp=datetime.now(),
         )
 
+    async def run_evaluation_streaming(
+        self,
+        agent: "Agent",
+        test_cases: List[TestCase],
+    ) -> AsyncGenerator[tuple[TestCaseResult, int, int], None]:
+        """Run one agent and yield results as each case finishes.
+
+        与 ``run_evaluation`` 使用同一套 semaphore / 轨迹采集中间件，只是把
+        ``asyncio.gather`` 换成 ``as_completed``，便于 CLI 实时打印进度。
+        """
+        capture_middleware: Optional[_TrajectoryCaptureMiddleware] = None
+        already_present = any(
+            isinstance(middleware, _TrajectoryCaptureMiddleware)
+            for middleware in agent.llm_middlewares
+        )
+        if not already_present:
+            capture_middleware = _TrajectoryCaptureMiddleware()
+            agent.llm_middlewares.append(capture_middleware)
+
+        try:
+            tasks = [
+                asyncio.create_task(self._run_single_test_case(agent, test_case))
+                for test_case in test_cases
+            ]
+            total = len(tasks)
+            for completed, task in enumerate(asyncio.as_completed(tasks), start=1):
+                yield await task, completed, total
+        finally:
+            if capture_middleware is not None:
+                agent.llm_middlewares = [
+                    middleware
+                    for middleware in agent.llm_middlewares
+                    if middleware is not capture_middleware
+                ]
+
     async def compare_agents(
         self,
         agent_variants: List[AgentVariant],
@@ -293,8 +328,7 @@ class EvaluationRunner:
 
         try:
             tasks = [
-                self._run_single_test_case(agent, test_case)
-                for test_case in test_cases
+                self._run_single_test_case(agent, test_case) for test_case in test_cases
             ]
             return await asyncio.gather(*tasks)
         finally:

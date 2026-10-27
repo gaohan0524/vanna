@@ -31,6 +31,7 @@ from .evaluators import (
     extract_sqls,
     golden_sql_of,
 )
+from .compare import results_equal
 from .executor import execute_safe
 from .labeling import classify
 from .preflight import run_checks
@@ -144,6 +145,112 @@ def _cmd_seed(args: argparse.Namespace) -> int:
     return 0
 
 
+def _preview(df, max_rows: int = 5, max_width: int = 240) -> str:
+    """Compact DataFrame preview for console diagnostics."""
+    if df is None:
+        return "<none>"
+    body = df.head(max_rows).to_string(index=False)
+    lines = [line[:max_width] for line in body.splitlines()]
+    return f"{len(df)} rows x {len(df.columns)} cols\n" + "\n".join(lines)
+
+
+def _tool_line(tool_call) -> str:
+    if isinstance(tool_call, dict):
+        name = tool_call.get("tool_name") or tool_call.get("name") or "?"
+        arguments = tool_call.get("arguments", {})
+    else:
+        name = getattr(tool_call, "name", "?")
+        arguments = getattr(tool_call, "arguments", {})
+    try:
+        args = json.dumps(arguments, ensure_ascii=False, default=str)
+    except Exception:
+        args = str(arguments)
+    return f"{name}({args[:240]})"
+
+
+async def _print_case_progress(
+    result,
+    completed: int,
+    total: int,
+    taxonomy: str,
+) -> None:
+    """Print one completed case immediately, including SQL and result diff."""
+    case = result.test_case
+    agent_result = result.agent_result
+    passed = result.overall_passed()
+    evaluations = {item.evaluator_name: item for item in result.evaluations}
+    result_set = evaluations.get("result_set")
+    failing = next((item for item in result.evaluations if not item.passed), None)
+    sqls = extract_sqls(agent_result)
+
+    status = "PASS" if passed else f"FAIL[{taxonomy}]"
+    print(
+        f"\n[{completed:02d}/{total:02d}] {case.id} {status} "
+        f"{round(result.execution_time_ms)}ms tools={len(agent_result.tool_calls)}",
+        flush=True,
+    )
+
+    for tool_call in agent_result.tool_calls[:8]:
+        print(f"  TOOL {_tool_line(tool_call)}", flush=True)
+
+    if sqls:
+        for index, sql in enumerate(sqls, start=1):
+            print(f"  SQL[{index}]:\n{_indent(sql.strip(), 4)}", flush=True)
+    else:
+        print("  SQL: <none>", flush=True)
+
+    display_sql = None
+    if result_set and result_set.metrics.get("executed_sql"):
+        display_sql = str(result_set.metrics["executed_sql"])
+    elif sqls:
+        display_sql = sqls[-1]
+
+    actual = golden = None
+    if display_sql:
+        actual, actual_error = await execute_safe(display_sql)
+        if actual is None:
+            print(f"  ACTUAL: ERROR {actual_error}", flush=True)
+        else:
+            print(f"  ACTUAL:\n{_indent(_preview(actual), 4)}", flush=True)
+
+    golden_sql = golden_sql_of(case)
+    if golden_sql:
+        golden, golden_error = await execute_safe(golden_sql)
+        if golden is None:
+            print(f"  GOLDEN: ERROR {golden_error}", flush=True)
+        else:
+            print(f"  GOLDEN:\n{_indent(_preview(golden), 4)}", flush=True)
+
+    if actual is not None and golden is not None:
+        metadata = case.metadata or {}
+        comparison = results_equal(
+            golden,
+            actual,
+            order_sensitive=bool(metadata.get("order_sensitive", False)),
+            column_alias=metadata.get("column_alias") or None,
+            column_match=metadata.get("column_match", "projection"),
+        )
+        if comparison.equal:
+            print("  COMPARE: MATCH", flush=True)
+        else:
+            print(
+                f"  COMPARE: MISMATCH {comparison.reason}: {comparison.detail}",
+                flush=True,
+            )
+
+    if failing and not passed:
+        print(f"  REASON: {failing.reasoning[:600]}", flush=True)
+
+    answer = agent_result.get_final_answer().strip()
+    if answer:
+        print(f"  ANSWER: {answer[:400]}", flush=True)
+
+
+def _indent(text: str, spaces: int) -> str:
+    prefix = " " * spaces
+    return "\n".join(prefix + line for line in str(text).splitlines())
+
+
 async def _cmd_run(args: argparse.Namespace) -> int:
     settings = Settings.from_env()
     dataset_path = args.dataset or _default_dataset(settings)
@@ -163,12 +270,26 @@ async def _cmd_run(args: argparse.Namespace) -> int:
     )
 
     print(
-        f"Running {len(cases)} cases against {settings.llm_provider}/{settings.llm_model} ..."
+        f"Running {len(cases)} cases against {settings.llm_provider}/{settings.llm_model} ...",
+        flush=True,
     )
-    evaluation = await runner.run_evaluation(agent, cases)
+
+    results = []
+    taxonomies: Dict[str, str] = {}
+    async for test_case_result, completed, total in runner.run_evaluation_streaming(
+        agent, cases
+    ):
+        case = test_case_result.test_case
+        passed = test_case_result.overall_passed()
+        taxonomy = (
+            "OK" if passed else await classify(case, test_case_result.agent_result)
+        )
+        taxonomies[case.id] = taxonomy
+        await _print_case_progress(test_case_result, completed, total, taxonomy)
+        results.append(test_case_result)
 
     records: List[Dict[str, Any]] = []
-    for test_case_result in evaluation.results:
+    for test_case_result in results:
         case = test_case_result.test_case
         agent_result = test_case_result.agent_result
         evaluations = {
@@ -178,7 +299,7 @@ async def _cmd_run(args: argparse.Namespace) -> int:
         first_try = evaluations.get("first_try")
         passed = test_case_result.overall_passed()
 
-        taxonomy = "OK" if passed else await classify(case, agent_result)
+        taxonomy = taxonomies[case.id]
         sqls = extract_sqls(agent_result)
         executed_sql = ""
         if result_set and result_set.metrics.get("executed_sql"):
@@ -212,6 +333,20 @@ async def _cmd_run(args: argparse.Namespace) -> int:
             }
         )
 
+    order = {case.id: index for index, case in enumerate(cases)}
+    records.sort(key=lambda record: order.get(record["id"], 10**9))
+
+    print("\nSummary (dataset order):", flush=True)
+    print(f"{'case':8} {'result':20} {'ms':>7} {'tools':>5}  reason", flush=True)
+    for record in records:
+        status = "PASS" if record["passed"] else f"FAIL[{record['taxonomy']}]"
+        reason = " ".join((record["reason"] or "").split())[:90]
+        print(
+            f"{record['id']:8} {status:20} {record['latency_ms']:>7} "
+            f"{record['tool_calls']:>5}  {reason}",
+            flush=True,
+        )
+
     tool_names = await agent.tool_registry.list_tools()
     payload = build_payload(
         dataset_name=dataset.name,
@@ -235,10 +370,6 @@ async def _cmd_run(args: argparse.Namespace) -> int:
 
     run_id = datetime.now().strftime("%Y%m%d-%H%M%S")
     out_dir = Path(args.out) if args.out else settings.reports_dir / run_id
-
-    for record in records:
-        mark = "PASS" if record["passed"] else f"FAIL[{record['taxonomy']}]"
-        print(f"{record['id']:<12} {mark:<24} {record['latency_ms']:>6} ms")
 
     paths = write_reports(out_dir, payload)
     summary = payload["summary"]
