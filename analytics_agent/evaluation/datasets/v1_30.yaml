@@ -400,28 +400,32 @@ dataset:
     - id: "D-17"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "近 3 个月每月注册用户的 7 日留存率是多少？"
+      message: "近 3 个完整月（不含本月）每月注册用户的 7 日留存率（注册次日起 7 个自然日内有会话）是多少？"
       metadata:
         layer: D
         difficulty: hard
         order_sensitive: true
         golden_sql: |
-          SELECT cohort_month, users, retained_d7, round(retained_d7 / users * 100, 2) AS d7_pct
-          FROM (
-              SELECT toStartOfMonth(u.signup_at) AS cohort_month,
-                     uniqExact(u.user_id) AS users,
-                     uniqExactIf(
-                         u.user_id,
-                         s.started_at >= u.signup_at + INTERVAL 1 DAY
-                         AND s.started_at < u.signup_at + INTERVAL 7 DAY
-                     ) AS retained_d7
-              FROM shop.users u
-              LEFT JOIN shop.sessions s ON s.user_id = u.user_id
-              WHERE u.signup_at >= toStartOfMonth(today()) - INTERVAL 3 MONTH
-                AND u.signup_at < toStartOfMonth(today())
-                AND u.is_test = 0 AND u.deleted_at IS NULL
-              GROUP BY cohort_month
+          WITH cohorts AS (
+              SELECT user_id,
+                     toStartOfMonth(signup_at) AS cohort_month,
+                     toDate(signup_at) AS signup_date
+              FROM shop.users
+              WHERE signup_at >= toStartOfMonth(today()) - INTERVAL 3 MONTH
+                AND signup_at < toStartOfMonth(today())
+                AND is_test = 0 AND deleted_at IS NULL
           )
+          SELECT cohort_month,
+                 uniqExact(user_id) AS users,
+                 uniqExactIf(
+                     user_id,
+                     toDate(s.started_at) >= addDays(signup_date, 1)
+                     AND toDate(s.started_at) < addDays(signup_date, 8)
+                 ) AS retained_d7,
+                 round(retained_d7 / users * 100, 2) AS d7_pct
+          FROM cohorts c
+          LEFT JOIN shop.sessions s ON s.user_id = c.user_id
+          GROUP BY cohort_month
           ORDER BY cohort_month
         expected_behavior: answer
 

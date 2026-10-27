@@ -11,6 +11,7 @@
 | 支付金额 | 实际到账 | `payments.status='succeeded' AND is_retry=0` 的 `amount_cents` 之和 | 重复流水 |
 | 复购率 | 近 90 天下单 ≥ 2 次的用户占比 | 按 `orders.created_at` 圈定窗口，去重用户后统计 | 只统计首单用户；未限定时间范围 |
 | 次日留存 | 当日新增用户次日有会话的比例 | `users.signup_at` 与 `sessions.started_at` 按天对齐 | 时区、日期边界 |
+| 7日留存 | 注册后 D+1~D+7 自然日内有会话的用户占比 | `users.signup_at` 与 `sessions.started_at` 按自然日对齐；cohort 必须满 7 天 | 时区、日期边界、观察窗不完整 |
 | 转化率 | 下单会话 / 总会话 | `sessions.converted=1` 占比 | 分子分母口径不一致 |
 | MRR | 月度经常性收入 | `accounts.status='active'` 的 `mrr_cents` 之和 | 含 paused/churned |
 | 渠道归因 | 订单归因到首触渠道 | 本库 `orders.channel` 即首触渠道 | 误用 `events` 做末触归因 |

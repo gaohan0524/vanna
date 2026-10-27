@@ -913,7 +913,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？ | answer | GMV − approved 退款；按退款发生月；MTD 对比 |
 | C-16 | C | analyst | 近 12 个月每月新增用户数及环比是多少？ | answer | 无数据月份补 0；首月环比为 `NULL` |
 | D-04 | D | analyst | 上周各渠道的支付转化率 | answer | 周一为周起点；排测试/软删；上周完整窗口 |
-| D-17 | D | analyst | 近 3 个月每月注册用户的 7 日留存率是多少？ | answer | 月度 cohort；窗口 `[D+1, D+7)`；排除测试/软删 |
+| D-17 | D | analyst | 近 3 个完整月（不含本月）每月注册用户的 7 日留存率（注册次日起 7 个自然日内有会话）是多少？ | answer | 月度 cohort；D+1~D+7 自然日（`< D+8`）；排除测试/软删；仅前 3 完整月 |
 | D-18 | D | analyst | 近 7 天加购后最终下单的会话比例是多少？ | answer | `uniqExactIf`；`nullIf` 防除零 |
 | E-05 | E | analyst | 看一下复购率 | clarify | 未给时间窗口与“复购”口径 |
 | E-19 | E | analyst | 看一下销售额 | clarify | 未给指标（GMV/净收入）、时间、渠道 |
@@ -1133,6 +1133,8 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-24 | T0-0 | DDL 全量补 `COMMENT`（表 + 字段） | 完成 | 12 表 / 77 字段 100% 有注释 |
 | 2026-10-24 | T0-0 | 新增 `seed --schema-only`（强制 drop） | 完成 | 只重建结构、不灌数；`CREATE IF NOT EXISTS` 不会更新 COMMENT |
 | 2026-10-24 | T0-0 | 重建表结构（`--schema-only`） | 成功 | `orders`/`anchor` 均为 0 行；注释已写入 `system.*` |
+| 2026-10-27 | 数据 | 重灌至锚点 `2026-10-26` | 成功 | 12 表；`check --strict` 41/41 |
+| 2026-10-27 | D-17 | 修正 7 日留存 golden | 完成 | 自然日 D+1~D+7；仅前 3 完整月；3 行结果 |
 | 2026-10-23 | D2-2 | I 类审核 | **通过** | 多轮设计合理；待后续实际运行验证 |
 | 2026-10-25 | 报表 | HTML 报告取消 Executed SQL 400 字截断 | 完成 | 现有报告最长 SQL 1,753 chars 完整显示；CSS 自动换行 |
 
@@ -1206,7 +1208,7 @@ GRANT SELECT ON shop.* TO readonly;
 | C-15 | C | answer | [x] | [x] | [x] | 已调整：CTE + `ifNull`/`nullIf` + `least` 封顶（2026-10-23） |
 | C-16 | C | answer | [x] | [x] | [x] | |
 | D-04 | D | answer | [x] | [x] | [x] | 周起点改为周一 + 排测试/软删（2026-10-25） |
-| D-17 | D | answer | [x] | [x] | [x] | |
+| D-17 | D | answer | [x] | [x] | [x] | 改为自然日 D+1~D+7、窗口取前 3 个完整月（2026-10-27） |
 | D-18 | D | answer | [x] | [x] | [x] | |
 | E-05 | E | clarify | — | [x] | [x] | 通过：缺时间窗口与“复购”定义 |
 | E-19 | E | clarify | — | [x] | [x] | 通过：缺指标/时间/渠道 |
