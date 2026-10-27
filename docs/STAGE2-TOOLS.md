@@ -1391,6 +1391,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | 审计 | 同步总计划 Stage 2 工具数/验收/门禁 | 完成 | 5 → 7 工具；G2 与执行手册一致 |
 | 2026-10-27 | 数据 | 重灌至锚点 `2026-10-26` | 完成 | 12 表；`check --strict` 41/41 |
 | 2026-10-27 | D-17 | 修正 7 日留存 golden | 完成 | 自然日 D+1~D+7；仅前 3 完整月；结果 42.86/45.02/43.16 |
+| 2026-10-27 | D-17 | golden 改为 retained CTE + LEFT JOIN | 完成 | 先 DISTINCT 再 JOIN，避免 sessions 展开；结果不变；41/41 |
 
 ---
 

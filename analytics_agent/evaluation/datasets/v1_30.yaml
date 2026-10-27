@@ -411,22 +411,26 @@ dataset:
                      toStartOfMonth(signup_at) AS cohort_month,
                      toDate(signup_at) AS signup_date
               FROM shop.users
-              WHERE signup_at >= toStartOfMonth(today()) - INTERVAL 3 MONTH
+              WHERE is_test = 0 AND deleted_at IS NULL
+                AND signup_at >= toStartOfMonth(today()) - toIntervalMonth(3)
                 AND signup_at < toStartOfMonth(today())
-                AND is_test = 0 AND deleted_at IS NULL
+          ),
+          retained AS (
+              SELECT DISTINCT c.user_id
+              FROM cohorts c
+              INNER JOIN shop.sessions s ON s.user_id = c.user_id
+              WHERE toDate(s.started_at) >= addDays(c.signup_date, 1)
+                AND toDate(s.started_at) < addDays(c.signup_date, 8)
           )
-          SELECT cohort_month,
-                 uniqExact(user_id) AS users,
-                 uniqExactIf(
-                     user_id,
-                     toDate(s.started_at) >= addDays(signup_date, 1)
-                     AND toDate(s.started_at) < addDays(signup_date, 8)
-                 ) AS retained_d7,
-                 round(retained_d7 / users * 100, 2) AS d7_pct
+          SELECT c.cohort_month,
+                 count() AS new_users,
+                 countIf(r.user_id > 0) AS retained_users,
+                 round(100.0 * countIf(r.user_id > 0) / nullIf(count(), 0), 2)
+                     AS retention_7d_pct
           FROM cohorts c
-          LEFT JOIN shop.sessions s ON s.user_id = c.user_id
-          GROUP BY cohort_month
-          ORDER BY cohort_month
+          LEFT JOIN retained r ON r.user_id = c.user_id
+          GROUP BY c.cohort_month
+          ORDER BY c.cohort_month ASC
         expected_behavior: answer
 
     - id: "D-18"

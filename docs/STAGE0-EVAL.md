@@ -1208,7 +1208,7 @@ GRANT SELECT ON shop.* TO readonly;
 | C-15 | C | answer | [x] | [x] | [x] | 已调整：CTE + `ifNull`/`nullIf` + `least` 封顶（2026-10-23） |
 | C-16 | C | answer | [x] | [x] | [x] | |
 | D-04 | D | answer | [x] | [x] | [x] | 周起点改为周一 + 排测试/软删（2026-10-25） |
-| D-17 | D | answer | [x] | [x] | [x] | 改为自然日 D+1~D+7、窗口取前 3 个完整月（2026-10-27） |
+| D-17 | D | answer | [x] | [x] | [x] | 自然日 D+1~D+7、前 3 个完整月；改用 retained CTE 去重后 LEFT JOIN（2026-10-27） |
 | D-18 | D | answer | [x] | [x] | [x] | |
 | E-05 | E | clarify | — | [x] | [x] | 通过：缺时间窗口与“复购”定义 |
 | E-19 | E | clarify | — | [x] | [x] | 通过：缺指标/时间/渠道 |
