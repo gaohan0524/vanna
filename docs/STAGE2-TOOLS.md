@@ -1263,9 +1263,19 @@ DoD：
 python -m analytics_agent.evaluation.cli check --strict
 python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/v1_30.yaml
 python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/v1_30.yaml
+
+# 排查时开启逐条诊断
+python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluation/datasets/v1_30.yaml --verbose
 ```
 
-`run` 现在会**逐条实时输出**（不需要等全部结束）：
+两种模式：
+
+| 模式 | 行为 |
+|---|---|
+| 默认 | 保持旧行为：跑完后一次性打印每条 PASS/FAIL、耗时与整体指标 |
+| `--verbose` | 每条完成立即打印 SQL、工具参数、ACTUAL/GOLDEN 预览、COMPARE 与失败原因；结束后再打 Summary |
+
+`--verbose` 的逐条输出包含：
 
 - `[03/30] C-14 FAIL[METRIC_WRONG] 3.9s tools=1`
 - 调用了哪些工具、参数是什么
@@ -1274,7 +1284,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 - `COMPARE: MATCH` 或 `MISMATCH columns/values/shape: ...`
 - 失败 evaluator 的 reason 与最终回答摘要
 
-全部跑完后会再输出一张按数据集顺序排列的 Summary 表；HTML/JSON 报告仍按原逻辑生成。
+两种模式都照常生成 HTML/JSON/CSV 报告；`--verbose` 会额外执行 golden/actual 查询用于对比，略慢，但不影响 agent 的 latency/P95 指标。
 
 ### 12.2 记录指标
 

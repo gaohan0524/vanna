@@ -276,17 +276,22 @@ async def _cmd_run(args: argparse.Namespace) -> int:
 
     results = []
     taxonomies: Dict[str, str] = {}
-    async for test_case_result, completed, total in runner.run_evaluation_streaming(
-        agent, cases
-    ):
-        case = test_case_result.test_case
-        passed = test_case_result.overall_passed()
-        taxonomy = (
-            "OK" if passed else await classify(case, test_case_result.agent_result)
-        )
-        taxonomies[case.id] = taxonomy
-        await _print_case_progress(test_case_result, completed, total, taxonomy)
-        results.append(test_case_result)
+
+    if args.verbose:
+        async for test_case_result, completed, total in runner.run_evaluation_streaming(
+            agent, cases
+        ):
+            case = test_case_result.test_case
+            passed = test_case_result.overall_passed()
+            taxonomy = (
+                "OK" if passed else await classify(case, test_case_result.agent_result)
+            )
+            taxonomies[case.id] = taxonomy
+            await _print_case_progress(test_case_result, completed, total, taxonomy)
+            results.append(test_case_result)
+    else:
+        evaluation = await runner.run_evaluation(agent, cases)
+        results = list(evaluation.results)
 
     records: List[Dict[str, Any]] = []
     for test_case_result in results:
@@ -299,7 +304,9 @@ async def _cmd_run(args: argparse.Namespace) -> int:
         first_try = evaluations.get("first_try")
         passed = test_case_result.overall_passed()
 
-        taxonomy = taxonomies[case.id]
+        taxonomy = taxonomies.get(case.id) or (
+            "OK" if passed else await classify(case, agent_result)
+        )
         sqls = extract_sqls(agent_result)
         executed_sql = ""
         if result_set and result_set.metrics.get("executed_sql"):
@@ -336,16 +343,17 @@ async def _cmd_run(args: argparse.Namespace) -> int:
     order = {case.id: index for index, case in enumerate(cases)}
     records.sort(key=lambda record: order.get(record["id"], 10**9))
 
-    print("\nSummary (dataset order):", flush=True)
-    print(f"{'case':8} {'result':20} {'ms':>7} {'tools':>5}  reason", flush=True)
-    for record in records:
-        status = "PASS" if record["passed"] else f"FAIL[{record['taxonomy']}]"
-        reason = " ".join((record["reason"] or "").split())[:90]
-        print(
-            f"{record['id']:8} {status:20} {record['latency_ms']:>7} "
-            f"{record['tool_calls']:>5}  {reason}",
-            flush=True,
-        )
+    if args.verbose:
+        print("\nSummary (dataset order):", flush=True)
+        print(f"{'case':8} {'result':20} {'ms':>7} {'tools':>5}  reason", flush=True)
+        for record in records:
+            status = "PASS" if record["passed"] else f"FAIL[{record['taxonomy']}]"
+            reason = " ".join((record["reason"] or "").split())[:90]
+            print(
+                f"{record['id']:8} {status:20} {record['latency_ms']:>7} "
+                f"{record['tool_calls']:>5}  {reason}",
+                flush=True,
+            )
 
     tool_names = await agent.tool_registry.list_tools()
     payload = build_payload(
@@ -376,6 +384,11 @@ async def _cmd_run(args: argparse.Namespace) -> int:
 
     def _pct(value: Optional[float]) -> str:
         return "n/a" if value is None else f"{value:.1%}"
+
+    if not args.verbose:
+        for record in records:
+            mark = "PASS" if record["passed"] else f"FAIL[{record['taxonomy']}]"
+            print(f"{record['id']:<12} {mark:<24} {record['latency_ms']:>6} ms")
 
     print(
         f"\nEX={_pct(summary['ex'])}  first_try={_pct(summary['first_try'])}  "
@@ -445,6 +458,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="keep 1 in Stage 0 so trajectories stay attributable",
     )
     run.add_argument("--limit", type=int, default=0, help="only run the first N cases")
+    run.add_argument(
+        "--verbose",
+        action="store_true",
+        help="print per-case SQL/results/diff while running (debug)",
+    )
     run.set_defaults(func=lambda args: _run_sync(_cmd_run, args))
 
     report = sub.add_parser("report", help="re-render html/csv from report.json")
