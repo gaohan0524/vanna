@@ -44,7 +44,7 @@
 
 - 30 条用例与 golden（除发现真实错误）
 - 评分规则、自然日窗口、数据锚点语义
-- Stage 1 的 L0/L1/L2 结构（Stage 2 只追加工具使用规则，版本升到 `stage2-v6`，不重写主体）
+- Stage 1 的 L0/L1/L2 结构（Stage 2 只追加工具使用规则，版本升到 `stage2-v7`，不重写主体）
 
 ---
 
@@ -606,7 +606,7 @@ class GetMetricDefinitionArgs(ToolArgs):
 ```
 
 L0 总长 **1,100 tokens**（Stage 2 起预算调整为 **1,100**；已到上限，后续加规则需先删旧规则）；
-7 个工具全部可见时，完整提示词 **3,004 tokens**（预算 4,500）。提示词版本升为 `stage2-v6`。
+7 个工具全部可见时，完整提示词 **3,004 tokens**（预算 4,500）。提示词版本升为 `stage2-v7`。
 
 ### 7.4 实现位置
 
@@ -618,7 +618,7 @@ L0 总长 **1,100 tokens**（Stage 2 起预算调整为 **1,100**；已到上限
 
 - [x] 5 个新工具 + `run_sql` / `visualize_data` 全部四段式
 - [x] L0 增加工具使用段（1,100 tokens，≤ 1,100）
-- [x] `PROMPT_VERSION = "stage2-v6"`
+- [x] `PROMPT_VERSION = "stage2-v7"`
 - [x] 单测校验 7 个工具描述都包含“用/不要用/分工”
 
 ---
@@ -1241,7 +1241,7 @@ L0 已包含工具使用段（不是额外独立段落，预算仍受 1,100 限�
 - 不要用 run_sql 查 system.*；不要用 search_columns 执行查询。
 ```
 
-`PROMPT_VERSION` 升到 `stage2-v6`，L0 1,100 tokens，完整提示词 3,004 tokens。
+`PROMPT_VERSION` 升到 `stage2-v7`，L0 1,100 tokens，完整提示词 3,004 tokens。
 
 DoD：
 
@@ -1317,7 +1317,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 
 1. 实现 `get_metric_definition`
 2. 重写 7 个工具的 description
-3. 更新 L0 工具使用段，版本升 `stage2-v6`
+3. 更新 L0 工具使用段，版本升 `stage2-v7`
 
 ### D4：护栏（约 4 小时）
 
@@ -1399,7 +1399,9 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-27 | D-04 | 同步 `conversion_rate` 术语 | 完成 | 有效会话、排测试/软删、百分比；提示词升 `stage2-v4`（2,912） |
 | 2026-10-27 | C-14 | L0 声明周粒度统一以周一为起点 | 完成 | `toStartOfWeek(x, 1)`；L0 1,057；提示词 `stage2-v5`（2,961） |
 | 2026-10-27 | C-15 | 修正 MTD/上月同期边界 | 完成 | 本月止于今天 0 点；上月按 `dateDiff` 天数；4.01% → 8.88%；41/41 |
-| 2026-10-27 | C-16 | 改为前 12 个完整月（不含本月） | 完成 | 12 行；首月也有环比；L0 增补“近 N 月”规则；`stage2-v6`（3,004） |
+| 2026-10-27 | C-16 | 改为前 12 个完整月（不含本月） | 完成 | 12 行；首月 NULL；L0 增补“近 N 月”规则 |
+| 2026-10-27 | 评测修复 | A-09 排注销、C-03 MTD 对齐、C-16 首月 NULL、D-04/D-17 去掉诊断列 | 完成 | 提示词升 `stage2-v7`；41/41；准备复跑 |
+| 2026-10-27 | G2 | `stage2-v7` 第一轮（30 条） | 完成 | **EX 76.2%（16/21）、behavior 88.9%、avg 1.33、P95 18.6s**；6 条失败 |
 
 ---
 

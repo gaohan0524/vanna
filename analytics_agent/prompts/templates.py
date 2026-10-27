@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "stage2-v6"
+PROMPT_VERSION = "stage2-v7"
 
 L0_RULES = """
 ## 身份
@@ -34,7 +34,7 @@ L0_RULES = """
 - 测试数据一律排除：is_test = 1 的订单/用户不参与任何指标。
 - 订单/收入/退款类指标只过滤 `orders.is_test`；**不要为了软删去 join users**（历史订单不因注销剔除）。
 - 用户维度指标（新增、留存、复购、按国家转化）才 join users 并排除 `deleted_at IS NOT NULL`。
-- 账户类指标（MRR、订阅数）必须 join users 排除 `is_test=1`；`accounts` 自身没有 `is_test`。
+- 账户指标（MRR、订阅数）必须 join users 排除 `is_test=1` 和 `deleted_at`；`accounts` 无 `is_test`。
 - 金额默认只统计 currency = 'CNY'。
 - GMV 不扣退款；净收入 = GMV − approved 退款。
 - 退款是订单级、没有 product_id；按品类分摊时按商品金额占比。

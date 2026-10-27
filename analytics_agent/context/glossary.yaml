@@ -45,8 +45,8 @@ metrics:
   mrr:
     name: "MRR"
     short: "active 账户 mrr 之和"
-    formula: "SUM(accounts.mrr_cents)/100 WHERE status='active'"
-    pitfalls: "不要按用户去重；paused/churned 不计"
+    formula: "SUM(accounts.mrr_cents)/100 WHERE status='active' AND users.is_test=0 AND users.deleted_at IS NULL"
+    pitfalls: "不要按用户去重；paused/churned 不计；必须 join users 排测试与注销"
 
 terms:
   - term: "有效订单"

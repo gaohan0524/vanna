@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 2 代码完成**——T2-1 ~ T2-7 已完成（2026-10-26）；G2 评测按用户要求暂缓。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)
+- **当前进度**：**Stage 2 G2 首轮达标**——2026-10-27：EX 76.2%、behavior 88.9%、avg 1.33、P95 18.6s；待同配置复跑与轨迹抽检。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21
@@ -599,7 +599,7 @@ L0_RULES = """
 - [x] T2-1 `search_columns` / `describe_table`——2026-10-26：catalog 搜索 + 单表描述，10 项单测通过
 - [x] T2-2 `sample_rows` / `explain_query`——2026-10-26：白名单/脱敏/10s 超时；9 项单测通过
 - [x] T2-3 `get_metric_definition`——2026-10-26：定义/公式/易错点 + 候选，6 项单测通过
-- [x] T2-4 工具 description 重写——2026-10-26：7 个工具四段式；L0 1,100 tokens（预算 1,100）；现 `stage2-v6`（完整月规则后）
+- [x] T2-4 工具 description 重写——2026-10-26：7 个工具四段式；L0 1,100 tokens（预算 1,100）；现 `stage2-v7`（A-09 账户口径后）
 - [x] T2-5 参数收敛——2026-10-26：`ToolArgs` 统一 forbid/strip；范围与表名格式；6 项单测
 - [x] T2-6 `run_sql` 护栏改造——2026-10-26：AST 只读 + LIMIT + 30s 超时 + 截断说明；10 项测试
 - [x] T2-7 结构化错误回喂——2026-10-26：`error_type` + `hint` JSON；校验/执行错误分类；49 passed（暂不评测）

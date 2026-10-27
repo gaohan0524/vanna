@@ -80,7 +80,7 @@ dataset:
     - id: "A-09"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "当前各套餐的 MRR 是多少？"
+      message: "当前各套餐的 MRR 是多少？（排除测试与注销用户）"
       metadata:
         layer: A
         difficulty: easy
@@ -88,7 +88,7 @@ dataset:
           SELECT a.plan AS plan, SUM(a.mrr_cents) / 100.0 AS mrr
           FROM shop.accounts a
           JOIN shop.users u ON u.user_id = a.user_id
-          WHERE a.status = 'active' AND u.is_test = 0
+          WHERE a.status = 'active' AND u.is_test = 0 AND u.deleted_at IS NULL
           GROUP BY a.plan
           ORDER BY mrr DESC
         without_filter_sql: |
@@ -247,7 +247,7 @@ dataset:
     - id: "C-03"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "本月至今的 GMV，跟上月同期比增长了多少？"
+      message: "本月至今的 GMV，跟上月同期比增长了多少？（截至今天 0 点，上月按相同自然日天数对齐）"
       metadata:
         layer: C
         difficulty: medium
@@ -256,7 +256,8 @@ dataset:
           WITH
             cur AS (
               SELECT SUM(amount_cents) AS v FROM shop.orders
-              WHERE toStartOfMonth(created_at) = toStartOfMonth(today())
+              WHERE created_at >= toStartOfMonth(today())
+                AND created_at <  toStartOfDay(now())
                 AND status IN ('paid','shipped','completed')
                 AND currency = 'CNY' AND is_test = 0
             ),
@@ -264,7 +265,10 @@ dataset:
               SELECT SUM(amount_cents) AS v FROM shop.orders
               WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
                 AND created_at < least(
-                    addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today())),
+                    addDays(
+                        toStartOfMonth(today() - INTERVAL 1 MONTH),
+                        dateDiff('day', toStartOfMonth(today()), toStartOfDay(now()))
+                    ),
                     toStartOfMonth(today())
                 )
                 AND status IN ('paid','shipped','completed')
@@ -353,7 +357,7 @@ dataset:
     - id: "C-16"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "近 12 个完整月（不含本月）每月新增用户数及环比是多少？"
+      message: "近 12 个完整月（不含本月）每月新增用户数及环比是多少？（首月无环比）"
       metadata:
         layer: C
         difficulty: hard
@@ -367,7 +371,7 @@ dataset:
               counts AS (
                   SELECT toStartOfMonth(signup_at) AS month, count() AS new_users
                   FROM shop.users
-                  WHERE signup_at >= toStartOfMonth(today()) - INTERVAL 13 MONTH
+                  WHERE signup_at >= toStartOfMonth(today()) - INTERVAL 12 MONTH
                     AND signup_at <  toStartOfMonth(today())
                     AND is_test = 0 AND deleted_at IS NULL
                   GROUP BY month
@@ -395,7 +399,6 @@ dataset:
         difficulty: medium
         golden_sql: |
           SELECT channel,
-                 count() AS sessions,
                  round(100.0 * countIf(converted = 1) / nullIf(count(), 0), 2) AS cvr_pct
           FROM shop.sessions
           WHERE started_at >= toStartOfWeek(today(), 1) - toIntervalDay(7)
@@ -435,7 +438,6 @@ dataset:
           )
           SELECT c.cohort_month,
                  count() AS new_users,
-                 countIf(r.user_id > 0) AS retained_users,
                  round(100.0 * countIf(r.user_id > 0) / nullIf(count(), 0), 2)
                      AS retention_7d_pct
           FROM cohorts c
