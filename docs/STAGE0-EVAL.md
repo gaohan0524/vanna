@@ -910,7 +910,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | B-13 | B | analyst | 近 30 天各品类的客单价（该品类收入 ÷ 含该品类商品的订单数）是多少？ | answer | 品类收入 / `count(DISTINCT order_id)`；金额 `/100`；aov 取 2 位 |
 | C-03 | C | analyst | 本月至今的 GMV，跟上月同期比增长了多少？ | answer | MTD vs 上月 1 日至同日；`least` 封顶 + `nullIf` 防除零 |
 | C-14 | C | analyst | 近 4 周每周的有效订单数是多少？ | answer | 周一为周起点（`toStartOfWeek(..., 1)`）；4 个完整周（不含本周） |
-| C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？ | answer | GMV − approved 退款；按退款发生月；MTD 对比 |
+| C-15 | C | analyst | 本月至今的净收入，跟上月同期比增长多少？（截至今天 0 点，上月按相同自然日天数对齐） | answer | GMV − approved 退款；本月止于今天 0 点；上月同期用 `dateDiff` 天数 + `least` 封顶 |
 | C-16 | C | analyst | 近 12 个月每月新增用户数及环比是多少？ | answer | 无数据月份补 0；首月环比为 `NULL` |
 | D-04 | D | analyst | 上周各渠道的支付转化率是多少？（排除测试与注销用户） | answer | 周一为周起点；排测试/软删；上周完整窗口；百分比输出 |
 | D-17 | D | analyst | 近 3 个完整月（不含本月）每月注册用户的 7 日留存率（注册次日起 7 个自然日内有会话）是多少？ | answer | 月度 cohort；D+1~D+7 自然日（`< D+8`）；排除测试/软删；仅前 3 完整月 |
@@ -1205,7 +1205,7 @@ GRANT SELECT ON shop.* TO readonly;
 | B-13 | B | answer | [x] | [x] | [x] | 题面明确口径；aov 取 2 位小数（2026-10-25） |
 | C-03 | C | answer | [x] | [x] | [x] | 已加固：上月同期上界 `least(...)`（2026-10-23） |
 | C-14 | C | answer | [x] | [x] | [x] | 已调整：周起点改为周一（`toStartOfWeek(..., 1)`，2026-10-23） |
-| C-15 | C | answer | [x] | [x] | [x] | 已调整：CTE + `ifNull`/`nullIf` + `least` 封顶（2026-10-23） |
+| C-15 | C | answer | [x] | [x] | [x] | 本月止于今天 0 点；上月同期按 `dateDiff` 对齐 + `least` 封顶（2026-10-27） |
 | C-16 | C | answer | [x] | [x] | [x] | |
 | D-04 | D | answer | [x] | [x] | [x] | 周起点周一 + 排测试/软删；改为 IN 子查询 + 百分比（2026-10-27） |
 | D-17 | D | answer | [x] | [x] | [x] | 自然日 D+1~D+7、前 3 个完整月；改用 retained CTE 去重后 LEFT JOIN（2026-10-27） |

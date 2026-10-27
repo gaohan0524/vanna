@@ -299,7 +299,7 @@ dataset:
     - id: "C-15"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "本月至今的净收入，跟上月同期比增长多少？"
+      message: "本月至今的净收入，跟上月同期比增长多少？（截至今天 0 点，上月按相同自然日天数对齐）"
       metadata:
         layer: C
         difficulty: hard
@@ -309,12 +309,12 @@ dataset:
               SELECT
                   (SELECT ifNull(SUM(amount_cents), 0) FROM shop.orders
                    WHERE created_at >= toStartOfMonth(today())
-                     AND created_at < toStartOfMonth(today() + INTERVAL 1 MONTH)
+                     AND created_at <  toStartOfDay(now())
                      AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0) AS rev,
                   (SELECT ifNull(SUM(r.amount_cents), 0) FROM shop.refunds r
                    JOIN shop.orders o ON o.order_id = r.order_id
                    WHERE r.created_at >= toStartOfMonth(today())
-                     AND r.created_at < toStartOfMonth(today() + INTERVAL 1 MONTH)
+                     AND r.created_at <  toStartOfDay(now())
                      AND r.status='approved' AND o.currency='CNY' AND o.is_test=0) AS ref
           ),
           last_month AS (
@@ -322,7 +322,10 @@ dataset:
                   (SELECT ifNull(SUM(amount_cents), 0) FROM shop.orders
                    WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
                      AND created_at < least(
-                         addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today())),
+                         addDays(
+                             toStartOfMonth(today() - INTERVAL 1 MONTH),
+                             dateDiff('day', toStartOfMonth(today()), toStartOfDay(now()))
+                         ),
                          toStartOfMonth(today())
                      )
                      AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0) AS rev,
@@ -330,7 +333,10 @@ dataset:
                    JOIN shop.orders o ON o.order_id = r.order_id
                    WHERE r.created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
                      AND r.created_at < least(
-                         addDays(toStartOfMonth(today() - INTERVAL 1 MONTH), toDayOfMonth(today())),
+                         addDays(
+                             toStartOfMonth(today() - INTERVAL 1 MONTH),
+                             dateDiff('day', toStartOfMonth(today()), toStartOfDay(now()))
+                         ),
                          toStartOfMonth(today())
                      )
                      AND r.status='approved' AND o.currency='CNY' AND o.is_test=0) AS ref
