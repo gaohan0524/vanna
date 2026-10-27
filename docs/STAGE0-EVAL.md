@@ -11,19 +11,19 @@
 
 ---
 
-## 0.1 实施状态（2026-10-23）
+## 0.1 实施状态（2026-10-27 更新）
 
 ### 已完成
 
 | 任务 | 状态 | 产物 / 证据 |
 |---|---|---|
 | T0-0 合成业务库 | **完成**（0.1 规模已在真实实例实跑，2026-10-22） | `evaluation/seed/ddl.sql`（12 表）、`seed/generate.py`、`scripts/clickhouse/init_ro_user.sql`；行数见附录 D |
-| T0-1 评测集 | **30 / 30**（golden 全部可执行；数值待业务确认） | `datasets/v1_30.yaml` 30 条、`datasets/smoke.yaml` 4 条 |
+| T0-1 评测集 | **30 / 30**（22 条 answer golden 全部可执行；业务已核对） | `datasets/v1_30.yaml` 30 条、`datasets/smoke.yaml` 4 条 |
 | T0-2 golden 机制 | **完成** | golden 存 SQL、评测时现场执行；拒绝存 CSV 的过期问题 |
 | T0-3 评测器 | **完成** | `ResultSetEvaluator` / `ClarificationEvaluator` / `FirstTryEvaluator` |
 | T0-4 运行器与报告 | **完成** | `cli.py`（check/seed/run/report）、`report.py`（JSON/HTML/CSV） |
 | T0-5 预检 | **完成** | `preflight.py`：连接、只读探针、12 表行数、数据锚点、用例合法性、golden 自检 |
-| T0-6 失败归因 | **规则完成**，未跑真实失败 | `labeling.py`：OK/AMBIGUOUS/NO_TOOL/SCHEMA_MISSING/DIALECT_ERROR/TIMEOUT/SHAPE_MISMATCH/FILTER_MISSING/METRIC_WRONG/UNKNOWN |
+| T0-6 失败归因 | **完成**；Stage 1/2 真实失败已按 taxonomy 归因 | `labeling.py`：OK/AMBIGUOUS/NO_TOOL/SCHEMA_MISSING/DIALECT_ERROR/TIMEOUT/SHAPE_MISMATCH/FILTER_MISSING/METRIC_WRONG/UNKNOWN |
 | 目录与配置 | **完成** | `analytics_agent/evaluation/`；`pyproject.toml`（sdist 排除、`pythonpath`）、`tox.ini`（ruff 范围）、`.gitignore`（reports） |
 | 配置加载 | **完成** | `config.py` 内置 `.env` 解析（无 `python-dotenv` 依赖），环境变量优先 |
 
@@ -41,25 +41,34 @@
 | 只读账号抽查数据 | 通过：测试账号 2.3%、USD 5.07%、重试流水 3.0%、GMV 非空且排序合理 |
 | `check --dataset smoke.yaml` | **20/20 PASS**：连接、只读探针、12 表行数、数据锚点、3 条用例、golden `A-01`（4 行 / 0.02s） |
 | `run --dataset smoke.yaml`（4 条） | 管线验证通过：EX 50%、首答 50%、behavior 0%、avg_tools 0.5；`A-02` 走通 `run_sql` 并命中（详见附录 D） |
-| `check --strict --dataset v1_30.yaml` | **41/41 PASS**：30 条用例、21 条 golden（各 <0.1s）、5 条 `without_filter_sql` 破坏性验证全部“结果有变化” |
+| `check --strict --dataset v1_30.yaml` | **42/42 PASS**（2026-10-27）：30 条用例、22 条 golden（各 <0.1s）、5 条 `without_filter_sql` 破坏性验证全部“结果有变化” |
 | `seed` 重建（2026-10-23） | 锚点更新为 `2026-10-22`，12 表行数与 10-22 一致；重建后 `check --strict` 仍 41/41 |
 | `seed` 重灌（时间戳封顶） | 各事实表 `max(时间戳)` 均为 `2026-10-22 23:59:59`，无未来数据；`check --strict` 41/41 |
 | DDL 注释与 `--schema-only` 重建（2026-10-24） | 12 张表、77 个字段 **100% 有 COMMENT**；表已重建为空，锚点未写，跑评测前需重新灌数 |
 | `preview` 子命令 | 逐条打印问题/期望/golden 结果，供 D2-2 审核使用 |
 | `run --dataset smoke.yaml`（DeepSeek） | 4 条：EX 50%、首答 50%、behavior 0%、avg_tools 5.5；`A-02` 1 次 `run_sql` 命中；3 条触发 5 轮上限 |
 
-### 未完成 / 待执行（下一步）
+> 说明：上表中 41/41 是 B-05/22 条 golden 之前的历史记录；当前预检为 **42/42**。
 
-- [ ] **重新灌数**：2026-10-24 只重建了表结构（`--schema-only`），数据为空；跑 `check` / `run` 前先执行 `seed --scale 0.1`
+### 当前状态（2026-10-27，Stage 3 入口）
+
+- 数据已重灌，锚点 **2026-10-26**；
+- `check --strict` **42/42 PASS**（30 条用例、22 条 answer golden）；
+- 评测集已完成 B-05（原 E-05）归类、D-17/D-18/D-04/C-03/C-15/C-16/A-09 等 golden 修正；
+- Stage 0 工作已收尾，Stage 1/2 结果见各自文档。
+
+### 历史待办（Stage 0 收尾时记录，均已完成或豁免）
+
+- [x] **重新灌数**：2026-10-27 已重灌至锚点 `2026-10-26`；`check --strict` 42/42
 
 - [x] **D1-2** `seed --scale 0.1` 已实跑（2026-10-22，见附录 D）
 - [x] **D1-4** `check --dataset smoke.yaml` 全 PASS（20/20，2026-10-22，见附录 D）
 - [x] **D1-5** `run --dataset smoke.yaml` 冒烟评测完成（4 条，管线跑通；质量基线待 D2 后测）
-- [ ] **Stage 1 输入已明确**：schema/方言 prompt、澄清策略、拒答策略（见附录 D 的观察与第 9 节）
+- [x] **Stage 1 输入已明确**：schema/方言 prompt、澄清策略、拒答策略（见附录 D 的观察与第 9 节）
 - [x] **D2-0** 5 项口径已裁决（2026-10-22，写入 `seed/metrics.md`）
 - [x] **D2-1** 24 条用例已产出并合并进 `v1_30.yaml`（golden 逐条执行验证）
 - [x] **D2-2 业务核对**：A~I 全部核对完成（2026-10-23）
-- [x] **重新 seed**：已完成（2026-10-23），时间戳封顶生效；锚点 `2026-10-22`，`check --strict` 41/41
+- [x] **重新 seed**：已完成（2026-10-27），时间戳封顶生效；锚点 `2026-10-26`，`check --strict` 42/42
 - [x] **复核 A~D 数值**：抽检通过（2026-10-23），无需全量复核
 - [x] **B1** DeepSeek 冒烟（2026-10-23）：API 与工具调用正常，`A-02` 通过
 - [x] **B2** 首次跑 30 条（2026-10-23）：实测 EX 0%（0/21）、avg_tools 9.83，18 条触达 8 轮上限；评分规则已修正，按裁定**以 15% 估计记录基线、不重跑**
@@ -884,7 +893,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 
 | # | 问题 | 建议裁决 | 影响 |
 |---|---|---|---|
-| 1 | 复购率的统计窗口 | 近 90 天，按 `orders.created_at`，仅有效订单 | E-05、E-19 |
+| 1 | 复购率的统计窗口 | 近 90 天，按 `orders.created_at`，仅有效订单 | B-05（原 E-05）、E-19 |
 | 2 | 渠道归因口径 | 首触：`orders.channel` 即首触渠道 | 所有按渠道的题 |
 | 3 | 退款计入哪个月 | 按 `refunds.created_at`（发生月）扣减 | C-15、B-10 |
 | 4 | “有效订单”范围 | `paid / shipped / completed`；不含 pending、cancelled、refunded | 所有 GMV/AOV |
@@ -1133,7 +1142,7 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-24 | T0-0 | DDL 全量补 `COMMENT`（表 + 字段） | 完成 | 12 表 / 77 字段 100% 有注释 |
 | 2026-10-24 | T0-0 | 新增 `seed --schema-only`（强制 drop） | 完成 | 只重建结构、不灌数；`CREATE IF NOT EXISTS` 不会更新 COMMENT |
 | 2026-10-24 | T0-0 | 重建表结构（`--schema-only`） | 成功 | `orders`/`anchor` 均为 0 行；注释已写入 `system.*` |
-| 2026-10-27 | 数据 | 重灌至锚点 `2026-10-26` | 成功 | 12 表；`check --strict` 41/41 |
+| 2026-10-27 | 数据 | 重灌至锚点 `2026-10-26` | 成功 | 12 表；`check --strict` 42/42 |
 | 2026-10-27 | D-17 | 修正 7 日留存 golden | 完成 | 自然日 D+1~D+7；仅前 3 完整月；3 行结果 |
 | 2026-10-23 | D2-2 | I 类审核 | **通过** | 多轮设计合理；待后续实际运行验证 |
 | 2026-10-25 | 报表 | HTML 报告取消 Executed SQL 400 字截断 | 完成 | 现有报告最长 SQL 1,753 chars 完整显示；CSS 自动换行 |

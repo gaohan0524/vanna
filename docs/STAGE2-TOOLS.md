@@ -71,10 +71,10 @@
 
 > 统计提醒：原 E-05 改为 B-05（answer）后共 22 条 answer，每条≈4.5pt。
 >
-> **v7 第 1 次结果（历史参考）**：EX 76.2%（16/21）、behavior 88.9%、avg 1.33、P95 18.6s；  
+> **v7 第 1 次结果（历史参考）**：EX 76.2%（16/21）、behavior 88.9%、avg 1.33、P95 18.6s；
 > v7 与 v8 的题面/golden/分母不同，不能混用。
 >
-> **v8 两次结果**：EX 81.8% / 86.4%，behavior 100% / 100%，avg 1.43 / 1.27，P95 15.1s / 14.5s；  
+> **v8 两次结果**：EX 81.8% / 86.4%，behavior 100% / 100%，avg 1.43 / 1.27，P95 15.1s / 14.5s；
 > 两次 EX 差 **4.5pt**，核心指标已达标；`TOOL_MISUSE` 与复杂查询通过率仍需人工统计。
 
 ---
@@ -756,7 +756,7 @@ python
 ```python
 # 传入带空格的字符串
 args = SearchColumnsArgs(keyword="  gmv  ")
-print(args.keyword) 
+print(args.keyword)
 # 输出: "gmv" (空格被自动清理了)
 ```
 
@@ -765,7 +765,7 @@ print(args.keyword)
 ```python
 # LLM 幻觉多传了字段
 try:
-    args = SearchColumnsArgs(keyword="gmv", limitt=10) 
+    args = SearchColumnsArgs(keyword="gmv", limitt=10)
 except Exception as e:
     print(e)
 # 输出报错: 1 validation error for SearchColumnsArgs
@@ -1191,7 +1191,7 @@ def error_payload(error_type, message, hint) -> str:
 - [x] `result_for_llm` 为 JSON，UI 仍显示人话
 - [x] 不把堆栈整段回喂
 - [x] 单测覆盖：守卫错误、字段不存在、校验空 SQL、sample 错误
-- [ ] **暂不评测**（按用户要求，G2 评测另行安排）
+- [x] G2 已评测：见 §12 与附录 D（v8 两次）
 
 ---
 
@@ -1227,7 +1227,7 @@ registry.register_local_tool(
 ```
 
 - `run_sql` 的 runner 构造时带 `query_settings={"max_execution_time": 30}`；
-- `viewer` / 空组仍然只能看到“无工具”提示（G 类用例待 G2 回归）；
+- `viewer` / 空组仍然只能看到“无工具”提示（G-23/24/25 在 v8 两次中均 PASS）；
 - 不启用记忆工具（Stage 3 再开）。
 
 L0 已包含工具使用段（不是额外独立段落，预算仍受 1,100 限制）：
@@ -1250,7 +1250,7 @@ DoD：
 
 - [x] `build_agent` 默认注册 **7 个工具**（5 个新工具 + `run_sql` / `visualize_data`）
 - [x] `run_sql` 使用服务端 30s 超时；sample/explain 10s
-- [x] viewer / 空组无工具（注册层未给 viewer 分组；G-23/24/25 待 G2 评测回归）
+- [x] viewer / 空组无工具（v8 两次 G-23/24/25 均 PASS）
 - [x] 报告 `agent.tool_names` 可追溯本次注册的工具（全部注册工具，不区分用户分组）
 
 ---
@@ -1302,6 +1302,9 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 >
 > v8 核心门槛（EX、behavior、轮次、P95、两次差异）已达标；`TOOL_MISUSE` 与复杂查询通过率待人工抽检后补。
 > v8 两次失败：第 1 次 B-02/B-05/D-04/I-30；第 2 次 B-02/C-15/I-30。B-02、I-30 两次均失败，需单独定位。
+>
+> 报告：第 1 次 `reports/20261027-165653/report.html`；第 2 次 `reports/20261027-170011/report.html`。
+> 详细失败原因、待修项与未做人工项见 **附录 D**。
 
 ### 12.3 人工轨迹抽检（20 条）
 
@@ -1385,6 +1388,8 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 
 ## 15. 执行日志（每完成一步追加）
 
+> 2026-10-27 之前日志中的 **41/41** 是旧 golden 记录；原 E-05 改为 B-05 后，当前预检为 **42/42**。
+
 | 日期 | 步骤 | 操作 | 结果 | 备注 |
 |---|---|---|---|---|
 | 2026-10-26 | T2-1 | 实现 `context/search.py`（同义词 + 打分 + 表查找） | 完成 | `gmv` 命中 `orders.amount_cents` 等 4 列 |
@@ -1413,7 +1418,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-26 | T2-7 | 新增 `vanna/tools/sql_errors.py` | 完成 | 校验/执行错误分类 + JSON 回喂 |
 | 2026-10-26 | T2-7 | 框架 `RunSqlTool` 补执行异常捕获 | 完成 | 原先只捕获超时，异常会冒泡 |
 | 2026-10-26 | T2-7 | 应用工具统一结构化错误 | 完成 | run_sql / sample_rows / explain_query |
-| 2026-10-26 | T2-7 | 单测 | 通过 | 49 passed；按用户要求**暂不评测** |
+| 2026-10-26 | T2-7 | 单测 | 通过 | 49 passed；当次暂不评测，G2 见附录 D |
 | 2026-10-26 | 审计 | 更新 §3 目录、§11 接线与 DoD | 完成 | 7 工具、sqlglot、`agent.tool_names` |
 | 2026-10-26 | 审计 | 同步总计划 Stage 2 工具数/验收/门禁 | 完成 | 5 → 7 工具；G2 与执行手册一致 |
 | 2026-10-27 | 数据 | 重灌至锚点 `2026-10-26` | 完成 | 12 表；`check --strict` 41/41 |
@@ -1455,12 +1460,88 @@ describe_table(catalog, "orders")
 
 ## 附录 C：测试清单
 
-- [ ] `search_columns` 命中表名/字段名/注释
-- [ ] 空关键词 / 空结果
-- [ ] `describe_table` 未知表
-- [ ] `sample_rows` 白名单、脱敏、n 越界
-- [ ] `explain_query` 非 SELECT、多语句
-- [ ] `get_metric_definition` 9 个指标 + 未命中
-- [ ] 护栏 6 条绕过用例
-- [ ] `run_sql` 截断文本含总行数/列数
-- [ ] `viewer` 仍无工具（G-23/24/25）
+- [x] `search_columns` 命中表名/字段名/注释
+- [x] 空关键词 / 空结果
+- [x] `describe_table` 未知表
+- [x] `sample_rows` 白名单、脱敏、n 越界
+- [x] `explain_query` 非 SELECT、多语句
+- [x] `get_metric_definition` 9 个指标 + 未命中
+- [x] 护栏 6 条绕过用例
+- [x] `run_sql` 截断文本含总行数/列数
+- [x] `viewer` 仍无工具（G-23/24/25）
+
+---
+
+## 附录 D：Stage 2 最后一次测试记录与遗留问题（2026-10-27）
+
+> 这是进入 Stage 3 前最后一次 Stage 2 评测记录。
+> 结论：**G2 核心指标达标**；`TOOL_MISUSE`、复杂查询通过率、20 条轨迹人工抽检**未做**，按用户要求只记录、不阻塞 Stage 3 文档准备。
+
+### D.1 配置
+
+| 项 | 值 |
+|---|---|
+| 数据集 | `v1_30.yaml`，30 条（22 条 answer、8 条 behavior） |
+| 模型 | `deepseek/deepseek-flash`，temperature 0 |
+| 提示词 | `stage2-v8`，3,004 tokens |
+| 数据锚点 | `2026-10-26` |
+| 并发 | 默认 1（保持轨迹可归因） |
+| 运行方式 | 默认输出，未使用 `--verbose` |
+
+### D.2 两次结果
+
+| 指标 | 第 1 次 | 第 2 次 | G2 |
+|---|---|---|---|
+| EX | **81.8%（18/22）** | **86.4%（19/22）** | ✅ ≥70% |
+| behavior | **100%（8/8）** | **100%（8/8）** | ✅ ≥85% |
+| 平均工具轮次 | 1.43 | 1.27 | ✅ ≤3.5 |
+| P95 | 15.1s | 14.5s | ✅ ≤20s |
+| 两次 EX 差异 | — | **4.5pt** | ✅ ≤5pt |
+
+### D.3 失败明细
+
+**第 1 次（4 条）**
+
+| 用例 | taxonomy | 现象 |
+|---|---|---|
+| B-02 | OK（first_try fail） | 第一次 SQL `Unknown identifier order_id`，重试后结果正确 |
+| B-05 | METRIC_WRONG | 模型 61.88%，golden 60.68% |
+| D-04 | OK（first_try fail） | 首答 shape 4×2 vs 1×2，重试后正确 |
+| I-30 | SHAPE_MISMATCH | 期望 1×1，实际 2×3 |
+
+**第 2 次（3 条）**
+
+| 用例 | taxonomy | 现象 |
+|---|---|---|
+| B-02 | METRIC_WRONG | 品类净收入 3,438,418.53 vs golden 3,615,345.26；用了 `orders.amount_cents`，golden 用 `order_items.item_amount_cents` |
+| C-15 | OK（first_try fail） | 第一次 SQL 中文别名触发 ClickHouse `SYNTAX_ERROR`；重试后 8.88% 正确 |
+| I-30 | SHAPE_MISMATCH | 期望 1×1，实际 2×4 |
+
+### D.4 待专项修复（不阻塞本次文档整理）
+
+1. **B-02 品类净收入公式**
+   - 两次均失败；第 1 次首答字段错误，第 2 次改用订单金额而非明细金额。
+   - 需要明确 `net_revenue` 的品类分摊必须基于 `order_items.item_amount_cents`，并检查模型的退款分摊写法。
+
+2. **I-30 多轮输出形状**
+   - 两次都返回 2 行多列，golden 要求单值。
+   - 现有 L0 “多轮追问沿用上一轮形状”仍不足，需要更明确的“单值追问只返回单行单列”约束。
+
+3. **B-05 golden 复核**
+   - 模型 61.88% 与 golden 60.68% 的差异很可能来自 golden 漏了 `u.is_test=0`。
+   - 先复核业务口径，再改 golden；不要直接按模型结果改。
+
+4. **first_try 抖动**
+   - B-02、D-04、C-15 出现过“首答失败、最终正确”。
+   - 与 golden 无关，属于模型首条 SQL 质量/语法稳定性问题；后续可结合结构化错误回喂观察。
+
+### D.5 未完成项（按用户要求暂不做）
+
+- [ ] 人工抽检 20 条轨迹，统计 `TOOL_MISUSE`
+- [ ] 人工统计复杂查询（≥3 表 join / 时间窗口）通过率
+- [ ] 根据上述统计补 §12 两列
+
+### D.6 报告
+
+- 第 1 次：`reports/20261027-165653/report.html`
+- 第 2 次：`reports/20261027-170011/report.html`
