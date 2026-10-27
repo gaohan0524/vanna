@@ -34,9 +34,9 @@ metrics:
     pitfalls: "未限定窗口会随时间漂移"
   conversion_rate:
     name: "支付转化率"
-    short: "converted 会话 ÷ 全部会话"
-    formula: "countIf(sessions.converted=1) / count()"
-    pitfalls: "分母是会话，不是用户；不要用 payments 表；加购→下单是 events 漏斗，不能复用本指标"
+    short: "有效会话 converted 占比（%，排测试/软删）"
+    formula: "countIf(sessions.converted = 1) / count()，sessions JOIN users WHERE is_test = 0 AND deleted_at IS NULL"
+    pitfalls: "分母是有效会话，不是用户或全部会话；输出 0~100 百分比；加购→下单是 events 漏斗，不能复用本指标"
   retention_d7:
     name: "7日留存率"
     short: "注册后 D+1~D+7 自然日内有会话占比"

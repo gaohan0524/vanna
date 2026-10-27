@@ -29,6 +29,14 @@ def test_glossary_budget():
     assert glossary_tokens(load_glossary()) <= 300
 
 
+def test_conversion_definition_excludes_test_and_soft_delete():
+    metric = load_glossary()["metrics"]["conversion_rate"]
+
+    assert "有效会话" in metric["short"]
+    assert "deleted_at" in metric["formula"]
+    assert "百分比" in metric["pitfalls"]
+
+
 def test_retention_definition_uses_natural_days():
     metric = load_glossary()["metrics"]["retention_d7"]
 

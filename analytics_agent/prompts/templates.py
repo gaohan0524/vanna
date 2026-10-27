@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-PROMPT_VERSION = "stage2-v3"
+PROMPT_VERSION = "stage2-v4"
 
 L0_RULES = """
 ## 身份
