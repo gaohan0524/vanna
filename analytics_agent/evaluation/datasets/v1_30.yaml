@@ -382,19 +382,23 @@ dataset:
     - id: "D-04"
       user_id: "analyst"
       user_groups: ["analyst"]
-      message: "上周各渠道的支付转化率"
+      message: "上周各渠道的支付转化率是多少？（排除测试与注销用户）"
       metadata:
         layer: D
         difficulty: medium
         golden_sql: |
-          SELECT s.channel AS channel, countIf(s.converted = 1) / count() AS cvr
-          FROM shop.sessions s
-          JOIN shop.users u ON u.user_id = s.user_id
-          WHERE u.is_test = 0 AND u.deleted_at IS NULL
-            AND s.started_at >= toStartOfWeek(today(), 1) - INTERVAL 7 DAY
-            AND s.started_at <  toStartOfWeek(today(), 1)
-          GROUP BY s.channel
-          ORDER BY cvr DESC
+          SELECT channel,
+                 count() AS sessions,
+                 round(100.0 * countIf(converted = 1) / nullIf(count(), 0), 2) AS cvr_pct
+          FROM shop.sessions
+          WHERE started_at >= toStartOfWeek(today(), 1) - toIntervalDay(7)
+            AND started_at <  toStartOfWeek(today(), 1)
+            AND user_id IN (
+                SELECT user_id FROM shop.users
+                WHERE is_test = 0 AND deleted_at IS NULL
+            )
+          GROUP BY channel
+          ORDER BY cvr_pct DESC, channel ASC
         expected_behavior: answer
 
     - id: "D-17"
