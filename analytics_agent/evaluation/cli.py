@@ -485,6 +485,11 @@ def _run_sync(func, args: argparse.Namespace) -> int:
 
 
 def main(argv: Optional[List[str]] = None) -> int:
+    # Windows 控制台默认 GBK，题目/结果里的“−”“≈”等字符会触发编码错误。
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.command == "check":

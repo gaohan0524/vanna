@@ -42,10 +42,10 @@
 5. 同环比默认「本月至今 vs 上月 1 日至同日」（MTD），不是整月对比整月。
 6. **品类净收入（B-02）的口径**：
    - 以 `orders.created_at` 圈定时间窗口（订单 cohort），退款回溯到该订单所属期间；
-   - 订单级 `refunds.amount_cents` 没有 `product_id`，必须**按商品金额占比**分摊到 `order_items`：
-     `refund_share = order_refund * item_amount / order_item_total`；
+   - 净收入基数是 **`orders.amount_cents`（已扣优惠）**，不是 `item_amount_cents` 毛额；
+   - `item_amount_cents` 只用于**分摊比例**：先算订单净额 `order_net = amount_cents - approved_refund`，再按 `item_amount / order_item_total` 分摊到品类；
    - 禁止把订单级退款直接 JOIN 到多行商品上再 `SUM`——一个订单有 N 个商品，退款会被放大 N 倍并错分到多个品类。
-7. 校验恒等式：`Σ 品类净收入 = 窗口内商品总额 − 这些订单的 approved 退款总额`（四舍五入误差 ≤ 0.1 元）。
+7. 校验恒等式：`Σ 品类净收入 = 窗口内订单金额 − 这些订单的 approved 退款总额`（四舍五入误差 ≤ 0.1 元）。
 8. 时间窗口统一左闭右开（`>= start AND < end`），并显式写出上界；聚合前用 `ifNull(SUM(...), 0)` 兜住空区间，除法用 `nullIf` 防零。
 9. 「上月同期」的右边界必须用 `least(addDays(上月1号, toDayOfMonth(today())), 本月1号)` 封顶，否则 29~31 号跑时上界会溢出到下个月（12-31 → 12-02），把本月数据算进上月。
 10. 「近 N 天」= **最近 N 个完整自然日**：`>= toStartOfDay(now()) - INTERVAL N DAY AND < toStartOfDay(now())`，不用滚动 24h 窗口（`now() - INTERVAL N DAY`）。

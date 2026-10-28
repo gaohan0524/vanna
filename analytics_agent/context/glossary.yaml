@@ -11,7 +11,7 @@ metrics:
     name: "净收入"
     short: "GMV - approved 退款"
     formula: "GMV - SUM(refunds.amount_cents)/100 WHERE refunds.status='approved'"
-    pitfalls: "公司级按退款发生月；品类级按订单 cohort，并按商品金额占比分摊"
+    pitfalls: "公司级按退款发生月；品类级按订单 cohort，以订单金额为基数、按商品金额占比分摊；item_amount 只作比例"
   aov:
     name: "客单价"
     short: "GMV ÷ 有效订单数"

@@ -912,7 +912,7 @@ python -m analytics_agent.evaluation.cli report --run reports/2026-10-22        
 | A-07 | A | analyst | 近 30 天各支付方式的成功支付金额分别是多少？ | answer | join orders 限 `CNY`/排测试；`status='succeeded' AND is_retry=0`；近 30 自然日 |
 | A-08 | A | analyst | 近 7 天各渠道新增用户数是多少？ | answer | `is_test=0`、`deleted_at IS NULL`、相对时间 |
 | A-09 | A | analyst | 当前各套餐的 MRR 是多少？（排除测试与注销用户） | answer | 仅 `active`；join users 排测试与注销；不按用户去重 |
-| B-02 | B | analyst | 近 30 天各品类的净收入是多少？ | answer | 订单 cohort；approved 退款**按商品金额占比分摊**到 items，禁止直接 SUM 订单级退款 |
+| B-02 | B | analyst | 近 30 天各品类的净收入是多少？（净收入 = 订单金额 − approved 退款，按订单内商品金额占比分摊到品类） | answer | 订单 cohort；以订单金额为基数，`item_amount` 只作分摊比例；禁止直接 SUM 订单级退款 |
 | B-10 | B | analyst | 近 90 天各渠道的退款金额是多少？ | answer | 退款 approved；币种/测试过滤；按订单渠道归因 |
 | B-11 | B | analyst | 近 30 天销量最高的 10 个商品是哪些？ | answer | items join products；仅有效订单；并列按 `product_id` 升序；`LIMIT 10` |
 | B-12 | B | analyst | 近 30 天各国家用户的支付转化率是多少？ | answer | sessions join users；排测试/软删；输出百分比；近 30 自然日 |
@@ -1119,8 +1119,9 @@ GRANT SELECT ON shop.* TO readonly;
 | 2026-10-22 | D2-3 | 重构：DeepSeek 移入 `vanna.integrations.deepseek`，OpenAI 增加可选 `temperature` | 完成 | 删除 `analytics_agent/llm/`；模型名不再白名单；相关单测 40 passed |
 | 2026-10-23 | D1-2 | 跨天后重新 `seed --scale 0.1` | 成功 | 锚点 `2026-10-22`；12 表行数不变；`check --strict` 41/41 |
 | 2026-10-23 | D2-2 | 新增 `preview` 子命令 | 完成 | 支持 `--case` 过滤、`--rows` 控制行数；用于逐条审核 |
-| 2026-10-23 | D2-2 | B-02 审核发现退款重复计算（1:N join 放大） | 已修复 | 改为按商品金额占比分摊；校验 `16,800,867.37 − 67,056.56 = 16,733,810.81` 与分品类求和一致 |
-| 2026-10-23 | D2-2 | B-02 修复后复核 | **通过** | 确认退款分摊规则；订单 cohort（B-02）与退款发生月（C-15）两套口径并存已确认 |
+| 2026-10-23 | D2-2 | B-02 审核发现退款重复计算（1:N join 放大） | 已修复 | 旧口径：按 item 毛额分摊；2026-10-28 已改为订单净额基数 |
+| 2026-10-23 | D2-2 | B-02 修复后复核 | **通过** | 当时按 item 毛额分摊；订单 cohort（B-02）与退款发生月（C-15）两套口径并存已确认 |
+| 2026-10-28 | 评测修复 | B-02 净收入基数修正 | 完成 | 旧公式用 `item_amount` 毛额、漏订单折扣；改为 `(orders.amount_cents - refund) × item_amount / item_total` |
 | 2026-10-23 | D2-2 | C-14 周起点改为周一 | 已调整 | `toStartOfWeek(..., 1)`（含 WHERE 边界）；4 行：09-21/09-28/10-05/10-12 |
 | 2026-10-23 | D2-2 | C-15 改写为 CTE + `ifNull`/`nullIf` + 显式上界 | 已调整 | 结果 `1.57%` 与旧写法一致；`check --strict` 41/41 |
 | 2026-10-23 | D2-2 | C-03 / C-15 的 3 处“上月同期”上界加 `least` 封顶 | 已加固 | 月末验证：`2026-12-31` 场景 raw=`12-02` → capped=`12-01`；结果不变 |
@@ -1207,7 +1208,7 @@ GRANT SELECT ON shop.* TO readonly;
 | A-07 | A | answer | [x] | [x] | [x] | 补 30 天窗口 + join orders 限 CNY/排测试（2026-10-25） |
 | A-08 | A | answer | [x] | [x] | [x] | |
 | A-09 | A | answer | [x] | [x] | [x] | 补 join users 排测试与注销（2026-10-27） |
-| B-02 | B | answer | [x] | [x] | [x] | 题面明确“近 30 天”；退款分摊口径已确认（2026-10-27） |
+| B-02 | B | answer | [x] | [x] | [x] | 2026-10-28 修正：净收入以订单金额为基数，item_amount 仅作分摊比例 |
 | B-10 | B | answer | [x] | [x] | [x] | |
 | B-11 | B | answer | [x] | [x] | [x] | 补 30 天窗口 + 并列按 `product_id` 升序（2026-10-25） |
 | B-12 | B | answer | [x] | [x] | [x] | 补 30 天窗口 + 排软删，输出百分比（2026-10-25） |

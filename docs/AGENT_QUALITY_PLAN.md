@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 2 G2 核心指标在 v8 达标**——EX 81.8% / 86.4%、behavior 100%、P95 15.1s / 14.5s、差异 4.5pt；v9 已明确 B-05 复购率仅 CNY，待复跑；`TOOL_MISUSE` 与复杂查询待人工统计。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)
+- **当前进度**：**Stage 2 G2 核心指标在 v8 达标**——EX 81.8% / 86.4%、behavior 100%、P95 15.1s / 14.5s、差异 4.5pt；v9 已修正 B-05 CNY 口径与 B-02 净收入公式，待复跑；`TOOL_MISUSE` 与复杂查询待人工统计。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-21

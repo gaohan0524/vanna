@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**T2-1 ~ T2-7 代码完成；G2 核心指标在 v8 达标（81.8% / 86.4%）；v9 明确 B-05 CNY 口径，待复跑**
+> - 状态：**T2-1 ~ T2-7 代码完成；G2 核心指标在 v8 达标（81.8% / 86.4%）；v9 修正 B-05 CNY 与 B-02 净收入公式，待复跑**
 > - 前置：Stage 1 完成（2026-10-25）
 > - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
@@ -1305,7 +1305,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 >
 > v8 核心门槛（EX、behavior、轮次、P95、两次差异）已达标；`TOOL_MISUSE` 与复杂查询通过率待人工抽检后补。
 > v8 两次失败：第 1 次 B-02/B-05/D-04/I-30；第 2 次 B-02/C-15/I-30。B-02、I-30 两次均失败，需单独定位。
-> **v9 变更**：仅把 B-05 复购率明确为“仅 CNY、排测试/注销”，并新增 Eventual 指标；v8 的 G2 数值在 v9 下尚未复跑，不能直接当作最终签名。
+> **v9 变更**：B-05 复购率明确为“仅 CNY、排测试/注销”；B-02 净收入改为“订单净额 × 商品金额占比”；新增 Eventual 指标。v8 的 G2 数值在 v9 下尚未复跑，不能直接当作最终签名。
 >
 > 报告：第 1 次 `reports/20261027-165653/report.html`；第 2 次 `reports/20261027-170011/report.html`。  
 > 详细失败原因、待修项与未做人工项见 **附录 D**。
@@ -1522,15 +1522,16 @@ describe_table(catalog, "orders")
 
 | 用例 | taxonomy | 现象 |
 |---|---|---|
-| B-02 | METRIC_WRONG | 品类净收入 3,438,418.53 vs golden 3,615,345.26；用了 `orders.amount_cents`，golden 用 `order_items.item_amount_cents` |
+| B-02 | METRIC_WRONG（旧 golden 错） | 模型 3,438,418.53 是“订单净额按商品占比分摊”，业务上正确；旧 golden 用 item 毛额、漏了订单折扣，得 3,615,345.26 |
 | C-15 | OK（first_try fail） | 第一次 SQL 中文别名触发 ClickHouse `SYNTAX_ERROR`；重试后 8.88% 正确 |
 | I-30 | SHAPE_MISMATCH | 期望 1×1，实际 2×4 |
 
 ### D.4 待专项修复（不阻塞本次文档整理）
 
-1. **B-02 品类净收入公式**
-   - 两次均失败；第 1 次首答字段错误，第 2 次改用订单金额而非明细金额。
-   - 需要明确 `net_revenue` 的品类分摊必须基于 `order_items.item_amount_cents`，并检查模型的退款分摊写法。
+1. **B-02 品类净收入公式（已修 golden）**
+   - 旧 golden 直接对 `item_amount_cents` 毛额减退款，忽略了 `orders.amount_cents` 已扣的订单折扣，导致品类合计高于公司净收入。
+   - 第 2 次模型的 `(orders.amount_cents - refund) × item_amount / item_total` 才是正确写法；已按此修 golden。
+   - 题面、`metrics.md`、glossary pitfalls 已明确：净收入以订单金额为基数，`item_amount` 只作分摊比例；待复跑。
 
 2. **I-30 多轮输出形状**
    - 两次都返回 2 行多列，golden 要求单值。
