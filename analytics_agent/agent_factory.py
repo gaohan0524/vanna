@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Optional, Union
 
 from vanna import Agent, AgentConfig
@@ -183,13 +184,26 @@ def build_memory(settings: Settings):
     if backend == "chroma_local":
         from analytics_agent.memory.backends.chroma_local import ChromaLocalMemory
         from analytics_agent.memory.embedding import ChineseEmbeddingFunction
+        from analytics_agent.memory.safe import SafeAgentMemory
 
-        embedding = ChineseEmbeddingFunction(settings.memory_embedding_model)
-        return ChromaLocalMemory(
-            persist_directory=str(settings.memory_path),
-            collection_name=settings.memory_collection,
-            embedding_function=embedding,
-        )
+        try:
+            embedding = ChineseEmbeddingFunction(settings.memory_embedding_model)
+            memory = ChromaLocalMemory(
+                persist_directory=str(settings.memory_path),
+                collection_name=settings.memory_collection,
+                embedding_function=embedding,
+            )
+        except ValueError:
+            # 模型/collection 绑定不一致属于配置错误，必须显式失败。
+            raise
+        except Exception:
+            # 后端不可用（驱动/目录/模型下载）时降级为空记忆，不阻断主流程。
+            logging.getLogger(__name__).exception(
+                "Chroma memory unavailable; falling back to empty demo memory"
+            )
+            return DemoAgentMemory(max_items=10_000)
+
+        return SafeAgentMemory(memory)
 
     raise ValueError(
         f"Unsupported MEMORY_BACKEND={settings.memory_backend!r}; "

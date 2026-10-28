@@ -436,9 +436,15 @@ class ChromaLocalMemory(AgentMemory):
 
 ### 4.6 降级
 
-- 记忆后端不可用 → 记 warning，返回空检索结果，不阻断主流程；
-- 检索异常 → 回退到原有 prompt；
-- embedding 不可用 → 不能静默切换模型；应显式失败并提示重建 collection。
+已实现两层降级：
+
+| 层 | 行为 |
+|---|---|
+| 运行期检索异常 | `SafeAgentMemory` 捕获 `search_*` / `get_recent_*` 异常，记 warning，返回 `[]`，主流程继续 |
+| 启动期后端不可用 | `build_memory` 捕获非配置类异常（驱动/目录/模型加载），回退到空的 `DemoAgentMemory` |
+| 配置错误 | `embedding_model` 与 collection 不一致属于配置错误，仍然显式 `ValueError`，不静默降级 |
+
+写入/删除仍正常抛错，避免管理员操作“假成功”。
 
 ### 4.7 当前落地进度
 
@@ -447,9 +453,11 @@ class ChromaLocalMemory(AgentMemory):
 ```text
 analytics_agent/memory/backends/chroma_local.py   ChromaLocalMemory
 analytics_agent/memory/embedding.py               ChineseEmbeddingFunction (BGE)
-tests/test_chroma_local_memory.py                 4 项基础 smoke
+analytics_agent/memory/safe.py                    SafeAgentMemory 降级包装
+tests/test_chroma_local_memory.py                 5 项基础 smoke
 tests/test_chroma_semantic_smoke.py               真实 BGE 语义 smoke（guarded）
-tests/test_memory_factory.py                      build_memory 工厂测试
+tests/test_memory_factory.py                      build_memory 工厂 + 降级测试
+tests/test_safe_memory.py                         检索异常降级测试
 pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "sentence-transformers>=3"]
 ```
 
@@ -463,6 +471,7 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 - 真实中文 embedding：`BAAI/bge-small-zh-v1.5`；
 - collection 绑定 `embedding_model` metadata，模型不一致时启动报错；
 - `build_memory(settings)`：默认 demo，`MEMORY_BACKEND=chroma_local` 时接 Chroma；
+- 检索异常与启动失败降级，不阻断主流程；
 - 3 条真实中文种子 + 3 个同义问法，命中最相关种子。
 
 语义 smoke 结果：
@@ -475,7 +484,6 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 
 尚未完成：
 
-- 检索异常/后端不可用的降级包装；
 - 种子导入、候选表与 enhancer；
 - 多进程/远端 HTTP Chroma 适配。
 
@@ -485,8 +493,8 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 - [x] 中文 query 能召回中文种子（BGE 3 条 smoke 通过）
 - [x] `user_id` / `tenant_id` 过滤生效
 - [x] collection 的 `embedding_model` 不一致时启动报错
-- [ ] 后端异常不阻断主流程（待加降级包装）
-- [x] 有最小 smoke test（5 + 1 semantic passed）
+- [x] 后端异常不阻断主流程（`SafeAgentMemory` + 启动回退）
+- [x] 有最小 smoke test（5 + 1 semantic + 工厂/降级 passed）
 - [x] `build_memory(settings)` 接线（默认 demo）
 
 ---
@@ -958,6 +966,7 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | T3-1 | `build_memory(settings)` | 完成 | 默认 demo；`MEMORY_BACKEND=chroma_local` 走本地 Chroma |
 | 2026-10-28 | T3-1 | 3 条真实中文种子语义 smoke | 通过 | 3 个同义问法均命中对应 seed；1 semantic test passed |
 | 2026-10-28 | T3-1 | 增加 embedding 模型绑定校验 | 完成 | metadata 记录 `embedding_model`；不一致直接报错；`test_embedding_model_mismatch_fails_loudly` |
+| 2026-10-28 | T3-1 | 增加检索/启动降级 | 完成 | `SafeAgentMemory` 读失败返回空；启动失败回退 Demo；配置错误仍报错 |
 
 ---
 
