@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import re
 from pathlib import Path
 
 import sqlglot
@@ -17,17 +15,12 @@ def _load(name: str):
     return yaml.safe_load((SEED_DIR / name).read_text(encoding="utf-8"))
 
 
-def _sql_hash(sql: str) -> str:
-    normalized = re.sub(r"\s+", " ", sql).strip().lower()
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-
-
 def test_seed_counts_and_unique_ids():
     knowledge = _load("knowledge.yaml")
     tools = _load("tool_memories.yaml")
 
     assert 30 <= len(knowledge) <= 50
-    assert len(tools) == 22
+    assert len(tools) == 21
 
     ids = [item["id"] for item in knowledge] + [item["id"] for item in tools]
     assert len(ids) == len(set(ids))
@@ -55,17 +48,16 @@ def test_tool_memories_cover_all_answer_cases():
         if case["metadata"].get("expected_behavior", "answer") == "answer"
     }
 
-    source_ids = {
-        item["source"].split("#", 1)[1]
+    covered_ids = {
+        case_id
         for item in tools
-        if item["source"].startswith("v1_30.yaml#")
+        for case_id in item.get("covers", [item["source"].split("#", 1)[1]])
     }
-    assert source_ids == answer_ids
+    assert covered_ids == answer_ids
 
 
 def test_tool_memories_have_paraphrases_and_parseable_sql():
     tools = _load("tool_memories.yaml")
-    by_id = {item["id"]: item for item in tools}
     dataset = yaml.safe_load(DATASET.read_text(encoding="utf-8"))
     cases = {case["id"]: case for case in dataset["dataset"]["test_cases"]}
 
@@ -94,8 +86,4 @@ def test_tool_memories_have_paraphrases_and_parseable_sql():
         source_case = cases[item["source"].split("#", 1)[1]]
         golden = source_case["metadata"]["golden_sql"].strip().rstrip(";")
         assert item["sql"].strip() == golden
-
-        canonical_id = item.get("canonical_id")
-        if canonical_id:
-            assert canonical_id in by_id
-            assert _sql_hash(item["sql"]) == _sql_hash(by_id[canonical_id]["sql"])
+        assert "canonical_id" not in item

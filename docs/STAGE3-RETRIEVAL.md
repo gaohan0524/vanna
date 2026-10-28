@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 3 / T3-1 ~ T3-6** 的详细执行版。
 >
-> - 状态：**进行中（2026-10-28，T3-1 完成，T3-2 待开始）**
+> - 状态：**进行中（2026-10-28，T3-1 完成，T3-2 首批草稿待审核）**
 > - 前置：Stage 2 完成；G2 基线冻结为 v8 两次结果
 > - Stage 2 基线：EX **81.8% / 86.4%**、behavior **100%**、平均工具轮次 **1.27~1.43**、P95 **15.1s / 14.5s**、两次差异 **4.5pt**
 > - 当前代码：`stage2-v10`；v9/v10 的 B-05、B-02、I-30 修正是**基线后未复评变更**
@@ -548,7 +548,8 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 
 要求：
 
-- **一个 YAML 记录 = 一个 SQL 模板**，不是一条向量；
+- **一个 YAML 记录 = 一个唯一 SQL 模板**，不是一条向量；
+- 同一 SQL 的多个问法（包括跟进问法）合并到同一条，不重复建记录；
 - 同一 SQL 配 3~5 种真实问法；
 - 导入时 `question` + `paraphrases` 可展开为多条可检索记录，共享 `sql_hash`；
 - 检索后按 `sql_hash` 去重，只保留最高分，避免注入重复 SQL；
@@ -620,7 +621,7 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 | `tables` / `metrics` | 支持 metadata 过滤、候选表评测和召回分析；不能只依赖向量 |
 | `source` | 回溯到 golden 用例或人工审核记录 |
 | `version` / `reviewed` | 与文本记忆同一套信任和回滚规则 |
-| `canonical_id` | 可选；跟进问题映射到同一 SQL 时指向主记录，如 `I-28 → A-01`；导入时合并，不重复建向量 |
+| `covers` | 可选；一个 SQL 模板覆盖多个评测用例时列出，如 `A-01 + I-28`；不产生额外向量 |
 
 **一个 YAML 记录 = 一个 SQL 模板**，不是一条向量：
 
@@ -629,7 +630,7 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 - 这样既能覆盖多种问法，又不会在注入时重复同一段 SQL。
 
 有些用例是**同一 SQL 的跟进问法**，例如 `I-28（各渠道 GMV）` 与 `A-01` 完全同 SQL。
-这类记录用 `canonical_id` 指向主记录，导入时只建一份向量/一个模板，避免重复计数。
+这类问法应合并到同一条工具记忆，用 `covers: ["A-01", "I-28"]` 记录评测覆盖，不再单独建记录。
 
 同时，工具记忆的 document 是**问题文本**，不是 SQL 正文。
 原因是检索目标是“用户问题 → SQL”，SQL 适合作为 payload，不适合作为 query 的语义表示。
@@ -678,14 +679,14 @@ reviewed  → 未审核内容不进入可检索库
 | 文件 | 当前数量 | 状态 |
 |---|---:|---|
 | `knowledge.yaml` | 38 | 待业务审核，全部 `reviewed: false` |
-| `tool_memories.yaml` | 22 | 覆盖 22 条 answer；21 个唯一 SQL |
+| `tool_memories.yaml` | 21 | 唯一 SQL 模板；覆盖 22 条 answer |
 | `manifest.yaml` | — | `status: draft` |
 
 说明：
 
-- 22 条工具记忆中，`I-28` 与 `A-01` 同 SQL，用 `canonical_id` 指向 `A-01`；
-- 每条工具记忆已有 3 个问法；
-- 22 条 SQL 已在当前数据上执行通过；
+- `I-28` 与 `A-01` 同 SQL，已合并到 `tool:A01-GMV渠道`，用 `covers` 记录两条用例；
+- 每条工具记忆已有 3~5 个问法；
+- 21 条 SQL 已在当前数据上执行通过；
 - 静态校验见 `tests/test_seed_data.py`：4 passed。
 
 ### 5.5 DoD
@@ -693,7 +694,7 @@ reviewed  → 未审核内容不进入可检索库
 - [x] `knowledge.yaml`、`tool_memories.yaml` 通过静态 schema 校验
 - [x] 每条工具记忆有 3~5 个问法
 - [x] 所有种子有 `source/version/reviewed` 字段
-- [x] SQL 与 golden 一致，22 条均可在当前数据执行
+- [x] SQL 与 golden 一致，21 个唯一模板均可在当前数据执行
 - [ ] 业务审核完成，`reviewed` 逐条改为 `true`
 - [ ] 不存在未审核的模型生成 SQL
 
@@ -1097,8 +1098,8 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | T3-1 | 增加检索/启动降级 | 完成 | `SafeAgentMemory` 读失败返回空；启动失败回退 Demo；配置错误仍报错 |
 | 2026-10-28 | T3-1 | T3-1 完成，DoD 全勾 | 完成 | 10 passed；下一项 T3-2 种子数据 |
 | 2026-10-28 | T3-2 | 生成 `knowledge.yaml` 首批草稿 | 完成 | 38 条；单条最长 81 字；全部 `reviewed: false` |
-| 2026-10-28 | T3-2 | 生成 `tool_memories.yaml` 首批草稿 | 完成 | 22 条覆盖 22 条 answer；21 个唯一 SQL；I-28 用 canonical_id 指向 A-01 |
-| 2026-10-28 | T3-2 | 种子静态校验与 SQL 执行 | 通过 | `tests/test_seed_data.py` 4 passed；22 条 SQL 全部执行成功、0 error |
+| 2026-10-28 | T3-2 | 生成 `tool_memories.yaml` 首批草稿 | 完成 | 21 条唯一 SQL 模板，覆盖 22 条 answer；I-28 合并到 A-01 |
+| 2026-10-28 | T3-2 | 种子静态校验与 SQL 执行 | 通过 | `tests/test_seed_data.py` 4 passed；21 条 SQL 全部执行成功、0 error |
 
 ---
 

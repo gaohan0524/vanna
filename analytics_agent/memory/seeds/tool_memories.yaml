@@ -1,5 +1,5 @@
 # T3-2 工具记忆种子（草稿）
-# 一个 id 对应一个 SQL 模板；I-28 与 A-01 同 SQL，用 canonical_id 标记为同模板别名。
+# 一个 id 对应一个唯一 SQL 模板；同 SQL 的跟进问法合并到同一条。
 # reviewed: false 表示尚未经业务负责人确认，不能导入正式检索库。
 
 - id: "tool:A01-GMV渠道"
@@ -8,6 +8,8 @@
     - "近一个月各渠道成交额"
     - "按渠道看最近30天GMV"
     - "最近一个月各渠道销售额"
+    - "近30天各渠道GMV"
+    - "近30天各渠道成交额"
   tool_name: "run_sql"
   sql: |
     SELECT channel, SUM(amount_cents) / 100.0 AS gmv
@@ -21,6 +23,7 @@
   tables: ["orders"]
   metrics: ["gmv"]
   source: "v1_30.yaml#A-01"
+  covers: ["A-01", "I-28"]
   version: 1
   reviewed: false
 
@@ -557,29 +560,6 @@
   source: "v1_30.yaml#H-27"
   version: 1
   reviewed: false
-
-- id: "tool:I28-渠道GMV"
-  question: "近 30 天各渠道的 GMV 是多少？"
-  paraphrases:
-    - "近30天各渠道GMV"
-    - "最近一个月各渠道成交额"
-    - "近30天各渠道成交额"
-  tool_name: "run_sql"
-  sql: |
-    SELECT channel, SUM(amount_cents) / 100.0 AS gmv
-    FROM shop.orders
-    WHERE created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
-      AND created_at <  toStartOfDay(now())
-      AND status IN ('paid','shipped','completed')
-      AND currency = 'CNY' AND is_test = 0
-    GROUP BY channel
-    ORDER BY gmv DESC
-  tables: ["orders"]
-  metrics: ["gmv"]
-  source: "v1_30.yaml#I-28"
-  version: 1
-  reviewed: false
-  canonical_id: "tool:A01-GMV渠道"
 
 - id: "tool:I29-organic-GMV"
   question: "近 30 天 organic 渠道的 GMV 是多少？"
