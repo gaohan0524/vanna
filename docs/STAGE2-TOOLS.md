@@ -2,11 +2,12 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**T2-1 ~ T2-7 代码完成；G2 核心指标在 v8 达标（81.8% / 86.4%）；v10 修正 B-05 CNY、B-02 净收入与多轮单值规则，待复跑**
+> - 状态：**Stage 2 完成（2026-10-28）**；G2 基线冻结为 **v8 两次结果**（EX 81.8% / 86.4%）
 > - 前置：Stage 1 完成（2026-10-25）
-> - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
+> - 基线：Stage 1 EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
-> - 最后更新：2026-10-27
+> - 说明：v9/v10 的 B-05、B-02、I-30 修正是**基线后变更**，未复评，作为 Stage 3 carryover
+> - 最后更新：2026-10-28
 
 ---
 
@@ -62,10 +63,10 @@
 - [x] 相对 Stage 1 基线（61.9%）**不回落**；两次同配置差异 **4.5pt** ≤ 5pt
 - [x] behavior ≥ **85%**（两次均 100%，8/8）
 - [x] 平均工具轮次 ≤ **3.5**（v8：1.43 / 1.27）
-- [ ] `TOOL_MISUSE` < 5%（人工抽检 20 条轨迹，待做）
+- [ ] `TOOL_MISUSE` < 5%（未测；用户决定不阻塞 Stage 3，转入观察）
 - [x] `run_sql` 绕过测试 100% 拦截（写操作、多语句、超长、注释绕过、字符串字面量）
-- [ ] `SCHEMA_MISSING` / `DIALECT_ERROR` = 0（待分类统计）
-- [ ] 复杂查询（≥3 表 join）成功率 ≥ 60%（待人工统计）
+- [ ] `SCHEMA_MISSING` / `DIALECT_ERROR` = 0（v8 未单独统计；转入 Stage 3 观察）
+- [ ] 复杂查询（≥3 表 join）成功率 ≥ 60%（未测；转入 Stage 3 观察）
 - [x] P95 ≤ **20s**（v8：15.1s / 14.5s）
 - [x] 工具单测覆盖：catalog 搜索、脱敏、LIMIT 注入、超时透传、错误结构
 
@@ -76,6 +77,10 @@
 >
 > **v8 两次结果**：EX 81.8% / 86.4%，behavior 100% / 100%，avg 1.43 / 1.27，P95 15.1s / 14.5s；
 > 两次 EX 差 **4.5pt**，核心指标已达标；`TOOL_MISUSE` 与复杂查询通过率仍需人工统计。
+>
+> **G2 结论（2026-10-28）**：按用户决定，**Stage 2 以 v8 结果为基线并宣告完成**；
+> 人工项 `TOOL_MISUSE` / 复杂查询通过率不阻塞 Stage 3，作为观察项带入；
+> v9/v10 的 B-05、B-02、I-30 修正在基线之后，尚未复评，不能改写 v8 基线数字。
 
 ---
 
@@ -1299,20 +1304,21 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | `TOOL_MISUSE` | — | 未统计 | 未统计 | 未统计 |
 | 复杂查询通过率 | 5/12 | 未统计 | 未统计 | 未统计 |
 | 两次 EX 差异 | — | — | — | **4.5pt** |
-| **Eventual EX（新增）** | — | — | 待重跑 | 待重跑 |
+| **Eventual EX（基线后新增）** | — | — | 未测 | 未测 |
 
 > 复杂查询定义：B/C/D 层中涉及 ≥3 表 join 或时间窗口的用例；先人工列出，再统计。
 >
 > v8 核心门槛（EX、behavior、轮次、P95、两次差异）已达标；`TOOL_MISUSE` 与复杂查询通过率待人工抽检后补。
 > v8 两次失败：第 1 次 B-02/B-05/D-04/I-30；第 2 次 B-02/C-15/I-30。B-02、I-30 两次均失败，需单独定位。
-> **v10 变更**：B-05 复购率明确为“仅 CNY、排测试/注销”；B-02 净收入改为“订单净额 × 商品金额占比”；L0 增加“单值追问只回单行单列”；新增 Eventual 指标。v8 的 G2 数值在 v10 下尚未复跑，不能直接当作最终签名。
+> **基线冻结**：Stage 2 以 v8 两次为基线；v9/v10 的 B-05 CNY、B-02 净收入、I-30 多轮单值修正是**基线后变更**，未复评，作为 Stage 3 carryover；
+> Eventual EX 也是基线后新增指标，v8 报告中没有该字段。
 >
-> 报告：第 1 次 `reports/20261027-165653/report.html`；第 2 次 `reports/20261027-170011/report.html`。  
+> 报告：第 1 次 `reports/20261027-165653/report.html`；第 2 次 `reports/20261027-170011/report.html`。
 > 详细失败原因、待修项与未做人工项见 **附录 D**。
 >
-> **指标口径**：`EX` 仍是严格 first-try（`overall_passed` 包含 `FirstTryEvaluator`）；  
-> 新增 `Eventual EX` = answer 用例的 `result_set` 是否最终正确（允许重试）；  
-> `Eventual overall` = answer 看 `result_set`、behavior 看 `clarification`。  
+> **指标口径**：`EX` 仍是严格 first-try（`overall_passed` 包含 `FirstTryEvaluator`）；
+> 新增 `Eventual EX` = answer 用例的 `result_set` 是否最终正确（允许重试）；
+> `Eventual overall` = answer 看 `result_set`、behavior 看 `clarification`。
 > 报告 HTML/JSON、控制台和 `failures.csv` 都会输出该字段。
 
 ### 12.3 人工轨迹抽检（20 条）
@@ -1336,7 +1342,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 
 ## 13. 每日步骤（D1~D6）
 
-> 状态：D1~D5 已完成（2026-10-26）；D6（G2 评测）v8 两次已完成（81.8% / 86.4%，差 4.5pt），待轨迹抽检。
+> 状态：D1~D5 已完成（2026-10-26）；D6（G2 评测）v8 两次已完成（81.8% / 86.4%，差 4.5pt），并按用户决定冻结为 Stage 2 基线。
 
 ### D1：catalog 工具（约 4 小时）
 
@@ -1443,7 +1449,9 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 | 2026-10-27 | C-16 | 改为前 12 个完整月（不含本月） | 完成 | 12 行；首月 NULL；L0 增补“近 N 月”规则 |
 | 2026-10-27 | 评测修复 | A-09 排注销、C-03 MTD 对齐、C-16 首月 NULL、D-04/D-17 去掉诊断列 | 完成 | 提示词升 `stage2-v7`；41/41；准备复跑 |
 | 2026-10-27 | G2 | `stage2-v7` 第一轮（30 条） | 完成 | **EX 76.2%（16/21）、behavior 88.9%、avg 1.33、P95 18.6s**；6 条失败 |
-| 2026-10-27 | 评测修复 | B-02/C-14 题面明确、D-18 补 users 过滤、E-05 转 B-05(answer)、多轮形状规则 | 完成 | `stage2-v8`；42/42；answer 增至 22 条；待复跑 |
+| 2026-10-27 | 评测修复 | B-02/C-14 题面明确、D-18 补 users 过滤、E-05 转 B-05(answer)、多轮形状规则 | 完成 | `stage2-v8`；42/42；answer 增至 22 条 |
+| 2026-10-28 | G2 | v8 两次结果冻结为 Stage 2 基线 | 完成 | EX 81.8%/86.4%、behavior 100%、P95 15.1/14.5s、差异 4.5pt；不再追加评测 |
+| 2026-10-28 | Stage3 | Stage 2 完成，准备 Stage 3 | 完成 | v9/v10 修正与人工项作为 carryover；见附录 D.7 |
 
 ---
 
@@ -1531,16 +1539,16 @@ describe_table(catalog, "orders")
 1. **B-02 品类净收入公式（已修 golden）**
    - 旧 golden 直接对 `item_amount_cents` 毛额减退款，忽略了 `orders.amount_cents` 已扣的订单折扣，导致品类合计高于公司净收入。
    - 第 2 次模型的 `(orders.amount_cents - refund) × item_amount / item_total` 才是正确写法；已按此修 golden。
-   - 题面、`metrics.md`、glossary pitfalls 已明确：净收入以订单金额为基数，`item_amount` 只作分摊比例；待复跑。
+   - 题面、`metrics.md`、glossary pitfalls 已明确：净收入以订单金额为基数，`item_amount` 只作分摊比例；该修正未复评，转入 Stage 3 carryover。
 
 2. **I-30 多轮输出形状**
    - 两次都返回 2 行多列，golden 要求单值。
-   - 现有 L0 “多轮追问沿用上一轮形状”仍不足，需要更明确的“单值追问只返回单行单列”约束。
+   - L0 已加“单值追问只回单行单列，不 GROUP BY、不拆维度”（v10）；未复评，转入 Stage 3 carryover。
 
 3. **B-05 复购率币种口径（已确认）**
    - 业务确认：复购率**仅统计 CNY 有效订单**；黄金 SQL 原本就是 CNY，模型第 1 次漏了 `currency='CNY'`，才得到 61.88%。
    - 固定锚点实测：CNY = 60.68%，全币种 = 61.88%；差异完全来自币种。
-   - 已将题面、`glossary.yaml`、`metrics.md` 明确为“仅 CNY，排测试/注销”，提示词升 `stage2-v10`；待复跑验证。
+   - 已将题面、`glossary.yaml`、`metrics.md` 明确为“仅 CNY，排测试/注销”，提示词升 `stage2-v10`；未复评，转入 Stage 3 carryover。
 
 4. **first_try 抖动**
    - B-02、D-04、C-15 出现过“首答失败、最终正确”。
@@ -1556,3 +1564,11 @@ describe_table(catalog, "orders")
 
 - 第 1 次：`reports/20261027-165653/report.html`
 - 第 2 次：`reports/20261027-170011/report.html`
+
+### D.7 基线冻结决定（2026-10-28）
+
+- 用户决定：**不再为 Stage 2 追加评测**，以 v8 两次结果作为 Stage 2 基线。
+- Stage 2 状态：**完成**。
+- 基线指标：EX 81.8% / 86.4%，behavior 100%，avg 1.43 / 1.27，P95 15.1s / 14.5s，差异 4.5pt。
+- 不阻塞项：`TOOL_MISUSE`、复杂查询通过率、20 条轨迹人工抽检未做，转入 Stage 3 观察。
+- 基线后变更：B-05 CNY、B-02 净收入公式、I-30 单值约束、Eventual 指标；均未复评，不修改 v8 基线数字，作为 Stage 3 carryover。

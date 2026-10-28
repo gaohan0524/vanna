@@ -1,10 +1,10 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 2 G2 核心指标在 v8 达标**——EX 81.8% / 86.4%、behavior 100%、P95 15.1s / 14.5s、差异 4.5pt；v9 已修正 B-05 CNY 口径与 B-02 净收入公式，待复跑；`TOOL_MISUSE` 与复杂查询待人工统计。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)
+- **当前进度**：**Stage 2 完成（基线 v8）**——EX 81.8% / 86.4%、behavior 100%、P95 15.1s / 14.5s、两次差异 4.5pt；按用户决定不再追加 Stage 2 评测，人工项转入 Stage 3 观察；v9/v10 修正为基线后 carryover。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
-- **最后更新**：2026-10-21
+- **最后更新**：2026-10-28
 
 ---
 
@@ -604,12 +604,13 @@ L0_RULES = """
 - [x] T2-6 `run_sql` 护栏改造——2026-10-26：AST 只读 + LIMIT + 30s 超时 + 截断说明；10 项测试
 - [x] T2-7 结构化错误回喂——2026-10-26：`error_type` + `hint` JSON；校验/执行错误分类；49 passed
 - [x] G2 核心指标：EX 81.8%/86.4% ✅、behavior 100% ✅、平均轮次 1.27~1.43 ✅、P95 15.1s/14.5s ✅、两次差异 4.5pt ✅、护栏绕过全过 ✅
-- [ ] G2 人工项：`TOOL_MISUSE` <5%、复杂查询通过率 ≥60%（未做，仅记录于 STAGE2 附录 D）
+- [ ] G2 人工项：`TOOL_MISUSE` <5%、复杂查询通过率 ≥60%（未做；按用户决定不阻塞 Stage 3，转入观察）
 
 ### Stage 3
-> 入口状态（2026-10-27）：Stage 2 G2 核心指标达标（EX 81.8%/86.4%、behavior 100%、P95 ≤15.1s、两次差异 4.5pt）；
-> `TOOL_MISUSE` 与复杂查询通过率尚未人工统计，保留在 `STAGE2-TOOLS.md` 附录 D。
-> 当前提示词 `stage2-v10`（B-05 CNY、B-02 净收入、多轮单值规则）；v8 结果需在 v10 下复跑确认；Stage 1 的 61.9% 基于旧 golden，仅历史参考。
+> 入口状态（2026-10-28）：**Stage 2 完成，基线冻结为 v8 两次结果**（EX 81.8%/86.4%、behavior 100%、P95 15.1s/14.5s、差异 4.5pt）。
+> 不再为 Stage 2 追加评测；`TOOL_MISUSE` 与复杂查询通过率未做，作为 Stage 3 观察项。
+> 当前代码/提示词为 `stage2-v10`（B-05 CNY、B-02 净收入、I-30 单值规则），均属**基线后未复评变更**，作为 carryover 跟踪，不修改 v8 基线。
+> Stage 1 的 61.9% 基于旧 golden，仅历史参考。
 - [ ] T3-1 记忆后端替换
 - [ ] T3-2 种子数据（文本 + golden SQL）
 - [ ] T3-3 混合检索 + rerank
