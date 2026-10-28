@@ -370,12 +370,56 @@ Chroma 默认 `DefaultEmbeddingFunction` 是英文 MiniLM，不适合中文业�
 
 ### 4.5 接口实现
 
-必须实现 `AgentMemory` 的全部抽象方法；不能只实现 `save_text_memory` / `search_text_memories`。
+#### 4.5.1 新实现放 `analytics_agent/memory`，不改框架 integration
 
-建议骨架：
+**结论：新增应用侧 `analytics_agent/memory/backends/chroma_local.py`，不直接改 `src/vanna/integrations/chromadb/agent_memory.py`。**
+
+原因：
+
+- 框架的 `ChromaAgentMemory` 是通用实现，不写 `user_id`、不支持租户过滤、ID 是随机 UUID；
+- 我们的需求是应用特有的：中文 embedding、`shared/team/user` 过滤、确定性 ID、种子 manifest；
+- 直接改框架文件会影响其他示例/测试，并造成后续上游同步冲突；
+- 应用侧实现通过 `AgentMemory` 接口注入，不影响框架代码。
+
+复用方式：
+
+| 复用 | 说明 |
+|---|---|
+| `AgentMemory` 抽象接口 | 必须完整实现 |
+| `ToolMemory` / `TextMemory` 模型 | 直接复用框架模型 |
+| `chromadb.PersistentClient` | 直接使用 Chroma 客户端 |
+| `ChromaAgentMemory` | 仅作为参考，不继承、不修改 |
+
+目录：
+
+```text
+analytics_agent/memory/backends/chroma_local.py
+```
+
+工厂注入：
 
 ```python
-class ChromaMemory(AgentMemory):
+# analytics_agent/agent_factory.py
+agent_memory = build_memory(settings)  # chroma_local
+```
+
+配置：
+
+```text
+MEMORY_BACKEND=chroma_local
+MEMORY_PATH=analytics_agent/memory/data/chroma
+MEMORY_COLLECTION=analytics_memory_v1
+MEMORY_EMBEDDING=BAAI/bge-small-zh-v1.5
+```
+
+如果未来确实需要把 `user_id`/metadata 过滤能力贡献给框架，再单独提 PR 修改 `ChromaAgentMemory`，不要在本阶段混在一起。
+
+#### 4.5.2 建议骨架
+
+必须实现 `AgentMemory` 的全部抽象方法；不能只实现 `save_text_memory` / `search_text_memories`。
+
+```python
+class ChromaLocalMemory(AgentMemory):
     def __init__(self, persist_directory: str, embedding_function, collection: str):
         ...
 
@@ -396,7 +440,7 @@ class ChromaMemory(AgentMemory):
 
 ### 4.7 DoD
 
-- [ ] `ChromaMemory` 持久化；重启后可检索
+- [ ] `ChromaLocalMemory` 持久化；重启后可检索
 - [ ] 中文 query 能召回中文种子
 - [ ] `user_id` / `tenant_id` 过滤生效
 - [ ] 后端异常不阻断主流程
