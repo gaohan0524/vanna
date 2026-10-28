@@ -1,0 +1,638 @@
+# T3-2 工具记忆种子（草稿）
+# 一个 id 对应一个 SQL 模板；I-28 与 A-01 同 SQL，用 canonical_id 标记为同模板别名。
+# reviewed: false 表示尚未经业务负责人确认，不能导入正式检索库。
+
+- id: "tool:A01-GMV渠道"
+  question: "最近 30 天各渠道的 GMV 是多少？"
+  paraphrases:
+    - "近一个月各渠道成交额"
+    - "按渠道看最近30天GMV"
+    - "最近一个月各渠道销售额"
+  tool_name: "run_sql"
+  sql: |
+    SELECT channel, SUM(amount_cents) / 100.0 AS gmv
+    FROM shop.orders
+    WHERE created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+      AND created_at <  toStartOfDay(now())
+      AND status IN ('paid','shipped','completed')
+      AND currency = 'CNY' AND is_test = 0
+    GROUP BY channel
+    ORDER BY gmv DESC
+  tables: ["orders"]
+  metrics: ["gmv"]
+  source: "v1_30.yaml#A-01"
+  version: 1
+  reviewed: false
+
+- id: "tool:A07-支付金额"
+  question: "近 30 天各支付方式的成功支付金额分别是多少？"
+  paraphrases:
+    - "最近30天各支付方式的支付金额"
+    - "按支付方式统计成功支付金额"
+    - "最近30天各支付渠道到账金额"
+  tool_name: "run_sql"
+  sql: |
+    SELECT p.method AS method, SUM(p.amount_cents) / 100.0 AS paid_amount
+    FROM shop.payments p
+    JOIN shop.orders o ON o.order_id = p.order_id
+    WHERE p.status = 'succeeded' AND p.is_retry = 0
+      AND o.currency = 'CNY' AND o.is_test = 0
+      AND p.paid_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+      AND p.paid_at <  toStartOfDay(now())
+    GROUP BY p.method
+    ORDER BY paid_amount DESC
+  tables: ["orders", "payments"]
+  metrics: ["payment_amount"]
+  source: "v1_30.yaml#A-07"
+  version: 1
+  reviewed: false
+
+- id: "tool:A08-新增用户"
+  question: "近 7 天各渠道新增用户数是多少？"
+  paraphrases:
+    - "最近7天各渠道拉新人数"
+    - "过去一周各渠道新增用户"
+    - "过去7天各渠道新增用户数"
+  tool_name: "run_sql"
+  sql: |
+    SELECT channel, count() AS new_users
+    FROM shop.users
+    WHERE signup_at >= toStartOfDay(now()) - INTERVAL 7 DAY
+      AND signup_at <  toStartOfDay(now())
+      AND is_test = 0 AND deleted_at IS NULL
+    GROUP BY channel
+    ORDER BY new_users DESC
+  tables: ["users"]
+  metrics: ["new_users"]
+  source: "v1_30.yaml#A-08"
+  version: 1
+  reviewed: false
+
+- id: "tool:A09-MRR套餐"
+  question: "当前各套餐的 MRR 是多少？（排除测试与注销用户）"
+  paraphrases:
+    - "各套餐当前MRR"
+    - "按套餐看月度经常性收入"
+    - "现在每个套餐的MRR"
+  tool_name: "run_sql"
+  sql: |
+    SELECT a.plan AS plan, SUM(a.mrr_cents) / 100.0 AS mrr
+    FROM shop.accounts a
+    JOIN shop.users u ON u.user_id = a.user_id
+    WHERE a.status = 'active' AND u.is_test = 0 AND u.deleted_at IS NULL
+    GROUP BY a.plan
+    ORDER BY mrr DESC
+  tables: ["accounts", "users"]
+  metrics: ["mrr"]
+  source: "v1_30.yaml#A-09"
+  version: 1
+  reviewed: false
+
+- id: "tool:B02-品类净收入"
+  question: "近 30 天各品类的净收入是多少？（净收入 = 订单金额 − approved 退款，按订单内商品金额占比分摊到品类）"
+  paraphrases:
+    - "最近30天各品类扣退款后的收入"
+    - "按品类统计净收入"
+    - "近30天各品类净收入"
+  tool_name: "run_sql"
+  sql: |
+    WITH order_item_sum AS (
+        SELECT order_id, SUM(item_amount_cents) AS total_order_item_amount
+        FROM shop.order_items
+        GROUP BY order_id
+    ),
+    order_refund_sum AS (
+        SELECT order_id, SUM(amount_cents) AS total_refund_amount
+        FROM shop.refunds
+        WHERE status = 'approved'
+        GROUP BY order_id
+    )
+    SELECT
+        p.category,
+        round(
+            SUM(
+                (oi.item_amount_cents / NULLIF(ois.total_order_item_amount, 0))
+                * (o.amount_cents - ifNull(r.total_refund_amount, 0))
+            ) / 100.0,
+            2
+        ) AS net_revenue
+    FROM shop.order_items oi
+    JOIN shop.orders o ON o.order_id = oi.order_id
+    JOIN shop.products p ON p.product_id = oi.product_id
+    JOIN order_item_sum ois ON ois.order_id = oi.order_id
+    LEFT JOIN order_refund_sum r ON r.order_id = o.order_id
+    WHERE o.created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+      AND o.created_at <  toStartOfDay(now())
+      AND o.status IN ('paid','shipped','completed')
+      AND o.currency = 'CNY'
+      AND o.is_test = 0
+    GROUP BY p.category
+    ORDER BY net_revenue DESC
+  tables: ["orders", "order_items", "products", "refunds"]
+  metrics: ["net_revenue"]
+  source: "v1_30.yaml#B-02"
+  version: 1
+  reviewed: false
+
+- id: "tool:B05-复购率"
+  question: "看一下近 90 天复购率（仅 CNY，排除测试与注销用户）"
+  paraphrases:
+    - "最近90天复购率"
+    - "90天内买过两次以上的用户占比"
+    - "近90天内有复购的用户比例"
+  tool_name: "run_sql"
+  sql: |
+    SELECT round(100.0 * countIf(cnt >= 2) / nullIf(count(), 0), 2)
+               AS repeat_rate_pct
+    FROM (
+        SELECT o.user_id, count() AS cnt
+        FROM shop.orders o
+        JOIN shop.users u ON u.user_id = o.user_id
+        WHERE o.status IN ('paid','shipped','completed')
+          AND o.currency = 'CNY' AND o.is_test = 0
+          AND u.is_test = 0 AND u.deleted_at IS NULL
+          AND o.created_at >= toStartOfDay(now()) - INTERVAL 90 DAY
+          AND o.created_at <  toStartOfDay(now())
+        GROUP BY o.user_id
+    )
+  tables: ["orders", "users"]
+  metrics: ["repurchase_rate"]
+  source: "v1_30.yaml#B-05"
+  version: 1
+  reviewed: false
+
+- id: "tool:B10-渠道退款"
+  question: "近 90 天各渠道的退款金额是多少？"
+  paraphrases:
+    - "近90天各渠道退款金额"
+    - "按渠道统计过去90天退款"
+    - "过去90天各渠道退款总额"
+  tool_name: "run_sql"
+  sql: |
+    SELECT o.channel, SUM(r.amount_cents) / 100.0 AS refund_amount
+    FROM shop.refunds r
+    JOIN shop.orders o ON o.order_id = r.order_id
+    WHERE r.status = 'approved'
+      AND r.created_at >= toStartOfDay(now()) - INTERVAL 90 DAY
+      AND r.created_at <  toStartOfDay(now())
+      AND o.currency = 'CNY' AND o.is_test = 0
+    GROUP BY o.channel
+    ORDER BY refund_amount DESC
+  tables: ["orders", "refunds"]
+  metrics: ["refund_amount"]
+  source: "v1_30.yaml#B-10"
+  version: 1
+  reviewed: false
+
+- id: "tool:B11-商品销量Top10"
+  question: "近 30 天销量最高的 10 个商品是哪些？"
+  paraphrases:
+    - "近30天销量前10的商品"
+    - "最近一个月卖得最好的10个商品"
+    - "近30天销量排名前10的商品"
+  tool_name: "run_sql"
+  sql: |
+    SELECT p.name AS product, SUM(oi.quantity) AS units
+    FROM shop.order_items oi
+    JOIN shop.orders o ON o.order_id = oi.order_id
+    JOIN shop.products p ON p.product_id = oi.product_id
+    WHERE o.status IN ('paid','shipped','completed')
+      AND o.currency = 'CNY' AND o.is_test = 0
+      AND o.created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+      AND o.created_at <  toStartOfDay(now())
+    GROUP BY p.name, p.product_id
+    ORDER BY units DESC, p.product_id
+    LIMIT 10
+  tables: ["orders", "order_items", "products"]
+  metrics: ["product_units"]
+  source: "v1_30.yaml#B-11"
+  version: 1
+  reviewed: false
+
+- id: "tool:B12-国家支付转化率"
+  question: "近 30 天各国家用户的支付转化率是多少？"
+  paraphrases:
+    - "近30天各国家支付转化率"
+    - "按国家看最近30天转化率"
+    - "最近30天按国家统计支付转化率"
+  tool_name: "run_sql"
+  sql: |
+    SELECT u.country, round(100.0 * countIf(s.converted = 1) / count(), 2) AS cvr_pct
+    FROM shop.sessions s
+    JOIN shop.users u ON u.user_id = s.user_id
+    WHERE u.is_test = 0 AND u.deleted_at IS NULL
+      AND s.started_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+      AND s.started_at <  toStartOfDay(now())
+    GROUP BY u.country
+    ORDER BY cvr_pct DESC
+  tables: ["sessions", "users"]
+  metrics: ["conversion_rate"]
+  source: "v1_30.yaml#B-12"
+  version: 1
+  reviewed: false
+
+- id: "tool:B13-品类客单价"
+  question: "近 30 天各品类的客单价（该品类收入 ÷ 含该品类商品的订单数）是多少？"
+  paraphrases:
+    - "近30天各品类客单价"
+    - "按品类看最近一个月平均订单金额"
+    - "最近30天各品类平均客单价"
+  tool_name: "run_sql"
+  sql: |
+    SELECT p.category,
+           round(SUM(oi.item_amount_cents) / 100.0 / count(DISTINCT o.order_id), 2) AS aov
+    FROM shop.order_items oi
+    JOIN shop.orders o ON o.order_id = oi.order_id
+    JOIN shop.products p ON p.product_id = oi.product_id
+    WHERE o.status IN ('paid','shipped','completed')
+      AND o.currency = 'CNY' AND o.is_test = 0
+      AND o.created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+      AND o.created_at <  toStartOfDay(now())
+    GROUP BY p.category
+    ORDER BY aov DESC
+  tables: ["orders", "order_items", "products"]
+  metrics: ["aov"]
+  source: "v1_30.yaml#B-13"
+  version: 1
+  reviewed: false
+
+- id: "tool:C03-GMV环比"
+  question: "本月至今的 GMV，跟上月同期比增长了多少？（截至今天 0 点，上月按相同自然日天数对齐）"
+  paraphrases:
+    - "本月GMV跟上月同期比增长多少"
+    - "MTD GMV环比"
+    - "本月至今GMV环比增长"
+  tool_name: "run_sql"
+  sql: |
+    WITH
+      cur AS (
+        SELECT SUM(amount_cents) AS v FROM shop.orders
+        WHERE created_at >= toStartOfMonth(today())
+          AND created_at <  toStartOfDay(now())
+          AND status IN ('paid','shipped','completed')
+          AND currency = 'CNY' AND is_test = 0
+      ),
+      prev AS (
+        SELECT SUM(amount_cents) AS v FROM shop.orders
+        WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+          AND created_at < least(
+              addDays(
+                  toStartOfMonth(today() - INTERVAL 1 MONTH),
+                  dateDiff('day', toStartOfMonth(today()), toStartOfDay(now()))
+              ),
+              toStartOfMonth(today())
+          )
+          AND status IN ('paid','shipped','completed')
+          AND currency = 'CNY' AND is_test = 0
+      )
+    SELECT round(
+        (toFloat64(cur.v) - toFloat64(prev.v)) / toFloat64(prev.v) * 100,
+        2
+    ) AS mom_pct
+    FROM cur, prev
+  tables: ["orders"]
+  metrics: ["gmv"]
+  source: "v1_30.yaml#C-03"
+  version: 1
+  reviewed: false
+
+- id: "tool:C14-周订单数"
+  question: "近 4 周每周的有效订单数（仅 CNY）是多少？"
+  paraphrases:
+    - "近4周每周有效订单数"
+    - "过去4个完整周每周订单量"
+    - "最近4个完整周每周有效订单量"
+  tool_name: "run_sql"
+  sql: |
+    SELECT toStartOfWeek(created_at, 1) AS week_start, count() AS orders
+    FROM shop.orders
+    WHERE created_at >= toStartOfWeek(today(), 1) - INTERVAL 4 WEEK
+      AND created_at < toStartOfWeek(today(), 1)
+      AND status IN ('paid','shipped','completed')
+      AND currency = 'CNY' AND is_test = 0
+    GROUP BY week_start
+    ORDER BY week_start
+  tables: ["orders"]
+  metrics: ["orders"]
+  source: "v1_30.yaml#C-14"
+  version: 1
+  reviewed: false
+
+- id: "tool:C15-净收入环比"
+  question: "本月至今的净收入，跟上月同期比增长多少？（截至今天 0 点，上月按相同自然日天数对齐）"
+  paraphrases:
+    - "本月净收入跟上月同期比增长多少"
+    - "MTD净收入环比"
+    - "本月至今净收入环比"
+  tool_name: "run_sql"
+  sql: |
+    WITH
+    this_month AS (
+        SELECT
+            (SELECT ifNull(SUM(amount_cents), 0) FROM shop.orders
+             WHERE created_at >= toStartOfMonth(today())
+               AND created_at <  toStartOfDay(now())
+               AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0) AS rev,
+            (SELECT ifNull(SUM(r.amount_cents), 0) FROM shop.refunds r
+             JOIN shop.orders o ON o.order_id = r.order_id
+             WHERE r.created_at >= toStartOfMonth(today())
+               AND r.created_at <  toStartOfDay(now())
+               AND r.status='approved' AND o.currency='CNY' AND o.is_test=0) AS ref
+    ),
+    last_month AS (
+        SELECT
+            (SELECT ifNull(SUM(amount_cents), 0) FROM shop.orders
+             WHERE created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+               AND created_at < least(
+                   addDays(
+                       toStartOfMonth(today() - INTERVAL 1 MONTH),
+                       dateDiff('day', toStartOfMonth(today()), toStartOfDay(now()))
+                   ),
+                   toStartOfMonth(today())
+               )
+               AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0) AS rev,
+            (SELECT ifNull(SUM(r.amount_cents), 0) FROM shop.refunds r
+             JOIN shop.orders o ON o.order_id = r.order_id
+             WHERE r.created_at >= toStartOfMonth(today() - INTERVAL 1 MONTH)
+               AND r.created_at < least(
+                   addDays(
+                       toStartOfMonth(today() - INTERVAL 1 MONTH),
+                       dateDiff('day', toStartOfMonth(today()), toStartOfDay(now()))
+                   ),
+                   toStartOfMonth(today())
+               )
+               AND r.status='approved' AND o.currency='CNY' AND o.is_test=0) AS ref
+    )
+    SELECT
+        round(
+            ((this_month.rev - this_month.ref) - (last_month.rev - last_month.ref))
+            / nullIf((last_month.rev - last_month.ref), 0) * 100,
+            2
+        ) AS net_mom_pct
+    FROM this_month, last_month
+  tables: ["orders", "refunds"]
+  metrics: ["net_revenue"]
+  source: "v1_30.yaml#C-15"
+  version: 1
+  reviewed: false
+
+- id: "tool:C16-月新增用户环比"
+  question: "近 12 个完整月（不含本月）每月新增用户数及环比是多少？（首月无环比）"
+  paraphrases:
+    - "近12个完整月每月新增用户数及环比"
+    - "过去一年每月拉新和环比"
+    - "过去12个完整月每月新增用户及环比"
+  tool_name: "run_sql"
+  sql: |
+    WITH
+        months AS (
+            SELECT toStartOfMonth(today()) - toIntervalMonth(number + 1) AS month
+            FROM numbers(12)
+        ),
+        counts AS (
+            SELECT toStartOfMonth(signup_at) AS month, count() AS new_users
+            FROM shop.users
+            WHERE signup_at >= toStartOfMonth(today()) - INTERVAL 12 MONTH
+              AND signup_at <  toStartOfMonth(today())
+              AND is_test = 0 AND deleted_at IS NULL
+            GROUP BY month
+        )
+    SELECT m.month AS month,
+           ifNull(c.new_users, 0) AS new_users,
+           round(
+               (ifNull(c.new_users, 0) - ifNull(p.new_users, 0))
+               / nullIf(ifNull(p.new_users, 0), 0) * 100,
+               2
+           ) AS mom_pct
+    FROM months m
+    LEFT JOIN counts c ON c.month = m.month
+    LEFT JOIN counts p ON p.month = m.month - toIntervalMonth(1)
+    ORDER BY m.month
+  tables: ["users"]
+  metrics: ["new_users"]
+  source: "v1_30.yaml#C-16"
+  version: 1
+  reviewed: false
+
+- id: "tool:D04-上周支付转化率"
+  question: "上周各渠道的支付转化率是多少？（排除测试与注销用户）"
+  paraphrases:
+    - "上周各渠道支付转化率"
+    - "上一个完整周各渠道转化率"
+    - "上一个完整周各渠道支付转化率"
+  tool_name: "run_sql"
+  sql: |
+    SELECT channel,
+           round(100.0 * countIf(converted = 1) / nullIf(count(), 0), 2) AS cvr_pct
+    FROM shop.sessions
+    WHERE started_at >= toStartOfWeek(today(), 1) - toIntervalDay(7)
+      AND started_at <  toStartOfWeek(today(), 1)
+      AND user_id IN (
+          SELECT user_id FROM shop.users
+          WHERE is_test = 0 AND deleted_at IS NULL
+      )
+    GROUP BY channel
+    ORDER BY cvr_pct DESC, channel ASC
+  tables: ["sessions", "users"]
+  metrics: ["conversion_rate"]
+  source: "v1_30.yaml#D-04"
+  version: 1
+  reviewed: false
+
+- id: "tool:D17-七日留存"
+  question: "近 3 个完整月（不含本月）每月注册用户的 7 日留存率（注册次日起 7 个自然日内有会话）是多少？"
+  paraphrases:
+    - "近3个完整月每月7日留存率"
+    - "过去三个月注册用户7日留存"
+    - "近三个月每个月的7日留存率"
+  tool_name: "run_sql"
+  sql: |
+    WITH cohorts AS (
+        SELECT user_id,
+               toStartOfMonth(signup_at) AS cohort_month,
+               toDate(signup_at) AS signup_date
+        FROM shop.users
+        WHERE is_test = 0 AND deleted_at IS NULL
+          AND signup_at >= toStartOfMonth(today()) - toIntervalMonth(3)
+          AND signup_at < toStartOfMonth(today())
+    ),
+    retained AS (
+        SELECT DISTINCT c.user_id
+        FROM cohorts c
+        INNER JOIN shop.sessions s ON s.user_id = c.user_id
+        WHERE toDate(s.started_at) >= addDays(c.signup_date, 1)
+          AND toDate(s.started_at) < addDays(c.signup_date, 8)
+    )
+    SELECT c.cohort_month,
+           count() AS new_users,
+           round(100.0 * countIf(r.user_id > 0) / nullIf(count(), 0), 2)
+               AS retention_7d_pct
+    FROM cohorts c
+    LEFT JOIN retained r ON r.user_id = c.user_id
+    GROUP BY c.cohort_month
+    ORDER BY c.cohort_month ASC
+  tables: ["users", "sessions"]
+  metrics: ["retention_d7"]
+  source: "v1_30.yaml#D-17"
+  version: 1
+  reviewed: false
+
+- id: "tool:D18-加购下单率"
+  question: "近 7 天加购后最终下单的会话比例是多少？（同一会话内，purchase 事件需晚于 add_to_cart；排除测试与注销用户）"
+  paraphrases:
+    - "近7天加购后下单的会话比例"
+    - "加购后最终购买的会话占比"
+    - "最近7天加购后购买转化率"
+  tool_name: "run_sql"
+  sql: |
+    SELECT countIf(has_cart = 1) AS cart_sessions,
+           countIf(has_cart = 1 AND has_purchase = 1 AND is_ordered = 1)
+               AS cart_then_purchase_sessions,
+           round(
+               100.0 * countIf(has_cart = 1 AND has_purchase = 1 AND is_ordered = 1)
+               / nullIf(countIf(has_cart = 1), 0),
+               2
+           ) AS cvr_pct
+    FROM (
+        SELECT session_id,
+               max(event_name = 'add_to_cart') AS has_cart,
+               max(event_name = 'purchase') AS has_purchase,
+               minIf(event_time, event_name = 'add_to_cart') AS cart_time,
+               minIf(event_time, event_name = 'purchase') AS purchase_time,
+               purchase_time >= cart_time AS is_ordered
+        FROM shop.events
+        WHERE event_time >= toStartOfDay(now()) - toIntervalDay(7)
+          AND event_time <  toStartOfDay(now())
+          AND event_name IN ('add_to_cart', 'purchase')
+          AND user_id IN (
+              SELECT user_id FROM shop.users
+              WHERE is_test = 0 AND deleted_at IS NULL
+          )
+        GROUP BY session_id
+    )
+  tables: ["events", "users"]
+  metrics: ["cart_to_order_rate"]
+  source: "v1_30.yaml#D-18"
+  version: 1
+  reviewed: false
+
+- id: "tool:H26-每日购买事件"
+  question: "近 7 天每天的 purchase 事件数是多少？"
+  paraphrases:
+    - "近7天每天purchase事件数"
+    - "过去一周每日购买事件量"
+    - "最近7天每日purchase事件数量"
+  tool_name: "run_sql"
+  sql: |
+    SELECT toDate(event_time) AS day, count() AS purchase_events
+    FROM shop.events
+    WHERE event_name = 'purchase'
+      AND user_id NOT IN (SELECT user_id FROM shop.users WHERE is_test = 1)
+      AND event_time >= toStartOfDay(now()) - INTERVAL 7 DAY
+      AND event_time <  toStartOfDay(now())
+    GROUP BY day
+    ORDER BY day
+  tables: ["events", "users"]
+  metrics: ["purchase_events"]
+  source: "v1_30.yaml#H-26"
+  version: 1
+  reviewed: false
+
+- id: "tool:H27-事件分布"
+  question: "近 30 天各类事件的次数分布是怎样的？"
+  paraphrases:
+    - "近30天各类事件次数分布"
+    - "最近一个月事件类型分布"
+    - "近30天事件类型次数分布"
+  tool_name: "run_sql"
+  sql: |
+    SELECT event_name, count() AS events
+    FROM shop.events
+    WHERE event_time >= toStartOfDay(now()) - INTERVAL 30 DAY
+      AND event_time <  toStartOfDay(now())
+    GROUP BY event_name
+    ORDER BY events DESC
+  tables: ["events"]
+  metrics: ["event_distribution"]
+  source: "v1_30.yaml#H-27"
+  version: 1
+  reviewed: false
+
+- id: "tool:I28-渠道GMV"
+  question: "近 30 天各渠道的 GMV 是多少？"
+  paraphrases:
+    - "近30天各渠道GMV"
+    - "最近一个月各渠道成交额"
+    - "近30天各渠道成交额"
+  tool_name: "run_sql"
+  sql: |
+    SELECT channel, SUM(amount_cents) / 100.0 AS gmv
+    FROM shop.orders
+    WHERE created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+      AND created_at <  toStartOfDay(now())
+      AND status IN ('paid','shipped','completed')
+      AND currency = 'CNY' AND is_test = 0
+    GROUP BY channel
+    ORDER BY gmv DESC
+  tables: ["orders"]
+  metrics: ["gmv"]
+  source: "v1_30.yaml#I-28"
+  version: 1
+  reviewed: false
+  canonical_id: "tool:A01-GMV渠道"
+
+- id: "tool:I29-organic-GMV"
+  question: "近 30 天 organic 渠道的 GMV 是多少？"
+  paraphrases:
+    - "只看organic的GMV"
+    - "organic渠道近30天GMV"
+    - "organic渠道最近30天GMV是多少"
+  tool_name: "run_sql"
+  sql: |
+    SELECT SUM(amount_cents) / 100.0 AS organic_gmv
+    FROM shop.orders
+    WHERE channel = 'organic'
+      AND created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+      AND created_at <  toStartOfDay(now())
+      AND status IN ('paid','shipped','completed')
+      AND currency = 'CNY' AND is_test = 0
+  tables: ["orders"]
+  metrics: ["gmv"]
+  source: "v1_30.yaml#I-29"
+  version: 1
+  reviewed: false
+
+- id: "tool:I30-organic-GMV环比"
+  question: "近 30 天 organic 渠道 GMV 与再往前 30 天相比增长多少？"
+  paraphrases:
+    - "organic GMV跟再往前30天比"
+    - "organic最近30天环比"
+    - "organic渠道GMV环比增长"
+  tool_name: "run_sql"
+  sql: |
+    SELECT round(
+        (
+            (SELECT SUM(amount_cents) FROM shop.orders
+             WHERE channel='organic' AND created_at >= toStartOfDay(now()) - INTERVAL 30 DAY
+               AND created_at < toStartOfDay(now())
+               AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
+            -
+            (SELECT SUM(amount_cents) FROM shop.orders
+             WHERE channel='organic' AND created_at >= toStartOfDay(now()) - INTERVAL 60 DAY
+               AND created_at < toStartOfDay(now()) - INTERVAL 30 DAY
+               AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0)
+        )
+        / nullIf(
+            (SELECT SUM(amount_cents) FROM shop.orders
+             WHERE channel='organic' AND created_at >= toStartOfDay(now()) - INTERVAL 60 DAY
+               AND created_at < toStartOfDay(now()) - INTERVAL 30 DAY
+               AND status IN ('paid','shipped','completed') AND currency='CNY' AND is_test=0),
+            0
+        ) * 100,
+        2
+    ) AS organic_mom_30d_pct
+  tables: ["orders"]
+  metrics: ["gmv"]
+  source: "v1_30.yaml#I-30"
+  version: 1
+  reviewed: false

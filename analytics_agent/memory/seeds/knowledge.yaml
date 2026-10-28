@@ -1,0 +1,268 @@
+# T3-2 文本记忆种子（草稿）
+# reviewed: false 表示尚未经业务负责人确认，不能导入正式检索库。
+
+- id: "text:GMV定义"
+  text: "GMV 是有效订单金额之和：status 为 paid/shipped/completed，currency='CNY'，is_test=0；不扣退款。"
+  tags: ["gmv", "GMV", "订单"]
+  source: "metrics.md#GMV"
+  version: 1
+  reviewed: false
+
+- id: "text:有效订单"
+  text: "有效订单只含 paid、shipped、completed；pending、cancelled、refunded 不计入 GMV/订单类指标。"
+  tags: ["有效订单", "status"]
+  source: "metrics.md#有效订单范围"
+  version: 1
+  reviewed: false
+
+- id: "text:测试数据"
+  text: "经营指标统一排除 is_test=1 的订单、用户、会话与事件。"
+  tags: ["测试账号", "is_test"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:软删口径"
+  text: "订单/收入/退款类按订单事实统计，不因用户注销剔除；用户维度（新增、留存、复购、国家转化）要排除 users.deleted_at 非空。"
+  tags: ["软删", "deleted_at", "用户维度"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:币种口径"
+  text: "经营指标默认只统计 CNY；USD 订单单独出题，不与 CNY 混合计算。"
+  tags: ["币种", "CNY", "USD"]
+  source: "metrics.md#混合币种"
+  version: 1
+  reviewed: false
+
+- id: "text:金额单位"
+  text: "金额字段单位是分，展示时除以 100.0，并保留两位小数。"
+  tags: ["金额", "单位", "分"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:渠道归因"
+  text: "本库的 orders.channel 就是首触渠道；不要用 events 做末触归因。"
+  tags: ["渠道", "首触", "归因"]
+  source: "metrics.md#渠道归因"
+  version: 1
+  reviewed: false
+
+- id: "text:净收入公司级退款归属"
+  text: "公司级净收入按退款发生月扣减：refunds.created_at 在窗口内且 status='approved'。"
+  tags: ["net_revenue", "退款", "公司级"]
+  source: "metrics.md#净收入"
+  version: 1
+  reviewed: false
+
+- id: "text:净收入品类级退款归属"
+  text: "品类净收入按订单 cohort：orders.created_at 圈定窗口，退款回溯到该订单所属期间。"
+  tags: ["net_revenue", "B-02", "cohort"]
+  source: "metrics.md#品类净收入"
+  version: 1
+  reviewed: false
+
+- id: "text:品类净收入基数"
+  text: "品类净收入以 orders.amount_cents（已扣优惠）为基数，不是 item_amount_cents 毛额。"
+  tags: ["net_revenue", "B-02", "订单金额"]
+  source: "metrics.md#品类净收入"
+  version: 1
+  reviewed: false
+
+- id: "text:品类分摊比例"
+  text: "订单净额按 item_amount_cents / 订单明细总额分摊到品类；item_amount 只作比例。"
+  tags: ["net_revenue", "B-02", "分摊"]
+  source: "metrics.md#品类净收入"
+  version: 1
+  reviewed: false
+
+- id: "text:退款分摊防放大"
+  text: "不能把订单级退款直接 JOIN 到多行 order_items 再 SUM；一个订单有 N 个商品会把退款放大 N 倍。"
+  tags: ["退款", "B-02", "join"]
+  source: "metrics.md#品类净收入"
+  version: 1
+  reviewed: false
+
+- id: "text:客单价分母"
+  text: "整体客单价 AOV = GMV / 有效订单数；品类客单价用该品类商品金额 / 含该品类商品的订单数，不能套整体 GMV。"
+  tags: ["aov", "客单价", "分母"]
+  source: "metrics.md#客单价"
+  version: 1
+  reviewed: false
+
+- id: "text:支付金额口径"
+  text: "支付金额只统计 payments.status='succeeded' 且 is_retry=0 的金额；重试流水会重复计。"
+  tags: ["payment_amount", "支付", "is_retry"]
+  source: "metrics.md#支付金额"
+  version: 1
+  reviewed: false
+
+- id: "text:退款金额口径"
+  text: "退款金额只统计 refunds.status='approved'；退款是订单级，没有 product_id。"
+  tags: ["refund_amount", "退款", "approved"]
+  source: "metrics.md#退款金额"
+  version: 1
+  reviewed: false
+
+- id: "text:复购率窗口"
+  text: "复购率按 orders.created_at 近 90 天；只统计 CNY 有效订单。"
+  tags: ["repurchase_rate", "复购率", "B-05"]
+  source: "metrics.md#复购率"
+  version: 1
+  reviewed: false
+
+- id: "text:复购率分母"
+  text: "复购率分母是有有效订单的用户；用户维度要排除 users.deleted_at，订单看 o.is_test=0。"
+  tags: ["repurchase_rate", "复购率", "deleted_at"]
+  source: "metrics.md#复购率"
+  version: 1
+  reviewed: false
+
+- id: "text:支付转化率"
+  text: "支付转化率 = converted 的有效会话数 / 有效会话总数，输出 0~100 百分比；分母不是用户或全部会话。"
+  tags: ["conversion_rate", "转化率", "会话"]
+  source: "metrics.md#转化率"
+  version: 1
+  reviewed: false
+
+- id: "text:转化率用户过滤"
+  text: "支付转化率要 JOIN users 排除 is_test=1 和 deleted_at 非空。"
+  tags: ["conversion_rate", "转化率", "deleted_at"]
+  source: "metrics.md#转化率"
+  version: 1
+  reviewed: false
+
+- id: "text:加购漏斗不能复用支付转化率"
+  text: "加购→下单是 events 漏斗，不能复用 sessions.converted 的支付转化率。"
+  tags: ["D-18", "加购", "漏斗"]
+  source: "metrics.md#加购下单转化率"
+  version: 1
+  reviewed: false
+
+- id: "text:加购漏斗同会话时序"
+  text: "加购→下单要求同一 session 内 purchase 晚于 add_to_cart；当前 golden 以最早 purchase 与最早加购比较。"
+  tags: ["D-18", "purchase", "add_to_cart"]
+  source: "STAGE0-EVAL.md#D-18"
+  version: 1
+  reviewed: false
+
+- id: "text:加购漏斗过滤"
+  text: "加购→下单漏斗的会话要排除测试与注销用户，用户过滤放在 events 聚合前。"
+  tags: ["D-18", "is_test", "deleted_at"]
+  source: "STAGE0-EVAL.md#D-18"
+  version: 1
+  reviewed: false
+
+- id: "text:7日留存窗口"
+  text: "7 日留存按自然日 D+1~D+7：toDate(sessions.started_at) >= signup_date+1 且 < signup_date+8。"
+  tags: ["retention_d7", "留存", "D-17"]
+  source: "glossary.yaml#retention_d7"
+  version: 1
+  reviewed: false
+
+- id: "text:7日留存cohort"
+  text: "7 日留存 cohort 必须满 7 天；近 N 个月取完整月，不含本月。"
+  tags: ["retention_d7", "cohort", "完整月"]
+  source: "STAGE0-EVAL.md#D-17"
+  version: 1
+  reviewed: false
+
+- id: "text:近N天"
+  text: "近 N 天指最近 N 个完整自然日，右端是 today 0 点；不要用滚动 24 小时窗口。"
+  tags: ["时间窗口", "近N天"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:近N周"
+  text: "近 N 周指最近 N 个完整自然周，不含本周；周起点统一周一。"
+  tags: ["时间窗口", "近N周"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:近N月"
+  text: "近 N 个月指最近 N 个完整自然月，不含本月；只有明确说本月至今才含当前月。"
+  tags: ["时间窗口", "近N月"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:MTD右端"
+  text: "本月至今右端统一为 toStartOfDay(now())，排除今天未完成的数据。"
+  tags: ["MTD", "本月至今", "C-15"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:上月同期天数"
+  text: "上月同期用 dateDiff('day', 本月1号, 今天0点) 对齐自然日天数，不用 toDayOfMonth。"
+  tags: ["MTD", "上月同期", "dateDiff"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:上月同期封顶"
+  text: "上月同期右边界用 least(addDays(上月1号, 天数), 本月1号) 封顶，防止月底溢出。"
+  tags: ["MTD", "上月同期", "least"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:周起点"
+  text: "任何周粒度都使用 toStartOfWeek(x, 1)，周一为起点；不要用 ClickHouse 默认周日。"
+  tags: ["周起点", "toStartOfWeek"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:左闭右开"
+  text: "时间窗口统一 >= start AND < end，并显式写出上界。"
+  tags: ["时间窗口", "左闭右开"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:空值和除零"
+  text: "聚合用 ifNull(SUM(...),0) 兜空；除法用 nullIf 防零。"
+  tags: ["SQL", "ifNull", "nullIf"]
+  source: "metrics.md#全局约定"
+  version: 1
+  reviewed: false
+
+- id: "text:MRR账户过滤"
+  text: "MRR 只统计 accounts.status='active'，并 JOIN users 排除 is_test=1 和 deleted_at 非空。"
+  tags: ["mrr", "MRR", "accounts"]
+  source: "metrics.md#MRR"
+  version: 1
+  reviewed: false
+
+- id: "text:MRR不按用户去重"
+  text: "MRR 是账户级 mrr_cents 之和，不按用户去重；paused/churned 不计入。"
+  tags: ["mrr", "MRR", "账户"]
+  source: "metrics.md#MRR"
+  version: 1
+  reviewed: false
+
+- id: "text:留存分母"
+  text: "7 日留存分母是 cohort 内注册用户数；先按用户去重，再统计是否在窗口内活跃。"
+  tags: ["retention_d7", "留存", "分母"]
+  source: "glossary.yaml#retention_d7"
+  version: 1
+  reviewed: false
+
+- id: "text:输出百分比"
+  text: "转化率、留存率、复购率等比例指标输出 0~100 的百分比，不是 0~1 小数。"
+  tags: ["输出", "百分比"]
+  source: "STAGE2-TOOLS.md#G2"
+  version: 1
+  reviewed: false
+
+- id: "text:TopN并列"
+  text: "Top-N 商品按销量降序；并列时用商品 ID 做稳定排序，避免结果抖动。"
+  tags: ["TopN", "B-11", "排序"]
+  source: "v1_30.yaml#B-11"
+  version: 1
+  reviewed: false

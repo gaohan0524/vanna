@@ -506,7 +506,7 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 一条一知识点，单条 ≤ 200 字，必须带来源。
 
 ```yaml
-- id: "net_revenue.category_base"
+- id: "text:净收入-订单金额基数"
   text: "品类净收入以 orders.amount_cents（已扣优惠）为基数，item_amount_cents 只用于品类分摊比例。"
   tags: ["net_revenue", "B-02", "退款"]
   source: "metrics.md#品类净收入"
@@ -531,7 +531,7 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 ### 5.2 工具记忆
 
 ```yaml
-- id: "b02_category_net_revenue"
+- id: "tool:B02-品类净收入"
   question: "近 30 天各品类的净收入是多少？"
   paraphrases:
     - "按品类看最近一个月的净收入"
@@ -570,7 +570,7 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 #### 5.3.2 文本记忆为什么一条一知识点
 
 ```yaml
-- id: "net_revenue.category_base"
+- id: "text:净收入-订单金额基数"
   text: "品类净收入以 orders.amount_cents 为基数，item_amount 只用于分摊比例。"
   tags: ["net_revenue", "B-02"]
   source: "metrics.md#品类净收入"
@@ -596,7 +596,7 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 #### 5.3.3 工具记忆为什么是“一个 SQL + 多个问法”
 
 ```yaml
-- id: "b02_category_net_revenue"
+- id: "tool:B02-品类净收入"
   question: "近 30 天各品类的净收入是多少？"
   paraphrases:
     - "按品类看最近一个月的净收入"
@@ -620,12 +620,16 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 | `tables` / `metrics` | 支持 metadata 过滤、候选表评测和召回分析；不能只依赖向量 |
 | `source` | 回溯到 golden 用例或人工审核记录 |
 | `version` / `reviewed` | 与文本记忆同一套信任和回滚规则 |
+| `canonical_id` | 可选；跟进问题映射到同一 SQL 时指向主记录，如 `I-28 → A-01`；导入时合并，不重复建向量 |
 
 **一个 YAML 记录 = 一个 SQL 模板**，不是一条向量：
 
 - 导入时，`question` + 每个 `paraphrase` 可以展开成多条可检索记录；
 - 这些记录共享 `sql_hash`，检索后按 `sql_hash` 去重，只保留最高分；
 - 这样既能覆盖多种问法，又不会在注入时重复同一段 SQL。
+
+有些用例是**同一 SQL 的跟进问法**，例如 `I-28（各渠道 GMV）` 与 `A-01` 完全同 SQL。
+这类记录用 `canonical_id` 指向主记录，导入时只建一份向量/一个模板，避免重复计数。
 
 同时，工具记忆的 document 是**问题文本**，不是 SQL 正文。
 原因是检索目标是“用户问题 → SQL”，SQL 适合作为 payload，不适合作为 query 的语义表示。
@@ -669,11 +673,28 @@ reviewed  → 未审核内容不进入可检索库
 
 先覆盖 22 条 answer 用例，再补同义问法。
 
+### 5.4.1 首批草稿（2026-10-28）
+
+| 文件 | 当前数量 | 状态 |
+|---|---:|---|
+| `knowledge.yaml` | 38 | 待业务审核，全部 `reviewed: false` |
+| `tool_memories.yaml` | 22 | 覆盖 22 条 answer；21 个唯一 SQL |
+| `manifest.yaml` | — | `status: draft` |
+
+说明：
+
+- 22 条工具记忆中，`I-28` 与 `A-01` 同 SQL，用 `canonical_id` 指向 `A-01`；
+- 每条工具记忆已有 3 个问法；
+- 22 条 SQL 已在当前数据上执行通过；
+- 静态校验见 `tests/test_seed_data.py`：4 passed。
+
 ### 5.5 DoD
 
-- [ ] `knowledge.yaml`、`tool_memories.yaml` 通过 schema 校验
-- [ ] 工具记忆有 3~5 个问法
-- [ ] 所有种子有 source/version/reviewed
+- [x] `knowledge.yaml`、`tool_memories.yaml` 通过静态 schema 校验
+- [x] 每条工具记忆有 3~5 个问法
+- [x] 所有种子有 `source/version/reviewed` 字段
+- [x] SQL 与 golden 一致，22 条均可在当前数据执行
+- [ ] 业务审核完成，`reviewed` 逐条改为 `true`
 - [ ] 不存在未审核的模型生成 SQL
 
 ### 5.6 与运行时自动写入的边界
@@ -1075,6 +1096,9 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | T3-1 | 增加 embedding 模型绑定校验 | 完成 | metadata 记录 `embedding_model`；不一致直接报错；`test_embedding_model_mismatch_fails_loudly` |
 | 2026-10-28 | T3-1 | 增加检索/启动降级 | 完成 | `SafeAgentMemory` 读失败返回空；启动失败回退 Demo；配置错误仍报错 |
 | 2026-10-28 | T3-1 | T3-1 完成，DoD 全勾 | 完成 | 10 passed；下一项 T3-2 种子数据 |
+| 2026-10-28 | T3-2 | 生成 `knowledge.yaml` 首批草稿 | 完成 | 38 条；单条最长 81 字；全部 `reviewed: false` |
+| 2026-10-28 | T3-2 | 生成 `tool_memories.yaml` 首批草稿 | 完成 | 22 条覆盖 22 条 answer；21 个唯一 SQL；I-28 用 canonical_id 指向 A-01 |
+| 2026-10-28 | T3-2 | 种子静态校验与 SQL 执行 | 通过 | `tests/test_seed_data.py` 4 passed；22 条 SQL 全部执行成功、0 error |
 
 ---
 
@@ -1128,7 +1152,7 @@ class TextMemory(BaseModel):
 
 ```yaml
 # tool_memories.yaml
-- id: "b02_category_net_revenue"
+- id: "tool:B02-品类净收入"
   question: "近 30 天各品类的净收入是多少？"
   paraphrases:
     - "按品类看最近一个月的净收入"
