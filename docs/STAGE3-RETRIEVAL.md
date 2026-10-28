@@ -276,8 +276,8 @@ analytics_agent/evaluation/datasets/v1_30.yaml
 | 规模 | 小/中 corpus 足够 | 更适合大数据量、多租户、强过滤 |
 | 运维 | 单机目录，简单 | 独立服务，需管理服务健康/备份 |
 
-> 本机默认端口 6333（Qdrant）和 8000（Chroma）当前未监听，`.env` 也没有 `CHROMA_*` / `QDRANT_*` 配置。  
-> 如果服务部署在远端，需要提供 URL/端口后才能做真实的连通性对比；上面的代码事实不依赖服务是否在线。
+> 本机 `127.0.0.1:8000` / `127.0.0.1:6333` 未监听；远端 `192.168.0.193:8000` 的 Chroma 容器可连通。  
+> `.env` 目前没有 `CHROMA_*` / `QDRANT_*` 配置；上面的代码事实不依赖服务是否在线。
 
 #### 4.2.2 暂定决策
 
@@ -309,7 +309,43 @@ analytics_agent/evaluation/datasets/v1_30.yaml
 
 先做 Chroma，不代表永远不换；后端通过 `AgentMemory` 接口隔离，切换成本应控制在适配器层。
 
-### 4.3 中文 embedding
+#### 4.2.4 本地 `PersistentClient` vs 远端 HTTP Chroma
+
+同一个 Chroma 引擎，**检索质量不会有本质差距**，前提是：
+
+- 同一个中文 embedding 模型；
+- 同一个 collection 参数（distance=cosine / hnsw 配置）；
+- 同一批数据和相同版本。
+
+差异主要在工程侧，不在“向量算法”：
+
+| 维度 | 本地目录 `PersistentClient` | 远端 `HttpClient`（192.168.0.193:8000） |
+|---|---|---|
+| 检索质量 | 同模型/同参数下基本一致 | 基本一致；版本或索引状态不同可能有少量 top-k 差异 |
+| 延迟 | 进程内调用，最低 | 多一次 LAN HTTP + JSON 序列化，通常仍很小 |
+| 并发/多进程 | 单进程友好；多进程写同一目录可能锁冲突 | 服务端集中处理，多客户端/多 worker 更合适 |
+| 数据共享 | 本机独占 | 多台机器/多个服务共享 |
+| 可复现 | 目录可打包/快照，最适合离线评测 | 共享可变状态，复现要固定 collection/版本 |
+| 运维 | 无服务依赖 | 需要容器健康、备份、版本升级 |
+| 当前代码 | ✅ `ChromaAgentMemory` 直接支持 | ❌ 当前类只实现 `PersistentClient`，要另写 `HttpClient` 适配器 |
+
+**Stage 3 决策：本地目录优先。**
+
+原因：
+
+1. Stage 3 是单进程离线评测，不需要多客户端共享；
+2. 本地目录可快照、可重建，A/B 更可复现；
+3. 不需要改现有 `ChromaAgentMemory`；
+4. 30~100 条种子下，远端 HTTP 的并发优势用不上，反而多一层网络和版本耦合。
+
+保留远端容器作为未来选项：
+
+```text
+MEMORY_BACKEND=chroma_local   # Stage 3 默认
+MEMORY_BACKEND=chroma_http    # 未来多进程/共享时
+```
+
+切换时必须使用不同的 collection，禁止本地与远端共用同一个逻辑库名，避免数据分叉。
 
 Chroma 默认 `DefaultEmbeddingFunction` 是英文 MiniLM，不适合中文业务问题。要求：
 
