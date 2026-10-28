@@ -1,13 +1,12 @@
-"""Local Chroma-backed AgentMemory with app-level tenancy and deterministic IDs.
+"""基于本地 Chroma 的 AgentMemory，带应用级租户隔离和确定性 ID。
 
-This is intentionally an application-side adapter, not a change to
-``vanna.integrations.chromadb``.  The framework integration remains generic;
-this class adds the rules the analytics agent needs:
+这是应用侧适配器，不修改 ``vanna.integrations.chromadb`` 的通用实现；
+框架集成保持通用，本类只补充分析 Agent 需要的规则：
 
-- shared / team / user visibility
-- deterministic IDs for idempotent seeding
-- flattened metadata fields that Chroma can filter on
-- a local ``PersistentClient`` directory
+- shared / team / user 三种可见性；
+- 确定性 ID，支持种子数据幂等导入；
+- 扁平 metadata，便于 Chroma 过滤；
+- 本地 ``PersistentClient`` 目录。
 
 存储约定（排查时先看这里）：
 
@@ -50,21 +49,20 @@ from vanna.core.tool import ToolContext
 
 
 def _sha256(value: str) -> str:
-    """Return a stable hex digest used as the Chroma document id."""
+    """返回稳定的十六进制摘要，用作 Chroma 文档 ID。"""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _json(value: Any) -> str:
-    """Serialize nested metadata deterministically for Chroma scalar fields."""
+    """把嵌套 metadata 稳定序列化，供 Chroma 存放标量字段。"""
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
 def _embedding_name(embedding_function: Any) -> str:
-    """Read the model identity used to bind a collection to an encoder.
+    """读取用于绑定 collection 的模型标识。
 
-    Chroma persists vectors, not the model name.  Writing this string into
-    collection metadata lets us fail loudly when ``MEMORY_EMBEDDING_MODEL`` is
-    changed without rebuilding the collection.
+    Chroma 只保存向量，不自动记录模型名。把标识写入 collection metadata，
+    才能在 ``MEMORY_EMBEDDING_MODEL`` 被改动却没有重建 collection 时显式报错。
     """
     name = getattr(embedding_function, "name", None)
     if callable(name):
@@ -73,7 +71,7 @@ def _embedding_name(embedding_function: Any) -> str:
 
 
 class ChromaLocalMemory(AgentMemory):
-    """Chroma PersistentClient memory scoped by user/team/shared visibility.
+    """按 user/team/shared 隔离的 Chroma PersistentClient 记忆实现。
 
     一个 collection 只绑定一个 embedding 模型；模型名写入 collection metadata，
     启动时校验。这样不会出现“旧向量用新模型查询”的静默错误。
@@ -85,15 +83,15 @@ class ChromaLocalMemory(AgentMemory):
         collection_name: str = "analytics_memory",
         embedding_function: Optional[Any] = None,
     ) -> None:
-        """Open or create the local collection.
+        """打开或创建本地 collection。
 
-        Args:
-            persist_directory: Local Chroma directory (git-ignored in this repo).
-            collection_name: Logical collection name; changing it gives a clean
-                slate without deleting the old vectors.
-            embedding_function: Chroma-compatible encoder.  Production callers
-                should pass ``ChineseEmbeddingFunction``; the default is kept
-                only for smoke tests and low-quality local experiments.
+        参数：
+            persist_directory: 本地 Chroma 目录；本仓库已加入 .gitignore。
+            collection_name: collection 逻辑名；换名可得到干净的新库，
+                不需要删除旧向量。
+            embedding_function: Chroma 兼容编码器。生产调用方应传
+                ``ChineseEmbeddingFunction``；默认值只用于 smoke test
+                和低质量本地实验。
         """
         self.persist_directory = persist_directory
         self.collection_name = collection_name
@@ -108,14 +106,15 @@ class ChromaLocalMemory(AgentMemory):
         self._collection = self._open_or_create_collection()
 
     def _open_or_create_collection(self):
-        """Open a collection only if its embedding model matches this config.
+        """只有 embedding 模型匹配时才打开已有 collection。
 
-        A missing collection is created with:
-        - cosine distance;
-        - the encoder identity in ``embedding_model``.
+        新建 collection 时写入：
 
-        An existing collection without that metadata is rejected because we
-        cannot prove which encoder produced its vectors.
+        - cosine 距离；
+        - 编码器标识 ``embedding_model``。
+
+        已存在的 collection 如果没有该 metadata，直接拒绝：无法证明旧向量
+        是哪个模型生成的，不能冒险混用。
         """
         try:
             collection = self._client.get_collection(
@@ -123,8 +122,8 @@ class ChromaLocalMemory(AgentMemory):
                 embedding_function=self._embedding_function,
             )
         except NotFoundError:
-            # New collection: cosine is appropriate for normalized embeddings,
-            # and embedding_model becomes the compatibility contract.
+            # 新建 collection：归一化向量适合 cosine；同时把模型标识写成
+            # 兼容性契约，后续打开时按它校验。
             return self._client.create_collection(
                 name=self.collection_name,
                 embedding_function=self._embedding_function,
@@ -153,17 +152,17 @@ class ChromaLocalMemory(AgentMemory):
 
     @property
     def collection(self):
-        """Expose the underlying collection for health checks/tests."""
+        """暴露底层 collection，供健康检查和测试使用。"""
         return self._collection
 
-    # ------------------------------------------------------------------ access
+    # ------------------------------------------------------------------ 可见性
     @staticmethod
     def _owner(context: ToolContext) -> tuple[str, Optional[str], Optional[str]]:
-        """Resolve user/tenant from ToolContext.
+        """从 ToolContext 解析用户和租户。
 
-        ``tenant_id`` is read from ``user.metadata`` first, then from an optional
-        custom attribute because ``User`` allows extra fields.  The third tuple
-        item is kept for readability at call sites (it is always the user id).
+        ``tenant_id`` 先读 ``user.metadata``，再读可选的自定义属性，
+        因为 ``User`` 允许扩展字段。第三个返回值保留给调用方提高可读性，
+        它始终等于 user id。
         """
         user_id = context.user.id
         tenant_id = context.user.metadata.get("tenant_id") or getattr(
@@ -175,11 +174,11 @@ class ChromaLocalMemory(AgentMemory):
     def _scope(
         metadata: Optional[Dict[str, Any]], context: ToolContext
     ) -> tuple[str, str]:
-        """Normalize visibility metadata to ``(scope, owner_id)``.
+        """把可见性 metadata 归一化为 ``(scope, owner_id)``。
 
-        Default is ``user`` (private).  Seed import must explicitly pass
-        ``{"scope": "shared"}``; a team scope falls back to the user id when no
-        tenant is configured, so it never becomes globally visible.
+        默认 ``user``（私有）。种子导入必须显式传
+        ``{"scope": "shared"}``；未配置 tenant 时 team 会回退到 user id，
+        不会意外变成全局可见。
         """
         requested = str((metadata or {}).get("scope") or "user")
         user_id, tenant_id, _ = ChromaLocalMemory._owner(context)
@@ -190,7 +189,7 @@ class ChromaLocalMemory(AgentMemory):
         return "user", user_id
 
     def _access_filter(self, context: ToolContext) -> Dict[str, Any]:
-        """Build Chroma's visibility predicate: shared OR my team OR my user."""
+        """构造 Chroma 可见性条件：shared 或本团队或本用户。"""
         user_id, tenant_id, _ = self._owner(context)
         conditions: List[Dict[str, Any]] = [{"scope": "shared"}]
         if tenant_id:
@@ -201,15 +200,15 @@ class ChromaLocalMemory(AgentMemory):
     def _where(
         self, context: ToolContext, *conditions: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Combine the visibility predicate with kind/success/tool filters."""
+        """把可见性条件与 kind/success/tool 等业务条件组合起来。"""
         return {"$and": [self._access_filter(context), *conditions]}
 
     @staticmethod
     def _can_access(metadata: Dict[str, Any], context: ToolContext) -> bool:
-        """Re-check ownership before destructive operations.
+        """删除前重新检查所有权。
 
-        Chroma filters reads, but delete-by-id still needs an explicit check to
-        prevent a user from deleting another user's private memory by id.
+        Chroma 只在读查询里过滤；按 ID 删除仍需显式校验，防止用户通过 ID
+        删除别人的私有记忆。
         """
         scope = metadata.get("scope")
         if scope == "shared":
@@ -219,7 +218,7 @@ class ChromaLocalMemory(AgentMemory):
             return bool(tenant_id) and metadata.get("owner_id") == tenant_id
         return metadata.get("owner_id") == user_id
 
-    # ------------------------------------------------------------------- save
+    # ------------------------------------------------------------------- 写入
     def _tool_memory_id(
         self,
         question: str,
@@ -228,11 +227,11 @@ class ChromaLocalMemory(AgentMemory):
         context: ToolContext,
         metadata: Optional[Dict[str, Any]],
     ) -> str:
-        """Build a deterministic tool-memory id.
+        """生成确定性的工具记忆 ID。
 
-        Idempotency key is ``(question, tool, sql_hash|args, scope, owner)``.
-        Using ``sql_hash`` when provided makes seed re-imports stable even if
-        argument key ordering changes.
+        幂等键为 ``(question, tool, sql_hash|args, scope, owner)``。
+        如果调用方提供 ``sql_hash``，优先使用它，这样参数 key 顺序变化
+        也不会导致种子重复导入。
         """
         scope, owner = self._scope(metadata, context)
         sql_hash = (metadata or {}).get("sql_hash")
@@ -258,17 +257,16 @@ class ChromaLocalMemory(AgentMemory):
         success: bool = True,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Upsert one question → tool/SQL pattern.
+        """写入一条“问题 → 工具/SQL”模式。
 
-        ``args`` and caller metadata are JSON-encoded because Chroma metadata
-        cannot store nested dicts.  The document embedded for similarity is the
-        natural-language question, not the SQL body.
+        ``args`` 和调用方 metadata 都序列化为 JSON，因为 Chroma metadata
+        不能存嵌套 dict。用于相似度召回的是自然语言问题，不是 SQL 正文。
         """
         scope, owner = self._scope(metadata, context)
         user_id, tenant_id, _ = self._owner(context)
         memory_id = self._tool_memory_id(question, tool_name, args, context, metadata)
         timestamp = datetime.now().isoformat()
-        # Chroma metadata must stay flat: nested args/metadata are JSON strings.
+        # Chroma metadata 必须保持扁平：args 和 metadata 都转成 JSON 字符串。
         meta = {
             "kind": "tool",
             "question": question,
@@ -296,11 +294,10 @@ class ChromaLocalMemory(AgentMemory):
         context: ToolContext,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> TextMemory:
-        """Upsert one free-form knowledge item.
+        """写入一条自由文本知识。
 
-        The optional metadata argument is an app-side extension used by seed
-        import (source/version/tags).  It is stored as JSON, while scope and
-        owner are also flattened for filtering.
+        可选 metadata 是应用侧扩展，供种子导入使用（source/version/tags）。
+        它整体存为 JSON；scope 和 owner 另外扁平化，便于过滤。
         """
         scope, owner = self._scope(metadata, context)
         user_id, tenant_id, _ = self._owner(context)
@@ -333,10 +330,10 @@ class ChromaLocalMemory(AgentMemory):
             tenant_id=tenant_id,
         )
 
-    # ----------------------------------------------------------------- search
+    # ----------------------------------------------------------------- 检索
     @staticmethod
     def _score(distance: Optional[float]) -> float:
-        """Convert Chroma cosine distance to a [0,1] similarity score."""
+        """把 Chroma 的 cosine 距离转换为 [0,1] 的相似度分数。"""
         if distance is None:
             return 0.0
         return max(0.0, min(1.0, 1.0 - float(distance)))
@@ -350,10 +347,10 @@ class ChromaLocalMemory(AgentMemory):
         similarity_threshold: float = 0.7,
         tool_name_filter: Optional[str] = None,
     ) -> List[ToolMemorySearchResult]:
-        """Search successful tool patterns visible to the current user.
+        """检索当前用户可见的成功工具模式。
 
-        Filters are applied inside Chroma (kind/success/tool/visibility), then
-        the caller's similarity threshold is applied to the returned score.
+        可见性、kind、success、tool_name 都在 Chroma 内部过滤；
+        返回后再按调用方传入的相似度阈值裁剪。
         """
         conditions: List[Dict[str, Any]] = [{"kind": "tool"}, {"success": True}]
         if tool_name_filter:
@@ -369,7 +366,7 @@ class ChromaLocalMemory(AgentMemory):
 
         results = await asyncio.to_thread(_search)
         output: List[ToolMemorySearchResult] = []
-        # Chroma returns one nested list per query; this call sends one query.
+        # Chroma 每个 query 返回一层嵌套列表；这里只发一个 query。
         ids = results.get("ids") or [[]]
         metadatas = results.get("metadatas") or [[]]
         distances = results.get("distances") or [[]]
@@ -406,7 +403,7 @@ class ChromaLocalMemory(AgentMemory):
         limit: int = 10,
         similarity_threshold: float = 0.7,
     ) -> List[TextMemorySearchResult]:
-        """Search text knowledge visible to the current user."""
+        """检索当前用户可见的文本知识。"""
         where = self._where(context, {"kind": "text"})
 
         def _search():
@@ -418,7 +415,7 @@ class ChromaLocalMemory(AgentMemory):
 
         results = await asyncio.to_thread(_search)
         output: List[TextMemorySearchResult] = []
-        # Keep parsing symmetric with search_similar_usage: one query in.
+        # 与 search_similar_usage 保持一致：只发一个 query，解析第一层结果。
         ids = results.get("ids") or [[]]
         metadatas = results.get("metadatas") or [[]]
         distances = results.get("distances") or [[]]
@@ -443,11 +440,11 @@ class ChromaLocalMemory(AgentMemory):
             )
         return output
 
-    # ------------------------------------------------------------------ recent
+    # ------------------------------------------------------------------ 最近记忆
     async def get_recent_memories(
         self, context: ToolContext, limit: int = 10
     ) -> List[ToolMemory]:
-        """Return visible tool memories ordered by timestamp descending."""
+        """返回当前用户可见的工具记忆，按时间倒序。"""
         where = self._where(context, {"kind": "tool"})
 
         def _get():
@@ -476,7 +473,7 @@ class ChromaLocalMemory(AgentMemory):
     async def get_recent_text_memories(
         self, context: ToolContext, limit: int = 10
     ) -> List[TextMemory]:
-        """Return visible text memories ordered by timestamp descending."""
+        """返回当前用户可见的文本记忆，按时间倒序。"""
         where = self._where(context, {"kind": "text"})
 
         def _get():
@@ -496,9 +493,9 @@ class ChromaLocalMemory(AgentMemory):
             for memory_id, metadata in rows[:limit]
         ]
 
-    # ------------------------------------------------------------------ delete
+    # ------------------------------------------------------------------ 删除
     async def delete_by_id(self, context: ToolContext, memory_id: str) -> bool:
-        """Delete a memory only when the caller is allowed to see it."""
+        """只有调用方有权访问该记忆时才删除。"""
 
         def _delete():
             rows = self._collection.get(ids=[memory_id], include=["metadatas"])
@@ -511,7 +508,7 @@ class ChromaLocalMemory(AgentMemory):
         return await asyncio.to_thread(_delete)
 
     async def delete_text_memory(self, context: ToolContext, memory_id: str) -> bool:
-        """Text memories share the same ownership check as tool memories."""
+        """文本记忆复用工具记忆的所有权检查。"""
         return await self.delete_by_id(context, memory_id)
 
     async def clear_memories(
@@ -520,10 +517,10 @@ class ChromaLocalMemory(AgentMemory):
         tool_name: Optional[str] = None,
         before_date: Optional[str] = None,
     ) -> int:
-        """Delete visible tool/text memories, optionally filtered.
+        """删除当前用户可见的工具/文本记忆，可按条件过滤。
 
-        ``tool_name`` only applies to tool memories; text memories are skipped
-        when a tool filter is supplied.  Date comparison uses ISO timestamps.
+        ``tool_name`` 只作用于工具记忆；指定工具名时文本记忆会被跳过。
+        日期比较使用 ISO 时间戳字符串。
         """
         where = self._access_filter(context)
 
