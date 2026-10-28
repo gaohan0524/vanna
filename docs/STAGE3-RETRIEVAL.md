@@ -347,6 +347,8 @@ MEMORY_BACKEND=chroma_http    # 未来多进程/共享时
 
 切换时必须使用不同的 collection，禁止本地与远端共用同一个逻辑库名，避免数据分叉。
 
+### 4.3 中文 embedding
+
 Chroma 默认 `DefaultEmbeddingFunction` 是英文 MiniLM，不适合中文业务问题。要求：
 
 - 固定一个中文/多语言 embedding 模型，例如 `BAAI/bge-small-zh-v1.5`；
