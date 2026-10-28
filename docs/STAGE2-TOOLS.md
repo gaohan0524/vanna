@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 2 / T2-1 ~ T2-7** 的详细执行版。
 >
-> - 状态：**T2-1 ~ T2-7 代码完成；G2 核心指标在 v8 达标（81.8% / 86.4%）；v9 修正 B-05 CNY 与 B-02 净收入公式，待复跑**
+> - 状态：**T2-1 ~ T2-7 代码完成；G2 核心指标在 v8 达标（81.8% / 86.4%）；v10 修正 B-05 CNY、B-02 净收入与多轮单值规则，待复跑**
 > - 前置：Stage 1 完成（2026-10-25）
 > - 基线：EX **61.9%**（13/21）、behavior **88.9%**（8/9）、平均工具轮次 **1.07~1.23**、P95 **16.5s**
 > - 目标：EX ≥ **70%**、`TOOL_MISUSE` < 5%、护栏无绕过、复杂查询 +10pt
@@ -43,7 +43,7 @@
 
 - 30 条用例与 golden（除发现真实错误）
 - 评分规则、自然日窗口、数据锚点语义
-- Stage 1 的 L0/L1/L2 结构（Stage 2 只追加工具使用规则，版本升到 `stage2-v9`，不重写主体）
+- Stage 1 的 L0/L1/L2 结构（Stage 2 只追加工具使用规则，版本升到 `stage2-v10`，不重写主体）
 
 ---
 
@@ -81,7 +81,7 @@
 
 ## 2. 设计原则
 
-1. **保留 L1 schema**：12 张表渲染约 **1,556 tokens**，完整提示词 **3,009 tokens**（预算 4,500），全量放进提示词仍然划算；工具用于“深挖”，不是替代。
+1. **保留 L1 schema**：12 张表渲染约 **1,556 tokens**，完整提示词 **3,008 tokens**（预算 4,500），全量放进提示词仍然划算；工具用于“深挖”，不是替代。
 2. **catalog 优先**：`search_columns` / `describe_table` / `get_metric_definition` 只读 `schema_catalog.json` 与 `glossary.yaml`，不查数据库。
 3. **只有 sample / explain 查库**：必须强制 `LIMIT`、超时、表名白名单、结果脱敏。
 4. **工具描述即路由**：description 写清“什么时候用、什么时候不要用、和谁分工”，比参数名更重要。
@@ -608,8 +608,8 @@ class GetMetricDefinitionArgs(ToolArgs):
 - 不要查询 system.*；不要 SELECT *；明细必须带 LIMIT。
 ```
 
-L0 总长 **1,100 tokens**（Stage 2 起预算调整为 **1,100**；已到上限，后续加规则需先删旧规则）；
-7 个工具全部可见时，完整提示词 **3,009 tokens**（预算 4,500）。提示词版本升为 `stage2-v9`。
+L0 总长 **1,099 tokens**（Stage 2 起预算调整为 **1,100**；已到上限，后续加规则需先删旧规则）；
+7 个工具全部可见时，完整提示词 **3,008 tokens**（预算 4,500）。提示词版本升为 `stage2-v10`。
 
 ### 7.4 实现位置
 
@@ -620,8 +620,8 @@ L0 总长 **1,100 tokens**（Stage 2 起预算调整为 **1,100**；已到上限
 ### 7.5 DoD
 
 - [x] 5 个新工具 + `run_sql` / `visualize_data` 全部四段式
-- [x] L0 增加工具使用段（1,100 tokens，≤ 1,100）
-- [x] `PROMPT_VERSION = "stage2-v9"`
+- [x] L0 增加工具使用段（1,099 tokens，≤ 1,100）
+- [x] `PROMPT_VERSION = "stage2-v10"`
 - [x] 单测校验 7 个工具描述都包含“用/不要用/分工”
 
 ---
@@ -1244,7 +1244,7 @@ L0 已包含工具使用段（不是额外独立段落，预算仍受 1,100 限�
 - 不要用 run_sql 查 system.*；不要用 search_columns 执行查询。
 ```
 
-`PROMPT_VERSION` 升到 `stage2-v9`，L0 1,100 tokens，完整提示词 3,009 tokens。
+`PROMPT_VERSION` 升到 `stage2-v10`，L0 1,099 tokens，完整提示词 3,008 tokens。
 
 DoD：
 
@@ -1305,7 +1305,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 >
 > v8 核心门槛（EX、behavior、轮次、P95、两次差异）已达标；`TOOL_MISUSE` 与复杂查询通过率待人工抽检后补。
 > v8 两次失败：第 1 次 B-02/B-05/D-04/I-30；第 2 次 B-02/C-15/I-30。B-02、I-30 两次均失败，需单独定位。
-> **v9 变更**：B-05 复购率明确为“仅 CNY、排测试/注销”；B-02 净收入改为“订单净额 × 商品金额占比”；新增 Eventual 指标。v8 的 G2 数值在 v9 下尚未复跑，不能直接当作最终签名。
+> **v10 变更**：B-05 复购率明确为“仅 CNY、排测试/注销”；B-02 净收入改为“订单净额 × 商品金额占比”；L0 增加“单值追问只回单行单列”；新增 Eventual 指标。v8 的 G2 数值在 v10 下尚未复跑，不能直接当作最终签名。
 >
 > 报告：第 1 次 `reports/20261027-165653/report.html`；第 2 次 `reports/20261027-170011/report.html`。  
 > 详细失败原因、待修项与未做人工项见 **附录 D**。
@@ -1356,7 +1356,7 @@ python -m analytics_agent.evaluation.cli run --dataset analytics_agent/evaluatio
 
 1. 实现 `get_metric_definition`
 2. 重写 7 个工具的 description
-3. 更新 L0 工具使用段，版本升 `stage2-v9`
+3. 更新 L0 工具使用段，版本升 `stage2-v10`
 
 ### D4：护栏（约 4 小时）
 
@@ -1540,7 +1540,7 @@ describe_table(catalog, "orders")
 3. **B-05 复购率币种口径（已确认）**
    - 业务确认：复购率**仅统计 CNY 有效订单**；黄金 SQL 原本就是 CNY，模型第 1 次漏了 `currency='CNY'`，才得到 61.88%。
    - 固定锚点实测：CNY = 60.68%，全币种 = 61.88%；差异完全来自币种。
-   - 已将题面、`glossary.yaml`、`metrics.md` 明确为“仅 CNY，排测试/注销”，提示词升 `stage2-v9`；待复跑验证。
+   - 已将题面、`glossary.yaml`、`metrics.md` 明确为“仅 CNY，排测试/注销”，提示词升 `stage2-v10`；待复跑验证。
 
 4. **first_try 抖动**
    - B-02、D-04、C-15 出现过“首答失败、最终正确”。

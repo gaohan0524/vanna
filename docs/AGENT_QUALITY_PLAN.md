@@ -599,7 +599,7 @@ L0_RULES = """
 - [x] T2-1 `search_columns` / `describe_table`——2026-10-26：catalog 搜索 + 单表描述，10 项单测通过
 - [x] T2-2 `sample_rows` / `explain_query`——2026-10-26：白名单/脱敏/10s 超时；9 项单测通过
 - [x] T2-3 `get_metric_definition`——2026-10-26：定义/公式/易错点 + 候选，6 项单测通过
-- [x] T2-4 工具 description 重写——2026-10-26：7 个工具四段式；L0 1,100 tokens（预算 1,100）；现 `stage2-v9`（复购率 CNY 口径后）
+- [x] T2-4 工具 description 重写——2026-10-26：7 个工具四段式；L0 1,099 tokens（预算 1,100）；现 `stage2-v10`（多轮单值规则后）
 - [x] T2-5 参数收敛——2026-10-26：`ToolArgs` 统一 forbid/strip；范围与表名格式；6 项单测
 - [x] T2-6 `run_sql` 护栏改造——2026-10-26：AST 只读 + LIMIT + 30s 超时 + 截断说明；10 项测试
 - [x] T2-7 结构化错误回喂——2026-10-26：`error_type` + `hint` JSON；校验/执行错误分类；49 passed
@@ -609,7 +609,7 @@ L0_RULES = """
 ### Stage 3
 > 入口状态（2026-10-27）：Stage 2 G2 核心指标达标（EX 81.8%/86.4%、behavior 100%、P95 ≤15.1s、两次差异 4.5pt）；
 > `TOOL_MISUSE` 与复杂查询通过率尚未人工统计，保留在 `STAGE2-TOOLS.md` 附录 D。
-> 当前提示词 `stage2-v9`（B-05 复购率明确仅 CNY）；v8 结果需在 v9 下复跑确认；Stage 1 的 61.9% 基于旧 golden，仅历史参考。
+> 当前提示词 `stage2-v10`（B-05 CNY、B-02 净收入、多轮单值规则）；v8 结果需在 v10 下复跑确认；Stage 1 的 61.9% 基于旧 golden，仅历史参考。
 - [ ] T3-1 记忆后端替换
 - [ ] T3-2 种子数据（文本 + golden SQL）
 - [ ] T3-3 混合检索 + rerank
