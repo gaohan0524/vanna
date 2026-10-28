@@ -262,13 +262,52 @@ analytics_agent/evaluation/datasets/v1_30.yaml
 
 ### 4.2 选型
 
-| 后端 | 优势 | 风险 | 当前环境 |
-|---|---|---|---|
-| Chroma | 已安装；接入快；支持 metadata | 默认 embedding 中文弱；`ChromaAgentMemory` 不写 `user_id` | ✅ `chromadb` 已安装 |
-| Qdrant | 过滤/扩展性强；适合生产 | 需要额外服务；客户端未安装 | ❌ `qdrant_client` 未安装 |
-| Milvus | 大规模 | 运维重 | ❌ 未安装 |
+#### 4.2.1 当前代码与环境事实
 
-**建议**：Stage 3 先用 **Chroma + 自定义中文 embedding + 租户包装层**，把评测闭环跑通；规模或过滤需求上来再切 Qdrant。不要一开始同时接三个后端。
+| 维度 | Chroma | Qdrant |
+|---|---|---|
+| 客户端安装 | ✅ `chromadb` 已安装 | ❌ `qdrant_client` 未安装 |
+| 现有实现 | ✅ `ChromaAgentMemory`：工具/文本/删除/自定义 EF | ⚠️ `QdrantAgentMemory`：接口齐全，但 embedding 是 **MD5 占位向量** |
+| 部署方式 | `PersistentClient`（本地目录）；不是 HTTP server 客户端 | 支持 `url` / `path`；适合独立服务 |
+| 中文语义 | 可挂自定义 embedding；默认 EF 中文弱 | 需自己接 embedding；当前占位实现不可用 |
+| metadata 过滤 | 支持 `where` | 支持 `Filter`/payload，表达力更强 |
+| 用户隔离 | 当前不写 `user_id` | 当前不写 `user_id` |
+| 幂等 ID | `upsert(ids=...)` 可做确定性 ID | 当前是随机 UUID；需改确定性 ID |
+| 规模 | 小/中 corpus 足够 | 更适合大数据量、多租户、强过滤 |
+| 运维 | 单机目录，简单 | 独立服务，需管理服务健康/备份 |
+
+> 本机默认端口 6333（Qdrant）和 8000（Chroma）当前未监听，`.env` 也没有 `CHROMA_*` / `QDRANT_*` 配置。  
+> 如果服务部署在远端，需要提供 URL/端口后才能做真实的连通性对比；上面的代码事实不依赖服务是否在线。
+
+#### 4.2.2 暂定决策
+
+**Stage 3 主实现选 Chroma**，原因：
+
+1. 现有实现最完整，文本记忆、工具记忆、删除、自定义 embedding 都已具备；
+2. `chromadb` 已安装，能最快跑通“种子 → 检索 → 评测”；
+3. 当前 corpus 只有几十到几百条，Chroma 的规模和过滤能力足够；
+4. Qdrant 当前实现还需要先替换占位 embedding、补确定性 ID、补用户过滤，属于额外改造成本。
+
+**Qdrant 作为生产/规模化备选**，满足任一条件再切换：
+
+- 需要多租户强过滤或高并发；
+- corpus 超过几万条；
+- Chroma 的 recall@5 或 P95 明显不如 Qdrant；
+- Chroma 以 HTTP server 部署，而现有 `PersistentClient` 不兼容，改造成本高于 Qdrant。
+
+#### 4.2.3 公平对比门槛
+
+不能只按“哪个库更强”拍脑袋。用同一批种子、同一个中文 embedding、同一批 query 做最小 A/B：
+
+| 项 | 要求 |
+|---|---|
+| 种子 | 20 条文本 + 15 条工具记忆 |
+| query | 30 条检索评测 query |
+| embedding | 同一个中文模型（如 `BAAI/bge-small-zh-v1.5`） |
+| 指标 | recall@5、P95 检索延迟、过滤正确性、二次导入幂等 |
+| 选择规则 | Chroma 在 recall 上不落后超过 3pt 且延迟可接受 → 保持 Chroma；Qdrant 领先 ≥5pt 或强隔离/规模刚需 → 切 Qdrant |
+
+先做 Chroma，不代表永远不换；后端通过 `AgentMemory` 接口隔离，切换成本应控制在适配器层。
 
 ### 4.3 中文 embedding
 
