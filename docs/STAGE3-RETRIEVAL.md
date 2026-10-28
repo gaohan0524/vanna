@@ -119,7 +119,7 @@ analytics_agent/agent_factory.py               当前接线
 - [ ] 错误记忆可回滚
 - [ ] 检索与导入有单测
 
-> 说明：v8 第二次已经 86.4%，所以 Stage 3 的 EX 目标不是“从 70 冲到 80”，而是**证明加了检索后不明显回落，并拿到 recall/token 收益**。  
+> 说明：v8 第二次已经 86.4%，所以 Stage 3 的 EX 目标不是“从 70 冲到 80”，而是**证明加了检索后不明显回落，并拿到 recall/token 收益**。
 > 如果新检索导致 EX 下降，宁可先关掉检索开关，也不要用“平均分没降”掩盖单条回归。
 
 ### 1.3 非目标
@@ -276,7 +276,7 @@ analytics_agent/evaluation/datasets/v1_30.yaml
 | 规模 | 小/中 corpus 足够 | 更适合大数据量、多租户、强过滤 |
 | 运维 | 单机目录，简单 | 独立服务，需管理服务健康/备份 |
 
-> 本机 `127.0.0.1:8000` / `127.0.0.1:6333` 未监听；远端 `192.168.0.193:8000` 的 Chroma 容器可连通。  
+> 本机 `127.0.0.1:8000` / `127.0.0.1:6333` 未监听；远端 `192.168.0.193:8000` 的 Chroma 容器可连通。
 > `.env` 目前没有 `CHROMA_*` / `QDRANT_*` 配置；上面的代码事实不依赖服务是否在线。
 
 #### 4.2.2 暂定决策
@@ -511,6 +511,7 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
   tags: ["net_revenue", "B-02", "退款"]
   source: "metrics.md#品类净收入"
   version: 1
+  reviewed: true
 ```
 
 优先内容：
@@ -547,12 +548,118 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 
 要求：
 
+- **一个 YAML 记录 = 一个 SQL 模板**，不是一条向量；
 - 同一 SQL 配 3~5 种真实问法；
+- 导入时 `question` + `paraphrases` 可展开为多条可检索记录，共享 `sql_hash`；
+- 检索后按 `sql_hash` 去重，只保留最高分，避免注入重复 SQL；
 - 必须人工审核 `reviewed: true` 才能入库；
 - SQL 去掉尾分号、统一大小写风格后再算 hash；
 - 不在种子里存“模型第一次生成的错误 SQL”。
 
-### 5.3 目标规模
+### 5.3 为什么这样设计
+
+#### 5.3.1 为什么用 YAML，而不是 JSON/数据库
+
+- **人可读、可 review**：种子是人工审核资产，PR diff 必须能直接看出改了哪条口径；
+- **支持多行 SQL**：`sql: |` 保持换行和缩进，便于 review，不需要 `\n` 转义；
+- **支持注释**：可以在种子文件里解释“为什么这条要这样写”；
+- **天然版本化**：种子随 git 管理，和 `source/version` 一起形成可回滚的资产。
+
+数据库只存“可检索副本”，不存唯一事实源；唯一事实源是 git 里的 YAML。
+
+#### 5.3.2 文本记忆为什么一条一知识点
+
+```yaml
+- id: "net_revenue.category_base"
+  text: "品类净收入以 orders.amount_cents 为基数，item_amount 只用于分摊比例。"
+  tags: ["net_revenue", "B-02"]
+  source: "metrics.md#品类净收入"
+  version: 1
+  reviewed: true
+```
+
+| 字段 | 设计原因 |
+|---|---|
+| `text` | 只放**一个**可独立检索的知识点；embedding 的粒度就是这一条，混入多个事实会稀释相似度 |
+| `id` | 人类可引用的稳定键，用于评测标注、manifest 和排查；不是 Chroma 的物理 ID |
+| `tags` | 给 BM25/metadata 过滤用；业务词精确命中不能只靠向量 |
+| `source` | 回溯到 `metrics.md`/`glossary.yaml` 的具体位置，口径变更时能找到源头 |
+| `version` | 同一知识点被修订时递增，支持重建和回滚 |
+| `reviewed` | 只有 `true` 才能入库；防止模型生成的猜测进入长期记忆 |
+
+约束单条 ≤200 字，是因为：
+
+- 一条太长会包含多个主题，top-k 相似度不聚焦；
+- 长文本切 chunk 后容易丢上下文；
+- 人工审核和修订成本也会变高。
+
+#### 5.3.3 工具记忆为什么是“一个 SQL + 多个问法”
+
+```yaml
+- id: "b02_category_net_revenue"
+  question: "近 30 天各品类的净收入是多少？"
+  paraphrases:
+    - "按品类看最近一个月的净收入"
+    - "各品类扣退款后的收入"
+  tool_name: "run_sql"
+  sql: |
+    SELECT ...
+  tables: ["orders", "order_items", "products", "refunds"]
+  metrics: ["net_revenue"]
+  source: "v1_30.yaml#B-02"
+  version: 1
+  reviewed: true
+```
+
+| 字段 | 设计原因 |
+|---|---|
+| `question` | 标准问法，作为这条 SQL 的规范描述 |
+| `paraphrases` | 真实用户不会只问一种说法；3~5 个变体提高召回率 |
+| `tool_name` | 未来可能不止 `run_sql`；不要把工具名写死在检索代码里 |
+| `sql` | 只保存审核过的正确模板，不放模型第一次生成的错误 SQL |
+| `tables` / `metrics` | 支持 metadata 过滤、候选表评测和召回分析；不能只依赖向量 |
+| `source` | 回溯到 golden 用例或人工审核记录 |
+| `version` / `reviewed` | 与文本记忆同一套信任和回滚规则 |
+
+**一个 YAML 记录 = 一个 SQL 模板**，不是一条向量：
+
+- 导入时，`question` + 每个 `paraphrase` 可以展开成多条可检索记录；
+- 这些记录共享 `sql_hash`，检索后按 `sql_hash` 去重，只保留最高分；
+- 这样既能覆盖多种问法，又不会在注入时重复同一段 SQL。
+
+同时，工具记忆的 document 是**问题文本**，不是 SQL 正文。
+原因是检索目标是“用户问题 → SQL”，SQL 适合作为 payload，不适合作为 query 的语义表示。
+
+#### 5.3.4 为什么文本和工具记忆分两条通道
+
+| 维度 | 文本记忆 | 工具记忆 |
+|---|---|---|
+| 检索对象 | 知识正文 | 用户问题 |
+| 命中后用途 | 解释口径/约束 | 直接复用 SQL 模板 |
+| 可信度要求 | 口径必须审核 | SQL 必须执行验证 + 审核 |
+| 适合的 top-k | 5 条左右 | 3 条左右 |
+| 可见性 | 多数是 shared | 可能按团队/用户隔离 |
+
+混在一起的后果：
+
+- SQL 正文可能压过短知识，导致检索结果被长文本主导；
+- 文本知识被误当成 SQL 模板注入；
+- 两者无法分别设置阈值、top-k 和权限。
+
+因此 `ChromaLocalMemory` 用 `kind=tool` / `kind=text` 区分，检索时分别过滤。
+
+#### 5.3.5 为什么 `id`、`source`、`version`、`reviewed` 缺一不可
+
+```text
+id        → 评测和人工引用
+source    → 口径变更时能找到源头
+version   → 可重建、可回滚
+reviewed  → 未审核内容不进入可检索库
+```
+
+尤其是 `reviewed`：Stage 3 的种子必须人工审核；Stage 5 自动写入也只能先进入 `pending_review`，不能直接变成 `reviewed`。
+
+### 5.4 目标规模
 
 | 类型 | 最小 | 目标 |
 |---|---:|---:|
@@ -562,14 +669,14 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 
 先覆盖 22 条 answer 用例，再补同义问法。
 
-### 5.4 DoD
+### 5.5 DoD
 
 - [ ] `knowledge.yaml`、`tool_memories.yaml` 通过 schema 校验
 - [ ] 工具记忆有 3~5 个问法
 - [ ] 所有种子有 source/version/reviewed
 - [ ] 不存在未审核的模型生成 SQL
 
-### 5.5 与运行时自动写入的边界
+### 5.6 与运行时自动写入的边界
 
 Stage 3 **只导入人工审核过的种子**，不在本阶段自动写入。
 
