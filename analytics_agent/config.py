@@ -75,6 +75,10 @@ class Settings:
         llm_timeout_s / llm_max_predict: 单次调用超时与生成上限。
         agent_max_iterations: 单轮最多工具调用次数。
         deepseek_api_key / deepseek_base_url: DeepSeek OpenAI 兼容端点配置。
+        memory_backend: `demo`（默认）或 `chroma_local`。
+        memory_path: 本地 Chroma 目录；不要提交到 git。
+        memory_collection: Chroma collection 名。
+        memory_embedding_model: 中文 embedding 模型名，必须与 collection 一致。
     """
 
     ch_host: str = "localhost"
@@ -97,6 +101,11 @@ class Settings:
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
+
+    memory_backend: str = "demo"
+    memory_path: Path = PROJECT_ROOT / "analytics_agent/memory/data/chroma"
+    memory_collection: str = "analytics_memory_v1"
+    memory_embedding_model: str = "BAAI/bge-small-zh-v1.5"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -123,6 +132,17 @@ class Settings:
             agent_max_iterations=_env_int("AGENT_MAX_ITERATIONS", 5),
             deepseek_api_key=_env("DEEPSEEK_API_KEY"),
             deepseek_base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+            memory_backend=_env("MEMORY_BACKEND", "demo").lower(),
+            memory_path=Path(
+                _env(
+                    "MEMORY_PATH",
+                    str(PROJECT_ROOT / "analytics_agent/memory/data/chroma"),
+                )
+            ),
+            memory_collection=_env("MEMORY_COLLECTION", "analytics_memory_v1"),
+            memory_embedding_model=_env(
+                "MEMORY_EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5"
+            ),
         )
 
     @property

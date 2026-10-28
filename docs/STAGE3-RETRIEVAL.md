@@ -409,7 +409,7 @@ agent_memory = build_memory(settings)  # chroma_local
 MEMORY_BACKEND=chroma_local
 MEMORY_PATH=analytics_agent/memory/data/chroma
 MEMORY_COLLECTION=analytics_memory_v1
-MEMORY_EMBEDDING=BAAI/bge-small-zh-v1.5
+MEMORY_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5
 ```
 
 如果未来确实需要把 `user_id`/metadata 过滤能力贡献给框架，再单独提 PR 修改 `ChromaAgentMemory`，不要在本阶段混在一起。
@@ -444,8 +444,11 @@ class ChromaLocalMemory(AgentMemory):
 
 ```text
 analytics_agent/memory/backends/chroma_local.py   ChromaLocalMemory
-tests/test_chroma_local_memory.py                 4 项 smoke test
-pyproject.toml                                    stage3 = ["chromadb>=1.1.0"]
+analytics_agent/memory/embedding.py               ChineseEmbeddingFunction (BGE)
+tests/test_chroma_local_memory.py                 4 项基础 smoke
+tests/test_chroma_semantic_smoke.py               真实 BGE 语义 smoke（guarded）
+tests/test_memory_factory.py                      build_memory 工厂测试
+pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "sentence-transformers>=3"]
 ```
 
 已覆盖：
@@ -455,22 +458,32 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0"]
 - `user_id` / `team_id` 过滤；
 - 确定性 ID（同内容/同 SQL 幂等 upsert）；
 - 工具记忆与文本记忆的保存、检索、最近列表、删除、按范围清理；
-- 离线测试用字符哈希 embedding，不依赖网络。
+- 真实中文 embedding：`BAAI/bge-small-zh-v1.5`；
+- `build_memory(settings)`：默认 demo，`MEMORY_BACKEND=chroma_local` 时接 Chroma；
+- 3 条真实中文种子 + 3 个同义问法，命中最相关种子。
+
+语义 smoke 结果：
+
+| query | top-1 seed |
+|---|---|
+| 各品类扣掉退款后的收入 | 净收入 |
+| 90 天内买过两次的人占多少 | 复购率 |
+| 注册后一周内还回来的人 | 七日留存 |
 
 尚未完成：
 
-- 真实中文 embedding（测试用的是确定性 hash，不是生产模型）；
-- `build_agent` 接线与配置读取；
 - 检索异常/后端不可用的降级包装；
-- 种子导入、候选表与 enhancer。
+- 种子导入、候选表与 enhancer；
+- 多进程/远端 HTTP Chroma 适配。
 
 ### 4.8 DoD
 
 - [x] `ChromaLocalMemory` 持久化；重启后可检索
-- [ ] 中文 query 能召回中文种子（待接 BGE/中文 embedding）
+- [x] 中文 query 能召回中文种子（BGE 3 条 smoke 通过）
 - [x] `user_id` / `tenant_id` 过滤生效
 - [ ] 后端异常不阻断主流程（待加降级包装）
-- [x] 有最小 smoke test（4 passed）
+- [x] 有最小 smoke test（4 + 1 semantic passed）
+- [x] `build_memory(settings)` 接线（默认 demo）
 
 ---
 
@@ -937,6 +950,9 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | Stage 3 启动 | 创建执行手册 | 完成 | 基线 v8；T3-1 待开始 |
 | 2026-10-28 | T3-1 | 新增 `ChromaLocalMemory` 本地骨架 | 完成 | 本地 PersistentClient；确定性 ID；scope 过滤 |
 | 2026-10-28 | T3-1 | 新增 Chroma smoke test | 完成 | `tests/test_chroma_local_memory.py` 4 passed；中文 embedding/接线未做 |
+| 2026-10-28 | T3-1 | 接入 `BAAI/bge-small-zh-v1.5` | 完成 | `ChineseEmbeddingFunction`；query instruction + normalize |
+| 2026-10-28 | T3-1 | `build_memory(settings)` | 完成 | 默认 demo；`MEMORY_BACKEND=chroma_local` 走本地 Chroma |
+| 2026-10-28 | T3-1 | 3 条真实中文种子语义 smoke | 通过 | 3 个同义问法均命中对应 seed；1 semantic test passed |
 
 ---
 

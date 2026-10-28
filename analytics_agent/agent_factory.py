@@ -169,6 +169,34 @@ def build_tool_registry(
     return registry
 
 
+def build_memory(settings: Settings):
+    """Build the configured AgentMemory backend.
+
+    Default remains DemoAgentMemory so existing tests/evaluation do not
+    download an embedding model. Set ``MEMORY_BACKEND=chroma_local`` for
+    Stage 3 local retrieval.
+    """
+    backend = (settings.memory_backend or "demo").strip().lower()
+    if backend in {"", "demo", "none"}:
+        return DemoAgentMemory(max_items=10_000)
+
+    if backend == "chroma_local":
+        from analytics_agent.memory.backends.chroma_local import ChromaLocalMemory
+        from analytics_agent.memory.embedding import ChineseEmbeddingFunction
+
+        embedding = ChineseEmbeddingFunction(settings.memory_embedding_model)
+        return ChromaLocalMemory(
+            persist_directory=str(settings.memory_path),
+            collection_name=settings.memory_collection,
+            embedding_function=embedding,
+        )
+
+    raise ValueError(
+        f"Unsupported MEMORY_BACKEND={settings.memory_backend!r}; "
+        "expected demo or chroma_local"
+    )
+
+
 def build_prompt_builder(settings: Settings) -> AnalyticsPromptBuilder:
     """Load Stage 1 assets and assemble the prompt builder.
 
@@ -208,7 +236,7 @@ def build_agent(
         llm_service=llm_service or build_llm_service(s),
         tool_registry=build_tool_registry(s, enable_memory_tools=enable_memory_tools),
         user_resolver=EvalUserResolver(),
-        agent_memory=agent_memory or DemoAgentMemory(max_items=10_000),
+        agent_memory=agent_memory or build_memory(s),
         system_prompt_builder=builder,
         config=AgentConfig(
             temperature=0.0,

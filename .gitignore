@@ -45,3 +45,6 @@ query_results_*.csv
 # Analytics agent evaluation artifacts
 reports/
 analytics_agent/evaluation/golden/*.csv
+
+# Stage 3 local vector store
+analytics_agent/memory/data/
