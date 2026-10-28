@@ -81,7 +81,7 @@
 
 ## 2. 设计原则
 
-1. **保留 L1 schema**：12 张表渲染约 **1,556 tokens**，完整提示词 **3,008 tokens**（预算 4,500），全量放进提示词仍然划算；工具用于“深挖”，不是替代。
+1. **保留 L1 schema**：12 张表渲染约 **1,556 tokens**，完整提示词 **3,009 tokens**（预算 4,500），全量放进提示词仍然划算；工具用于“深挖”，不是替代。
 2. **catalog 优先**：`search_columns` / `describe_table` / `get_metric_definition` 只读 `schema_catalog.json` 与 `glossary.yaml`，不查数据库。
 3. **只有 sample / explain 查库**：必须强制 `LIMIT`、超时、表名白名单、结果脱敏。
 4. **工具描述即路由**：description 写清“什么时候用、什么时候不要用、和谁分工”，比参数名更重要。
@@ -608,8 +608,8 @@ class GetMetricDefinitionArgs(ToolArgs):
 - 不要查询 system.*；不要 SELECT *；明细必须带 LIMIT。
 ```
 
-L0 总长 **1,099 tokens**（Stage 2 起预算调整为 **1,100**；已到上限，后续加规则需先删旧规则）；
-7 个工具全部可见时，完整提示词 **3,008 tokens**（预算 4,500）。提示词版本升为 `stage2-v10`。
+L0 总长 **1,100 tokens**（Stage 2 起预算调整为 **1,100**；已到上限，后续加规则需先删旧规则）；
+7 个工具全部可见时，完整提示词 **3,009 tokens**（预算 4,500）。提示词版本升为 `stage2-v10`。
 
 ### 7.4 实现位置
 
@@ -620,7 +620,7 @@ L0 总长 **1,099 tokens**（Stage 2 起预算调整为 **1,100**；已到上限
 ### 7.5 DoD
 
 - [x] 5 个新工具 + `run_sql` / `visualize_data` 全部四段式
-- [x] L0 增加工具使用段（1,099 tokens，≤ 1,100）
+- [x] L0 增加工具使用段（1,100 tokens，≤ 1,100）
 - [x] `PROMPT_VERSION = "stage2-v10"`
 - [x] 单测校验 7 个工具描述都包含“用/不要用/分工”
 
@@ -1244,7 +1244,7 @@ L0 已包含工具使用段（不是额外独立段落，预算仍受 1,100 限�
 - 不要用 run_sql 查 system.*；不要用 search_columns 执行查询。
 ```
 
-`PROMPT_VERSION` 升到 `stage2-v10`，L0 1,099 tokens，完整提示词 3,008 tokens。
+`PROMPT_VERSION` 升到 `stage2-v10`，L0 1,100 tokens，完整提示词 3,009 tokens。
 
 DoD：
 

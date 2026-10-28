@@ -63,6 +63,7 @@ async def test_prompt_declares_monday_week_start():
     assert "不含本月" in prompt
     assert "多轮追问" in prompt
     assert "单行单列" in prompt
+    assert "不 GROUP BY" in prompt
 
 
 async def test_prompt_contains_tool_routing():
