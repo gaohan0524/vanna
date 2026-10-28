@@ -37,6 +37,14 @@ def test_conversion_definition_excludes_test_and_soft_delete():
     assert "百分比" in metric["pitfalls"]
 
 
+def test_repurchase_definition_uses_cny_orders():
+    metric = load_glossary()["metrics"]["repurchase_rate"]
+
+    assert "CNY" in metric["short"]
+    assert "CNY" in metric["formula"]
+    assert "排除注销" in metric["pitfalls"]
+
+
 def test_retention_definition_uses_natural_days():
     metric = load_glossary()["metrics"]["retention_d7"]
 

@@ -29,9 +29,9 @@ metrics:
     pitfalls: "退款是订单级，没有 product_id"
   repurchase_rate:
     name: "复购率"
-    short: "近90天≥2单用户占比"
-    formula: "countIf(orders>=2) / count(DISTINCT user_id)，窗口按 orders.created_at 近90天"
-    pitfalls: "未限定窗口会随时间漂移"
+    short: "近90天≥2笔CNY有效订单用户占比"
+    formula: "countIf(orders>=2) / count(DISTINCT user_id)，仅有效订单/CNY/排测试，窗口按 orders.created_at 近90天"
+    pitfalls: "仅CNY有效订单；用户维度排除注销；未限定窗口会漂移"
   conversion_rate:
     name: "支付转化率"
     short: "有效会话 converted 占比（%，排测试/软删）"

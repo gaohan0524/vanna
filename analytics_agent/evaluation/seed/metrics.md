@@ -9,7 +9,7 @@
 | 净收入 | GMV − 退款 | 减去 `refunds.status='approved'` 的金额；公司级同环比按退款发生月归属，品类级按订单 cohort（见下） | 忘记退款状态过滤；粒度不一致导致退款重复计 |
 | 客单价 AOV | GMV / 有效订单数 | 分母与 GMV 同口径 | 分母用了全量订单 |
 | 支付金额 | 实际到账 | `payments.status='succeeded' AND is_retry=0` 的 `amount_cents` 之和 | 重复流水 |
-| 复购率 | 近 90 天下单 ≥ 2 次的用户占比 | 按 `orders.created_at` 圈定窗口，去重用户后统计 | 只统计首单用户；未限定时间范围 |
+| 复购率 | 近 90 天下单 ≥ 2 次的用户占比（仅 CNY 有效订单） | 按 `orders.created_at` 圈定窗口，去重用户后统计 | 只统计首单用户；未限定时间范围/币种 |
 | 次日留存 | 当日新增用户次日有会话的比例 | `users.signup_at` 与 `sessions.started_at` 按天对齐 | 时区、日期边界 |
 | 7日留存 | 注册后 D+1~D+7 自然日内有会话的用户占比 | `users.signup_at` 与 `sessions.started_at` 按自然日对齐；cohort 必须满 7 天 | 时区、日期边界、观察窗不完整 |
 | 转化率 | 下单会话 / 总会话（排除测试/软删） | `sessions.converted=1` 占比 | 分子分母口径不一致 |
@@ -21,7 +21,7 @@
 
 | # | 问题 | 最终口径 | 状态 |
 |---|---|---|---|
-| 1 | 复购率的统计窗口 | 近 90 天，按 `orders.created_at`，仅有效订单 | 已确认 |
+| 1 | 复购率的统计窗口 | 近 90 天，按 `orders.created_at`，仅 CNY 有效订单 | 已确认 |
 | 2 | 渠道归因 | 首触：`orders.channel` 即首触渠道 | 已确认 |
 | 3 | 退款计入哪个月 | 按 `refunds.created_at`（发生月）扣减，不按原订单月份 | 已确认 |
 | 4 | “有效订单”范围 | `paid / shipped / completed`；不含 pending / cancelled / refunded | 已确认 |
