@@ -611,7 +611,7 @@ L0_RULES = """
 > 不再为 Stage 2 追加评测；`TOOL_MISUSE` 与复杂查询通过率未做，作为 Stage 3 观察项。
 > 当前代码/提示词为 `stage2-v10`（B-05 CNY、B-02 净收入、I-30 单值规则），均属**基线后未复评变更**，作为 carryover 跟踪，不修改 v8 基线。
 > Stage 1 的 61.9% 基于旧 golden，仅历史参考。
-- [ ] T3-1 记忆后端替换（进行中：本地 Chroma + BGE 中文 embedding + `build_memory` + 语义 smoke 完成；待降级包装/种子导入）
+- [ ] T3-1 记忆后端替换（进行中：本地 Chroma + BGE + `build_memory` + 语义 smoke + embedding 模型绑定校验完成；待降级包装/种子导入）
 - [ ] T3-2 种子数据（文本 + golden SQL）
 - [ ] T3-3 混合检索 + rerank
 - [ ] T3-4 候选表预筛

@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 from typing import List
 
+import pytest
 from vanna import User
 from vanna.core.tool import ToolContext
 
@@ -15,11 +16,12 @@ from analytics_agent.memory.backends.chroma_local import ChromaLocalMemory
 class _TestEmbedding:
     """Small deterministic Chinese-friendly embedding for offline smoke tests."""
 
-    def __init__(self, dimension: int = 64) -> None:
+    def __init__(self, dimension: int = 64, name: str = "test-char-hash-v1") -> None:
         self.dimension = dimension
+        self._name = name
 
     def name(self) -> str:
-        return "test-char-hash-v1"
+        return self._name
 
     def __call__(self, input: List[str]) -> List[List[float]]:
         vectors = []
@@ -131,6 +133,21 @@ def test_user_and_team_isolation(tmp_path):
     assert any("A 的私有" in result.memory.question for result in a_results)
     assert all("A 的私有" not in result.memory.question for result in b_results)
     assert all("团队 A" not in result.memory.question for result in b_results)
+
+
+def test_embedding_model_mismatch_fails_loudly(tmp_path):
+    ChromaLocalMemory(
+        persist_directory=str(tmp_path),
+        collection_name="model_guard",
+        embedding_function=_TestEmbedding(name="model-a"),
+    )
+
+    with pytest.raises(ValueError, match="Embedding model mismatch"):
+        ChromaLocalMemory(
+            persist_directory=str(tmp_path),
+            collection_name="model_guard",
+            embedding_function=_TestEmbedding(name="model-b"),
+        )
 
 
 def test_clear_removes_tool_and_text_memories(tmp_path):

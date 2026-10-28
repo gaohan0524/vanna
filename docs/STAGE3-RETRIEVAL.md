@@ -355,7 +355,9 @@ Chroma 默认 `DefaultEmbeddingFunction` 是英文 MiniLM，不适合中文业�
 - 模型名称/版本写进配置和种子 manifest；
 - 离线环境预下载模型；
 - collection 创建后不能换 embedding，否则必须重建 collection；
-- 不能把“同一个 collection 换模型”当成热更新。
+- 不能把“同一个 collection 换模型”当成热更新；
+- collection metadata 会记录 `embedding_model`；启动时与当前配置不一致会直接报错，
+  提示新建 collection 或删除重建，不会静默用旧向量查新模型。
 
 ### 4.4 租户隔离
 
@@ -459,6 +461,7 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 - 确定性 ID（同内容/同 SQL 幂等 upsert）；
 - 工具记忆与文本记忆的保存、检索、最近列表、删除、按范围清理；
 - 真实中文 embedding：`BAAI/bge-small-zh-v1.5`；
+- collection 绑定 `embedding_model` metadata，模型不一致时启动报错；
 - `build_memory(settings)`：默认 demo，`MEMORY_BACKEND=chroma_local` 时接 Chroma；
 - 3 条真实中文种子 + 3 个同义问法，命中最相关种子。
 
@@ -481,8 +484,9 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 - [x] `ChromaLocalMemory` 持久化；重启后可检索
 - [x] 中文 query 能召回中文种子（BGE 3 条 smoke 通过）
 - [x] `user_id` / `tenant_id` 过滤生效
+- [x] collection 的 `embedding_model` 不一致时启动报错
 - [ ] 后端异常不阻断主流程（待加降级包装）
-- [x] 有最小 smoke test（4 + 1 semantic passed）
+- [x] 有最小 smoke test（5 + 1 semantic passed）
 - [x] `build_memory(settings)` 接线（默认 demo）
 
 ---
@@ -953,6 +957,7 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | T3-1 | 接入 `BAAI/bge-small-zh-v1.5` | 完成 | `ChineseEmbeddingFunction`；query instruction + normalize |
 | 2026-10-28 | T3-1 | `build_memory(settings)` | 完成 | 默认 demo；`MEMORY_BACKEND=chroma_local` 走本地 Chroma |
 | 2026-10-28 | T3-1 | 3 条真实中文种子语义 smoke | 通过 | 3 个同义问法均命中对应 seed；1 semantic test passed |
+| 2026-10-28 | T3-1 | 增加 embedding 模型绑定校验 | 完成 | metadata 记录 `embedding_model`；不一致直接报错；`test_embedding_model_mismatch_fails_loudly` |
 
 ---
 

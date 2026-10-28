@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 try:
     import chromadb
     from chromadb.config import Settings
+    from chromadb.errors import NotFoundError
     from chromadb.utils import embedding_functions
 except ImportError as exc:  # pragma: no cover - exercised only without optional dep
     raise ImportError(
@@ -45,6 +46,13 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
+def _embedding_name(embedding_function: Any) -> str:
+    name = getattr(embedding_function, "name", None)
+    if callable(name):
+        name = name()
+    return str(name or embedding_function.__class__.__name__)
+
+
 class ChromaLocalMemory(AgentMemory):
     """Chroma PersistentClient memory scoped by user/team/shared visibility."""
 
@@ -59,15 +67,46 @@ class ChromaLocalMemory(AgentMemory):
         self._embedding_function = (
             embedding_function or embedding_functions.DefaultEmbeddingFunction()
         )
+        self._embedding_model = _embedding_name(self._embedding_function)
         self._client = chromadb.PersistentClient(
             path=persist_directory,
             settings=Settings(anonymized_telemetry=False),
         )
-        self._collection = self._client.get_or_create_collection(
-            name=collection_name,
-            embedding_function=self._embedding_function,
-            metadata={"hnsw:space": "cosine"},
-        )
+        self._collection = self._open_or_create_collection()
+
+    def _open_or_create_collection(self):
+        """Open a collection only if its embedding model matches this config."""
+        try:
+            collection = self._client.get_collection(
+                name=self.collection_name,
+                embedding_function=self._embedding_function,
+            )
+        except NotFoundError:
+            return self._client.create_collection(
+                name=self.collection_name,
+                embedding_function=self._embedding_function,
+                metadata={
+                    "hnsw:space": "cosine",
+                    "embedding_model": self._embedding_model,
+                },
+            )
+
+        stored_model = (collection.metadata or {}).get("embedding_model")
+        if stored_model is None:
+            raise ValueError(
+                f"Chroma collection {self.collection_name!r} has no "
+                "'embedding_model' metadata. It may have been created by an older "
+                "version. Create a new MEMORY_COLLECTION or delete and rebuild it "
+                f"with {self._embedding_model!r}."
+            )
+        if str(stored_model) != self._embedding_model:
+            raise ValueError(
+                f"Embedding model mismatch for Chroma collection "
+                f"{self.collection_name!r}: stored={stored_model!r}, "
+                f"configured={self._embedding_model!r}. Use a new "
+                "MEMORY_COLLECTION or rebuild this collection and re-import seeds."
+            )
+        return collection
 
     @property
     def collection(self):

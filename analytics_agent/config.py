@@ -78,7 +78,10 @@ class Settings:
         memory_backend: `demo`（默认）或 `chroma_local`。
         memory_path: 本地 Chroma 目录；不要提交到 git。
         memory_collection: Chroma collection 名。
-        memory_embedding_model: 中文 embedding 模型名，必须与 collection 一致。
+        memory_embedding_model: 中文 embedding 模型名（含版本/模型标识）。
+            同一个 MEMORY_COLLECTION 只能绑定一个 embedding 模型：
+            换模型必须新建 collection 并重新导入全部种子；否则旧向量与
+            新查询向量不在同一维度/语义空间，检索结果不可用。
     """
 
     ch_host: str = "localhost"
