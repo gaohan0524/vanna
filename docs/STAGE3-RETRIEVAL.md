@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 3 / T3-1 ~ T3-6** 的详细执行版。
 >
-> - 状态：**进行中（2026-10-28，T3-1 待开始）**
+> - 状态：**进行中（2026-10-28，T3-1 完成，T3-2 待开始）**
 > - 前置：Stage 2 完成；G2 基线冻结为 v8 两次结果
 > - Stage 2 基线：EX **81.8% / 86.4%**、behavior **100%**、平均工具轮次 **1.27~1.43**、P95 **15.1s / 14.5s**、两次差异 **4.5pt**
 > - 当前代码：`stage2-v10`；v9/v10 的 B-05、B-02、I-30 修正是**基线后未复评变更**
@@ -967,6 +967,7 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | T3-1 | 3 条真实中文种子语义 smoke | 通过 | 3 个同义问法均命中对应 seed；1 semantic test passed |
 | 2026-10-28 | T3-1 | 增加 embedding 模型绑定校验 | 完成 | metadata 记录 `embedding_model`；不一致直接报错；`test_embedding_model_mismatch_fails_loudly` |
 | 2026-10-28 | T3-1 | 增加检索/启动降级 | 完成 | `SafeAgentMemory` 读失败返回空；启动失败回退 Demo；配置错误仍报错 |
+| 2026-10-28 | T3-1 | T3-1 完成，DoD 全勾 | 完成 | 10 passed；下一项 T3-2 种子数据 |
 
 ---
 
