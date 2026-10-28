@@ -54,6 +54,7 @@ otel = [
 langfuse = ["langfuse>=2.0"]
 langsmith = ["langsmith>=0.1.0"]
 clickhouse = ["clickhouse_connect"]
+stage3 = ["chromadb>=1.1.0"]
 bigquery = ["google-cloud-bigquery"]
 snowflake = ["snowflake-connector-python"]
 duckdb = ["duckdb"]

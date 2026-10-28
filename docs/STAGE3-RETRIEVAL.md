@@ -438,13 +438,39 @@ class ChromaLocalMemory(AgentMemory):
 - 检索异常 → 回退到原有 prompt；
 - embedding 不可用 → 不能静默切换模型；应显式失败并提示重建 collection。
 
-### 4.7 DoD
+### 4.7 当前落地进度
 
-- [ ] `ChromaLocalMemory` 持久化；重启后可检索
-- [ ] 中文 query 能召回中文种子
-- [ ] `user_id` / `tenant_id` 过滤生效
-- [ ] 后端异常不阻断主流程
-- [ ] 有最小 smoke test
+已新增：
+
+```text
+analytics_agent/memory/backends/chroma_local.py   ChromaLocalMemory
+tests/test_chroma_local_memory.py                 4 项 smoke test
+pyproject.toml                                    stage3 = ["chromadb>=1.1.0"]
+```
+
+已覆盖：
+
+- 本地 `PersistentClient` 持久化，重启可检索；
+- 共享/用户/团队三种 scope；
+- `user_id` / `team_id` 过滤；
+- 确定性 ID（同内容/同 SQL 幂等 upsert）；
+- 工具记忆与文本记忆的保存、检索、最近列表、删除、按范围清理；
+- 离线测试用字符哈希 embedding，不依赖网络。
+
+尚未完成：
+
+- 真实中文 embedding（测试用的是确定性 hash，不是生产模型）；
+- `build_agent` 接线与配置读取；
+- 检索异常/后端不可用的降级包装；
+- 种子导入、候选表与 enhancer。
+
+### 4.8 DoD
+
+- [x] `ChromaLocalMemory` 持久化；重启后可检索
+- [ ] 中文 query 能召回中文种子（待接 BGE/中文 embedding）
+- [x] `user_id` / `tenant_id` 过滤生效
+- [ ] 后端异常不阻断主流程（待加降级包装）
+- [x] 有最小 smoke test（4 passed）
 
 ---
 
@@ -909,6 +935,8 @@ MEMORY_EMBEDDING=...
 | 日期 | 步骤 | 操作 | 结果 | 备注 |
 |---|---|---|---|---|
 | 2026-10-28 | Stage 3 启动 | 创建执行手册 | 完成 | 基线 v8；T3-1 待开始 |
+| 2026-10-28 | T3-1 | 新增 `ChromaLocalMemory` 本地骨架 | 完成 | 本地 PersistentClient；确定性 ID；scope 过滤 |
+| 2026-10-28 | T3-1 | 新增 Chroma smoke test | 完成 | `tests/test_chroma_local_memory.py` 4 passed；中文 embedding/接线未做 |
 
 ---
 
