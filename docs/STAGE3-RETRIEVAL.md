@@ -125,6 +125,7 @@ analytics_agent/agent_factory.py               当前接线
 ### 1.3 非目标
 
 - 不在本阶段做自动写入记忆（Stage 5）
+- 不在本阶段做用户反馈采集与管理员审核 CRUD（Stage 5）
 - 不在本阶段做完整工作流/skill（Stage 4）
 - 不重写 Stage 2 的工具和 SQL 护栏
 - 不为每种问题新增专用工具
@@ -395,6 +396,40 @@ class ChromaMemory(AgentMemory):
 - [ ] 工具记忆有 3~5 个问法
 - [ ] 所有种子有 source/version/reviewed
 - [ ] 不存在未审核的模型生成 SQL
+
+### 5.5 与运行时自动写入的边界
+
+Stage 3 **只导入人工审核过的种子**，不在本阶段自动写入。
+
+当前代码事实：
+
+- `build_agent(..., enable_memory_tools=False)` 默认关闭记忆工具；
+- `SaveQuestionToolArgsTool` 仅 admin 可调用，且需要模型显式调用；
+- `SaveTextMemoryTool` 没有在 `build_tool_registry` 中注册；
+- 没有 `after_message` / `after_tool` 的自动记忆钩子；
+- `AgentMemory` 有 `delete_*` / `clear_*` 接口，但没有暴露成管理工具/CLI；
+- 没有用户反馈采集接口。
+
+自动沉淀、反馈审核、更新/删除属于 **Stage 5（T5-1/T5-3）**：
+
+```text
+成功执行
+  → 写入 pending_review（不是直接 verified）
+  → 用户反馈（正/负）
+  → 管理员审核 / 修改 / 拒绝
+  → approve 后才进入可检索库
+  → 支持版本、回滚、删除
+```
+
+如果要把这条链路提前到 Stage 3，应新增 **T3-7 记忆生命周期底座**，并明确：
+
+- 自动写入默认关闭；
+- 所有自动记录先进入 `pending_review`；
+- 未审核内容不参与检索；
+- 管理员批准后才能更新 `verified` 记忆；
+- 删除/更新必须留版本记录。
+
+否则 Stage 3 的“种子库”和 Stage 5 的“运行时记忆”会混在一起，无法判断错误来自哪一类。
 
 ---
 
