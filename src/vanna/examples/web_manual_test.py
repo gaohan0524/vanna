@@ -36,7 +36,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any, Dict
 
+import pandas as pd
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
@@ -51,6 +53,7 @@ from vanna.integrations.deepseek import DeepSeekLlmService
 from vanna.integrations.local import LocalFileSystem
 from vanna.integrations.local.agent_memory import DemoAgentMemory
 from vanna.integrations.ollama import OllamaLlmService
+from vanna.integrations.plotly import PlotlyChartGenerator
 from vanna.servers.base import ChatHandler
 from vanna.servers.fastapi.routes import register_chat_routes
 from vanna.tools import RunSqlTool, VisualizeDataTool
@@ -272,12 +275,19 @@ INDEX_HTML = """<!DOCTYPE html>
     var traces = payload.data || [];
     var layout = payload.layout || {};
     var title = payload.title || '';
+    // Plotly 自己会渲染 layout.title，标题相同就不再重复显示卡片标题
+    var layoutTitle = '';
+    if (layout.title) {
+      layoutTitle = (typeof layout.title === 'string')
+        ? layout.title
+        : (layout.title.text || '');
+    }
 
     var el = chartEls[id];
     if (!el) {
       var card = document.createElement('div');
       card.className = 'chart-card';
-      if (title) {
+      if (title && title !== layoutTitle) {
         var titleEl = document.createElement('div');
         titleEl.className = 'chart-title';
         titleEl.textContent = title;
@@ -472,6 +482,28 @@ INDEX_HTML = """<!DOCTYPE html>
 """
 
 
+class BarFirstChartGenerator(PlotlyChartGenerator):
+    """列数较多时也优先输出柱状图（仅本测试脚本使用）。
+
+    框架默认实现（src/vanna/integrations/plotly/chart_generator.py）在
+    ``len(df.columns) >= 4`` 时直接退化成 Plotly table —— 于是「渠道 + 订单数 +
+    GMV + 客单价 + 占比」这类结果只会渲染成表格，看不到柱子。这里先裁出
+    「类别列 + 主数值列（求和最大者）」两列，再交给默认实现画成柱状图；
+    其余情况（列数 < 4、没有类别列等）仍走默认逻辑。
+    """
+
+    def generate_chart(self, df: pd.DataFrame, title: str = "Chart") -> Dict[str, Any]:
+        cat_cols = df.select_dtypes(include=["object", "category"]).columns.tolist()
+        num_cols = df.select_dtypes(include=["number"]).columns.tolist()
+
+        if len(df.columns) >= 4 and cat_cols and num_cols:
+            # 多指标并存时取求和最大的数值列作为主指标（通常是金额 / GMV 类）
+            main_metric = max(num_cols, key=lambda col: float(df[col].fillna(0).sum()))
+            return super().generate_chart(df[[cat_cols[0], main_metric]], title)
+
+        return super().generate_chart(df, title)
+
+
 class SimpleUserResolver(UserResolver):
     """从 cookie 读取邮箱并据此分配分组。
 
@@ -547,7 +579,10 @@ def create_agent() -> Agent:
         access_groups=["admin", "user"],
     )
     tool_registry.register_local_tool(
-        VisualizeDataTool(file_system=file_system),
+        VisualizeDataTool(
+            file_system=file_system,
+            plotly_generator=BarFirstChartGenerator(),
+        ),
         access_groups=["admin", "user"],
     )
 
