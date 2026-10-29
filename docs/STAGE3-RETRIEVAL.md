@@ -687,7 +687,8 @@ reviewed  → 未审核内容不进入可检索库
 - `I-28` 与 `A-01` 同 SQL，已合并到 `tool:A01-GMV渠道`，用 `covers` 记录两条用例；
 - 每条工具记忆已有 3~5 个问法；
 - 21 条 SQL 已在当前数据上执行通过；
-- 静态校验见 `tests/test_seed_data.py`：4 passed。
+- 静态校验见 `tests/test_seed_data.py`：4 passed；
+- 逐条审核清单见 [`T3-2-SEED-REVIEW.md`](./T3-2-SEED-REVIEW.md)。
 
 ### 5.5 DoD
 
@@ -1100,6 +1101,7 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | T3-2 | 生成 `knowledge.yaml` 首批草稿 | 完成 | 38 条；单条最长 81 字；全部 `reviewed: false` |
 | 2026-10-28 | T3-2 | 生成 `tool_memories.yaml` 首批草稿 | 完成 | 21 条唯一 SQL 模板，覆盖 22 条 answer；I-28 合并到 A-01 |
 | 2026-10-28 | T3-2 | 种子静态校验与 SQL 执行 | 通过 | `tests/test_seed_data.py` 4 passed；21 条 SQL 全部执行成功、0 error |
+| 2026-10-29 | T3-2 | 生成逐条审核清单 | 完成 | 38 条文本 + 21 条工具，按风险分组；见 `T3-2-SEED-REVIEW.md` |
 
 ---
 
