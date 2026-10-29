@@ -17,7 +17,16 @@
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
 from typing import Any, Dict, Optional
+
+# VSCode 的“运行 Python 文件”会把脚本所在目录放到 sys.path[0]，
+# 此时直接 import analytics_agent 会失败。把仓库根目录补进来，
+# 让“右键运行”和 `python -m analytics_agent.web_app` 都能工作。
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 import pandas as pd
 import uvicorn
