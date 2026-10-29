@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 2 完成（基线 v8）→ Stage 3 进行中**——v8 基线 EX 81.8% / 86.4%、behavior 100%、P95 15.1s / 14.5s；T3-1 完成；T3-2 首批种子草稿已生成（38 条文本、21 条唯一 SQL 模板），待业务审核。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)、[`STAGE3-RETRIEVAL.md`](./STAGE3-RETRIEVAL.md)
+- **当前进度**：**Stage 2 完成（基线 v8）→ Stage 3 进行中**——v8 基线 EX 81.8% / 86.4%、behavior 100%、P95 15.1s / 14.5s；T3-1 完成；T3-2 首批种子草稿已生成（38 条文本、21 条唯一 SQL 模板），待业务审核；交付 Web 入口见 [`WEB-AGENT.md`](./WEB-AGENT.md)。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)、[`STAGE3-RETRIEVAL.md`](./STAGE3-RETRIEVAL.md)
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-28

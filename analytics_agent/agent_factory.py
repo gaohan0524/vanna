@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from vanna import Agent, AgentConfig
 from vanna.core.registry import ToolRegistry
@@ -110,6 +110,7 @@ def build_tool_registry(
     enable_memory_tools: bool = False,
     catalog: Optional[dict] = None,
     glossary: Optional[dict] = None,
+    plotly_generator: Optional[Any] = None,
 ) -> ToolRegistry:
     """Register the tools available to the agent.
 
@@ -143,7 +144,8 @@ def build_tool_registry(
         access_groups=["admin", "analyst"],
     )
     registry.register_local_tool(
-        AnalyticsVisualizeTool(), access_groups=["admin", "analyst"]
+        AnalyticsVisualizeTool(plotly_generator=plotly_generator),
+        access_groups=["admin", "analyst"],
     )
     registry.register_local_tool(
         SearchColumnsTool(catalog), access_groups=["admin", "analyst"]
@@ -232,6 +234,8 @@ def build_agent(
     prompt_builder: Optional[AnalyticsPromptBuilder] = None,
     stream_responses: bool = False,
     enable_memory_tools: bool = False,
+    user_resolver: Optional[UserResolver] = None,
+    plotly_generator: Optional[Any] = None,
 ) -> Agent:
     """Build the tested agent.
 
@@ -242,14 +246,21 @@ def build_agent(
         prompt_builder: 可注入自定义提示词构建器（测试用）。
         stream_responses: 评测时建议 False（少一层流式聚合）。
         enable_memory_tools: 是否注册记忆检索/保存工具（Stage 3 再打开）。
+        user_resolver: 可注入用户解析器；Web 交付入口用 cookie 用户，评测默认
+            使用 EvalUserResolver。
+        plotly_generator: 可注入图表生成器；Web 入口保留自定义柱状图偏好。
     """
     s = settings or Settings.from_env()
     builder = prompt_builder or build_prompt_builder(s)
 
     return Agent(
         llm_service=llm_service or build_llm_service(s),
-        tool_registry=build_tool_registry(s, enable_memory_tools=enable_memory_tools),
-        user_resolver=EvalUserResolver(),
+        tool_registry=build_tool_registry(
+            s,
+            enable_memory_tools=enable_memory_tools,
+            plotly_generator=plotly_generator,
+        ),
+        user_resolver=user_resolver or EvalUserResolver(),
         agent_memory=agent_memory or build_memory(s),
         system_prompt_builder=builder,
         config=AgentConfig(
