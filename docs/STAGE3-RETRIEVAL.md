@@ -1102,7 +1102,8 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | T3-2 | 生成 `tool_memories.yaml` 首批草稿 | 完成 | 21 条唯一 SQL 模板，覆盖 22 条 answer；I-28 合并到 A-01 |
 | 2026-10-28 | T3-2 | 种子静态校验与 SQL 执行 | 通过 | `tests/test_seed_data.py` 4 passed；21 条 SQL 全部执行成功、0 error |
 | 2026-10-29 | T3-2 | 生成逐条审核清单 | 完成 | 38 条文本 + 21 条工具，按风险分组；见 `T3-2-SEED-REVIEW.md` |
-| 2026-10-29 | 交付 | Web 入口迁移到 `analytics_agent/web_app.py` | 完成 | 复用 `build_agent`；保留 Plotly/admin；旧示例改为兼容 shim |
+| 2026-10-29 | 交付 | Web 入口迁移到 `analytics_agent/web_app.py` | 完成 | 复用 `build_agent`；保留 Plotly/admin；旧示例已删除 |
+| 2026-10-29 | 交付 | 首页迁移到 `analytics_agent/web/index.html` | 完成 | 业务 UI 不放框架默认页；`load_index_html()` 读取 |
 
 ---
 

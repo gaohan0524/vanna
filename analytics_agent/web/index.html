@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>智能体</title>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+<style>
+  :root { --navy:#023d60; --teal:#15a8a8; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #f5f7f9; color: #1f2933;
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  }
+  .wrap {
+    max-width: 1000px; margin: 0 auto; padding: 16px;
+    height: 100vh; display: flex; flex-direction: column;
+  }
+  header { padding: 4px 4px 12px; font-weight: 600; color: var(--navy); }
+  header small { font-weight: 400; color: #6b7280; }
+  #messages {
+    flex: 1; overflow-y: auto; background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .row { font-size: 14px; line-height: 1.65; white-space: pre-wrap; word-break: break-word; }
+  .row.user {
+    align-self: flex-end; background: #e6f6f6; padding: 8px 12px;
+    border-radius: 12px; max-width: 80%;
+  }
+  .row.ai { padding-left: 10px; border-left: 3px solid var(--teal); }
+  .row.meta { color: #6b7280; font-size: 12px; }
+  .sql {
+    font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+    background: #0b1f2a; color: #d7f2f2; padding: 8px 10px; border-radius: 8px;
+    margin-top: 6px; overflow-x: auto; white-space: pre;
+  }
+  table { border-collapse: collapse; font-size: 13px; margin-top: 4px; }
+  th, td { border: 1px solid #e5e7eb; padding: 6px 10px; text-align: left; }
+  th { background: #f0f7f8; color: var(--navy); }
+  .chart-card {
+    background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+    padding: 8px; margin-top: 4px;
+  }
+  .chart-title { font-size: 13px; color: var(--navy); margin: 4px 0 0 6px; }
+  .chart { width: 100%; height: 420px; }
+  form { display: flex; gap: 8px; margin-top: 12px; }
+  textarea {
+    flex: 1; resize: none; height: 58px; padding: 10px 12px; font: inherit;
+    border: 1px solid #d1d5db; border-radius: 10px;
+  }
+  button { border: none; border-radius: 10px; padding: 0 18px; font: inherit; cursor: pointer; }
+  #send { background: var(--teal); color: #fff; }
+  #send:disabled { background: #9ca3af; cursor: not-allowed; }
+  #stop { background: #fee2e2; color: #b91c1c; }
+  #stop:disabled { opacity: .5; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>智能体</header>
+  <div id="messages"></div>
+  <form id="form">
+    <textarea id="input" placeholder="输入问题，Enter 发送，Shift+Enter 换行"></textarea>
+    <button id="send" type="submit">发送</button>
+    <button id="stop" type="button" disabled>停止</button>
+  </form>
+</div>
+<script>
+(function () {
+  var messagesEl = document.getElementById('messages');
+  var formEl = document.getElementById('form');
+  var inputEl = document.getElementById('input');
+  var stopBtn = document.getElementById('stop');
+  var sendBtn = document.getElementById('send');
+
+  var conversationId = null;
+  var busy = false;
+  var abortController = null;
+  var currentAiTextId = null;
+  var currentAiTextEl = null;
+  var statusRow = null;
+  var chartEls = {};
+
+  function scrollBottom() {
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+
+  function makeRow(cls) {
+    var div = document.createElement('div');
+    div.className = 'row ' + (cls || '');
+    messagesEl.appendChild(div);
+    scrollBottom();
+    return div;
+  }
+
+  function setStatus(text) {
+    if (!statusRow) {
+      statusRow = makeRow('meta');
+    }
+    statusRow.textContent = text;
+    scrollBottom();
+  }
+
+  // SQL 结果集：rows 为对象数组，columns 为列名数组
+  function appendTable(rows, columns) {
+    if (!rows || rows.length === 0) {
+      makeRow('meta').textContent = '(空结果)';
+      return;
+    }
+    var cols = (columns && columns.length) ? columns : Object.keys(rows[0]);
+    var table = document.createElement('table');
+
+    var thead = document.createElement('thead');
+    var headRow = document.createElement('tr');
+    for (var c = 0; c < cols.length; c++) {
+      var th = document.createElement('th');
+      th.textContent = cols[c];
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    table.appendChild(thead);
+
+    var tbody = document.createElement('tbody');
+    for (var r = 0; r < rows.length; r++) {
+      var tr = document.createElement('tr');
+      for (var k = 0; k < cols.length; k++) {
+        var td = document.createElement('td');
+        var value = rows[r][cols[k]];
+        td.textContent = (value === null || value === undefined) ? '' : String(value);
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    messagesEl.appendChild(table);
+    scrollBottom();
+  }
+
+  // chart 组件：payload 形如 {data: [traces], layout: {...}, title: "...", ...}
+  function appendChart(id, payload) {
+    var traces = payload.data || [];
+    var layout = payload.layout || {};
+    var title = payload.title || '';
+    // Plotly 自己会渲染 layout.title，标题相同就不再重复显示卡片标题
+    var layoutTitle = '';
+    if (layout.title) {
+      layoutTitle = (typeof layout.title === 'string')
+        ? layout.title
+        : (layout.title.text || '');
+    }
+
+    var el = chartEls[id];
+    if (!el) {
+      var card = document.createElement('div');
+      card.className = 'chart-card';
+      if (title && title !== layoutTitle) {
+        var titleEl = document.createElement('div');
+        titleEl.className = 'chart-title';
+        titleEl.textContent = title;
+        card.appendChild(titleEl);
+      }
+      el = document.createElement('div');
+      el.className = 'chart';
+      card.appendChild(el);
+      messagesEl.appendChild(card);
+      chartEls[id] = el;
+    }
+
+    if (!window.Plotly) {
+      el.textContent = 'Plotly 脚本未加载（需要能访问 cdn.plot.ly），图表数据已收到。';
+      scrollBottom();
+      return;
+    }
+
+    layout = Object.assign(
+      { autosize: true, margin: { l: 60, r: 24, t: 40, b: 60 } },
+      layout
+    );
+    window.Plotly.newPlot(el, traces, layout, {
+      responsive: true,
+      displayModeBar: false
+    });
+    scrollBottom();
+  }
+
+  // 工具参数（Text2SQL 中主要是 SQL）格式化
+  function formatArgs(meta) {
+    if (meta && typeof meta.sql === 'string') {
+      return meta.sql;
+    }
+    try {
+      return JSON.stringify(meta, null, 2);
+    } catch (e) {
+      return String(meta);
+    }
+  }
+
+  // 处理单个流式分片：{rich: {id, type, lifecycle, data}, ...}
+  function handleChunk(chunk) {
+    if (!chunk) return;
+    if (chunk.conversation_id) {
+      conversationId = chunk.conversation_id;
+    }
+
+    var rich = chunk.rich || {};
+    var data = rich.data || {};
+
+    switch (rich.type) {
+      case 'text':
+        if (rich.lifecycle === 'create' || currentAiTextId !== rich.id) {
+          currentAiTextId = rich.id;
+          currentAiTextEl = makeRow('ai');
+          currentAiTextEl.textContent = data.content || '';
+        } else if (rich.lifecycle === 'update' && currentAiTextEl) {
+          currentAiTextEl.textContent = data.content || '';
+        }
+        scrollBottom();
+        break;
+      case 'dataframe':
+        appendTable(data.data || [], data.columns || []);
+        break;
+      case 'chart':
+        appendChart(rich.id, data);
+        break;
+      case 'status_bar_update':
+        if (data.message) setStatus(data.message);
+        break;
+      case 'status_card':
+        var line = (data.title || '') +
+          (data.description ? ' — ' + data.description : '');
+        var row = makeRow('meta');
+        row.textContent = line;
+        if (data.metadata && Object.keys(data.metadata).length > 0) {
+          var pre = document.createElement('div');
+          pre.className = 'sql';
+          pre.textContent = formatArgs(data.metadata);
+          row.appendChild(pre);
+          scrollBottom();
+        }
+        break;
+      case 'notification':
+        makeRow('meta').textContent = data.message || data.title || '';
+        break;
+      default:
+        break;
+    }
+  }
+
+  function setBusy(value) {
+    busy = value;
+    inputEl.disabled = value;
+    sendBtn.disabled = value;
+    stopBtn.disabled = !value;
+  }
+
+  async function send(message) {
+    if (busy) return;
+    setBusy(true);
+    statusRow = null;
+
+    var userRow = makeRow('user');
+    userRow.textContent = message;
+
+    var payload = { message: message };
+    if (conversationId) {
+      payload.conversation_id = conversationId;
+    }
+
+    abortController = new AbortController();
+    try {
+      var resp = await fetch('/api/vanna/v2/chat_sse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: abortController.signal
+      });
+
+      if (!resp.ok || !resp.body) {
+        makeRow('meta').textContent = '[错误] HTTP ' + resp.status;
+        return;
+      }
+
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+
+      while (true) {
+        var result = await reader.read();
+        if (result.done) break;
+
+        buffer += decoder.decode(result.value, { stream: true });
+
+        // SSE 以空行分隔事件，逐个取出已完整的 "data: ..." 行
+        var parts = buffer.split('\\n\\n');
+        buffer = parts.pop();
+
+        for (var i = 0; i < parts.length; i++) {
+          var text = parts[i].trim();
+          if (text.indexOf('data:') !== 0) continue;
+          var raw = text.slice(5).trim();
+          if (raw === '[DONE]') continue;
+          try {
+            handleChunk(JSON.parse(raw));
+          } catch (e) {
+            // 忽略无法解析的片段
+          }
+        }
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') {
+        makeRow('meta').textContent = '[已停止] 生成已中断';
+      } else {
+        makeRow('meta').textContent = '[错误] ' + String(err);
+      }
+    } finally {
+      abortController = null;
+      setBusy(false);
+      inputEl.focus();
+    }
+  }
+
+  formEl.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var text = inputEl.value.trim();
+    if (!text) return;
+    inputEl.value = '';
+    send(text);
+  });
+
+  inputEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      formEl.requestSubmit();
+    }
+  });
+
+  stopBtn.addEventListener('click', function () {
+    if (abortController) {
+      abortController.abort();
+    }
+  });
+
+  inputEl.focus();
+})();
+</script>
+</body>
+</html>

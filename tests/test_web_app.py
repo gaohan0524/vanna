@@ -6,7 +6,7 @@ import asyncio
 
 from vanna.core.user import RequestContext
 
-from analytics_agent.web_app import WebUserResolver
+from analytics_agent.web_app import WebUserResolver, load_index_html
 
 
 def _user(email: str | None):
@@ -30,3 +30,10 @@ def test_web_regular_cookie_gets_analyst_group():
     user = _user("analyst@example.com")
 
     assert user.group_memberships == ["analyst"]
+
+
+def test_business_index_html_is_separate_file():
+    html = load_index_html()
+
+    assert "<title>智能体</title>" in html
+    assert "plotly-2.35.2.min.js" in html

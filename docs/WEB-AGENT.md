@@ -18,18 +18,11 @@ python -m analytics_agent.web_app
 http://localhost:8000
 ```
 
-旧的兼容入口仍可用，但已改为薄包装：
+旧入口 `src/vanna/examples/web_manual_test.py` 已删除，不再保留兼容 shim。
 
-```bash
-python src/vanna/examples/web_manual_test.py
-python -m vanna.examples.web_manual_test
-```
+## 2. 与旧裸 Agent 的区别
 
-新代码统一使用 `analytics_agent.web_app`。
-
-## 2. 与旧 Web 测试页的区别
-
-旧 `web_manual_test.py` 是裸 Agent：
+旧页面是裸 Agent：
 
 ```text
 run_sql + visualize_data
@@ -59,9 +52,30 @@ Settings
 | `build_agent` | 复用评测/线上同一装配逻辑 |
 | `WebUserResolver` | 从 `vanna_email` cookie 解析用户 |
 | `BarFirstChartGenerator` | 多列结果优先出柱状图 |
-| `INDEX_HTML` | 带 Plotly 的对话页面 |
+| `analytics_agent/web/index.html` | 业务侧首页模板，带 Plotly |
+| `load_index_html` | 读取业务首页，不污染框架默认页 |
 | `ChatHandler` + SSE | `/api/vanna/v2/chat_sse` |
 | `/health` | 健康检查 |
+
+### 3.1 为什么首页放在业务目录
+
+首页放在：
+
+```text
+analytics_agent/web/index.html
+```
+
+不放 `src/vanna/servers/base/templates.py`，也不替换框架默认页。
+
+原因：
+
+- 这是 **Analytics Agent 的业务 UI**，不是 Vanna 框架的通用默认页；
+- 它依赖 Plotly CDN、中文标题和本项目的 SSE 结构；
+- 放进框架会扩大改动面，影响其他示例和用户；
+- 放在业务目录可以独立改 HTML/JS，不需要动 Python 装配逻辑；
+- `web_app.py` 通过 `load_index_html()` 读取，路径清晰、易于交付。
+
+如果以后多个业务 Agent 共用同一套前端，再抽成框架组件；当前不做提前抽象。
 
 ## 4. 用户与权限
 
