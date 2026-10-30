@@ -18,6 +18,39 @@ python -m analytics_agent.web_app
 http://localhost:8000
 ```
 
+### 1.1 无记忆对照入口
+
+保留一份**同样具备 Stage 1/2、但不注入记忆**的入口：
+
+```text
+analytics_agent/web_app_without_memory.py
+```
+
+运行：
+
+```bash
+python -m analytics_agent.web_app_without_memory
+```
+
+默认端口 **8001**，避免和有记忆的 8000 冲突：
+
+```text
+http://localhost:8001
+```
+
+差异只有记忆层：
+
+| 项 | `web_app` | `web_app_without_memory` |
+|---|---|---|
+| Stage 1 schema/glossary | ✅ | ✅ |
+| Stage 2 的 7 个工具 | ✅ | ✅ |
+| `agent_memory` | `build_memory(settings)` | 空 `DemoAgentMemory` |
+| `llm_context_enhancer` | 默认（可读记忆） | `DefaultLlmContextEnhancer(None)` |
+| `/memory` | ✅ | ❌ |
+| `/api/memory` | ✅ | ❌ |
+
+这样对比时只改变“有无记忆”一个变量，不会把“有没有 schema/工具”混进来。
+
 旧入口 `src/vanna/examples/web_manual_test.py` 已删除，不再保留兼容 shim。
 
 ## 2. 与旧裸 Agent 的区别

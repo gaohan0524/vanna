@@ -236,6 +236,7 @@ def build_agent(
     enable_memory_tools: bool = False,
     user_resolver: Optional[UserResolver] = None,
     plotly_generator: Optional[Any] = None,
+    llm_context_enhancer: Optional[Any] = None,
 ) -> Agent:
     """Build the tested agent.
 
@@ -249,6 +250,8 @@ def build_agent(
         user_resolver: 可注入用户解析器；Web 交付入口用 cookie 用户，评测默认
             使用 EvalUserResolver。
         plotly_generator: 可注入图表生成器；Web 入口保留自定义柱状图偏好。
+        llm_context_enhancer: 可注入上下文增强器；无记忆对照入口传
+            ``DefaultLlmContextEnhancer(None)``，彻底关闭记忆注入。
     """
     s = settings or Settings.from_env()
     builder = prompt_builder or build_prompt_builder(s)
@@ -262,6 +265,7 @@ def build_agent(
         ),
         user_resolver=user_resolver or EvalUserResolver(),
         agent_memory=agent_memory or build_memory(s),
+        llm_context_enhancer=llm_context_enhancer,
         system_prompt_builder=builder,
         config=AgentConfig(
             temperature=0.0,
