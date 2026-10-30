@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "command": "deliver",
+  "status": "pending",
+  "receiptId": "2c38dcfc-dda8-451a-ab55-3ff209ee92f6",
+  "input": "H:\\projects\\vanna\\.archify\\architecture-vanna-overview-20261030-133000\\candidate.json",
+  "output": "H:\\projects\\vanna\\docs\\images\\vanna-architecture.html"
+}

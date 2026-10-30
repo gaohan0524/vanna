@@ -1,0 +1,302 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Vanna 2.0 一次对话的请求时序",
+    "locale": "zh-CN",
+    "output": "docs/images/vanna-chat-request.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/gaohan0524/vanna.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "12ef7f1fbdafc94f6488a0ee9282a69826b5a40a"
+    }
+  },
+  "participants": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "浏览器",
+      "sublabel": "vanna-chat 组件",
+      "sources": [
+        {
+          "path": "frontends/webcomponent/src/services/api-client.ts",
+          "line": 54
+        },
+        {
+          "path": "frontends/webcomponent/src/services/api-client.ts",
+          "line": 116
+        }
+      ]
+    },
+    {
+      "id": "route",
+      "type": "backend",
+      "label": "FastAPI 路由",
+      "sublabel": "/api/vanna/v2/chat_sse",
+      "sources": [
+        {
+          "path": "src/vanna/servers/fastapi/routes.py",
+          "line": 69,
+          "end_line": 95
+        }
+      ]
+    },
+    {
+      "id": "handler",
+      "type": "backend",
+      "label": "ChatHandler",
+      "sublabel": "组件转 SSE 块",
+      "sources": [
+        {
+          "path": "src/vanna/servers/base/chat_handler.py",
+          "line": 39,
+          "end_line": 72
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Agent 编排",
+      "sublabel": "身份 · 上下文 · 循环",
+      "sources": [
+        {
+          "path": "src/vanna/core/agent/agent.py",
+          "line": 299,
+          "end_line": 330
+        },
+        {
+          "path": "src/vanna/core/agent/agent.py",
+          "line": 753
+        }
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "cloud",
+      "label": "LlmService",
+      "sublabel": "OpenAI 等",
+      "sources": [
+        {
+          "path": "src/vanna/core/llm/base.py",
+          "line": 17,
+          "end_line": 40
+        }
+      ]
+    },
+    {
+      "id": "tools",
+      "type": "backend",
+      "label": "ToolRegistry",
+      "sublabel": "RunSqlTool 等",
+      "sources": [
+        {
+          "path": "src/vanna/core/registry.py",
+          "line": 195
+        },
+        {
+          "path": "src/vanna/tools/run_sql.py",
+          "line": 113
+        }
+      ]
+    },
+    {
+      "id": "sql",
+      "type": "database",
+      "label": "SqlRunner",
+      "sublabel": "SQLite 等",
+      "sources": [
+        {
+          "path": "src/vanna/integrations/sqlite/sql_runner.py",
+          "line": 32
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 270,
+      "label": "请求进入"
+    },
+    {
+      "from": 272,
+      "to": 470,
+      "label": "工具循环"
+    },
+    {
+      "from": 472,
+      "to": 600,
+      "label": "结果回流"
+    }
+  ],
+  "messages": [
+    {
+      "id": "post-chat",
+      "from": "browser",
+      "to": "route",
+      "y": 160,
+      "label": "POST /chat_sse",
+      "variant": "emphasis"
+    },
+    {
+      "id": "route-handler",
+      "from": "route",
+      "to": "handler",
+      "y": 190,
+      "label": "handle_stream"
+    },
+    {
+      "id": "handler-agent",
+      "from": "handler",
+      "to": "agent",
+      "y": 220,
+      "label": "send_message",
+      "note": "Agent 内部按序执行：解析用户身份 → 读取会话 → 组装 system prompt 与工具 schema"
+    },
+    {
+      "id": "agent-llm",
+      "from": "agent",
+      "to": "llm",
+      "y": 280,
+      "label": "stream_request",
+      "variant": "emphasis"
+    },
+    {
+      "id": "llm-toolcall",
+      "from": "llm",
+      "to": "agent",
+      "y": 310,
+      "label": "ToolCall(run_sql)",
+      "variant": "dashed"
+    },
+    {
+      "id": "agent-tools",
+      "from": "agent",
+      "to": "tools",
+      "y": 340,
+      "label": "execute(tool_call)"
+    },
+    {
+      "id": "tools-sql",
+      "from": "tools",
+      "to": "sql",
+      "y": 370,
+      "label": "run_sql"
+    },
+    {
+      "id": "sql-tools",
+      "from": "sql",
+      "to": "tools",
+      "y": 400,
+      "label": "DataFrame",
+      "variant": "return"
+    },
+    {
+      "id": "tools-agent",
+      "from": "tools",
+      "to": "agent",
+      "y": 430,
+      "label": "ToolResult + 组件",
+      "variant": "return"
+    },
+    {
+      "id": "agent-llm-again",
+      "from": "agent",
+      "to": "llm",
+      "y": 460,
+      "label": "role=tool 再请求",
+      "variant": "dashed"
+    },
+    {
+      "id": "llm-answer",
+      "from": "llm",
+      "to": "agent",
+      "y": 490,
+      "label": "最终答案 tokens",
+      "variant": "return"
+    },
+    {
+      "id": "agent-handler",
+      "from": "agent",
+      "to": "handler",
+      "y": 520,
+      "label": "yield UiComponent",
+      "variant": "return"
+    },
+    {
+      "id": "handler-route",
+      "from": "handler",
+      "to": "route",
+      "y": 550,
+      "label": "ChatStreamChunk",
+      "variant": "return"
+    },
+    {
+      "id": "route-browser",
+      "from": "route",
+      "to": "browser",
+      "y": 580,
+      "label": "data:{json} … [DONE]",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "route",
+      "from": 155,
+      "to": 588,
+      "type": "backend"
+    },
+    {
+      "participant": "handler",
+      "from": 185,
+      "to": 565,
+      "type": "backend"
+    },
+    {
+      "participant": "agent",
+      "from": 210,
+      "to": 540,
+      "type": "backend"
+    },
+    {
+      "participant": "llm",
+      "from": 270,
+      "to": 500,
+      "type": "cloud"
+    },
+    {
+      "participant": "tools",
+      "from": 330,
+      "to": 450,
+      "type": "backend"
+    },
+    {
+      "participant": "sql",
+      "from": 360,
+      "to": 410,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "工具循环",
+      "items": [
+        "有工具调用就执行并追加 role=tool 消息，再请求一次模型",
+        "轮次上限 max_tool_iterations，默认 10 轮后返回提示"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "SSE 与取消",
+      "items": [
+        "SSE 单向推送，取消信号来自客户端断开 TCP",
+        "后台 watcher 每 100ms 探测断开并置位 cancel_event"
+      ]
+    }
+  ]
+}

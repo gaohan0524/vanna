@@ -229,3 +229,19 @@ flowchart LR
 - 扩展优先，不改主循环：通过 `Agent.__init__` 的扩展点列表注入行为（`error_recovery_strategy` 目前已声明但未在 `agent.py` 中调用）。
 - 权限基于「分组交集」，默认 `Tool.access_groups = []` 表示全员可用；SQL 等敏感信息的可见性由 `UiFeature` 控制（默认仅管理员）。
 - 新增公共名称需同时更新 `core/__init__.py` 与 `vanna/__init__.py`。
+
+## 7. 交互式 HTML 图（Archify 生成）
+
+上面 1–4 节是 Mermaid 静态图；另有两张由 [Archify](https://github.com/tt-a1i/archify) 3.2.0 生成的自包含交互图（离线双击即可打开，支持节点搜索、上下游追踪、路径高亮、深浅主题与导出）：
+
+| 图 | 产物 | 覆盖内容 |
+| --- | --- | --- |
+| 架构总览 | `docs/images/vanna-architecture.html` | 9 个核心组件与主链路：浏览器 → FastAPI → ChatHandler → Agent → LlmService，旁挂会话存储、工具注册表、内置工具、SqlRunner |
+| 请求时序 | `docs/images/vanna-chat-request.html` | 14 条消息：`POST /chat_sse` → `send_message` → 工具循环 → 组件回流，含 SSE 取消机制 |
+
+生成约定（便于复现）：
+
+- 源文件在 `.archify/<type>-<slug>-<时间戳>/candidate.json`，与产物同源；每个组件都绑定仓库相对路径与行号证据。
+- 证据锚定 commit `12ef7f1fbdafc94f6488a0ee9282a69826b5a40a`，仓库 `https://github.com/gaohan0524/vanna.git`；源码变动后需重跑，不能沿用旧图的 claim。
+- 命令：`node <skill>/bin/archify.mjs finalize <type> <candidate.json> <out.html> --repo-root . --quality showcase --json`，四道 gate（validate / deliver / check / browser-check）全通过才算成功。
+- **本仓库所在 H: 盘限制**：Archify 的原子发布在该卷会报 `finalize/receipt-publication` 或 `*-candidate-hardlinked`（nlink 判定）并 fail-closed；需把输出指向 `%TEMP%` 下目录完成校验，再把 `.html` 复制回 `docs/images/`（实测 sha256 与回执一致）。

@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Vanna 2.0 架构总览",
+    "locale": "zh-CN",
+    "output": "docs/images/vanna-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/gaohan0524/vanna.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "12ef7f1fbdafc94f6488a0ee9282a69826b5a40a"
+    }
+  },
+  "components": [
+    {
+      "id": "browser",
+      "type": "external",
+      "label": "浏览器 / 客户端",
+      "sublabel": "vanna-chat Web 组件",
+      "pos": [40, 170],
+      "size": [130, 64],
+      "sources": [
+        { "path": "frontends/webcomponent/src/components/vanna-chat.ts", "line": 14 },
+        { "path": "frontends/webcomponent/src/components/vanna-chat.ts", "line": 717 }
+      ]
+    },
+    {
+      "id": "fastapi",
+      "type": "backend",
+      "label": "FastAPI 服务",
+      "sublabel": "POST /chat_sse · SSE",
+      "pos": [280, 170],
+      "size": [160, 64],
+      "sources": [
+        { "path": "src/vanna/servers/fastapi/routes.py", "line": 69, "end_line": 95 },
+        { "path": "src/vanna/servers/fastapi/routes.py", "line": 144, "end_line": 152 }
+      ]
+    },
+    {
+      "id": "handler",
+      "type": "backend",
+      "label": "ChatHandler",
+      "sublabel": "组件 → ChatStreamChunk",
+      "pos": [550, 170],
+      "size": [150, 64],
+      "sources": [
+        { "path": "src/vanna/servers/base/chat_handler.py", "line": 39, "end_line": 72 }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "Agent 编排",
+      "sublabel": "身份 · 上下文 · 工具循环",
+      "pos": [810, 166],
+      "size": [170, 72],
+      "sources": [
+        { "path": "src/vanna/core/agent/agent.py", "line": 299, "end_line": 330 },
+        { "path": "src/vanna/core/agent/agent.py", "line": 753 }
+      ]
+    },
+    {
+      "id": "llm",
+      "type": "cloud",
+      "label": "LlmService",
+      "sublabel": "OpenAI / Anthropic 等",
+      "pos": [1090, 170],
+      "size": [140, 64],
+      "sources": [
+        { "path": "src/vanna/core/llm/base.py", "line": 17, "end_line": 40 }
+      ]
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "ConversationStore",
+      "sublabel": "会话历史",
+      "pos": [815, 40],
+      "size": [160, 64],
+      "sources": [
+        { "path": "src/vanna/core/storage/base.py", "line": 18 },
+        { "path": "src/vanna/core/storage/base.py", "line": 36 }
+      ]
+    },
+    {
+      "id": "registry",
+      "type": "backend",
+      "label": "ToolRegistry",
+      "sublabel": "权限过滤 · 执行",
+      "pos": [810, 330],
+      "size": [170, 64],
+      "sources": [
+        { "path": "src/vanna/core/registry.py", "line": 55 },
+        { "path": "src/vanna/core/registry.py", "line": 123 },
+        { "path": "src/vanna/core/registry.py", "line": 195 }
+      ]
+    },
+    {
+      "id": "tools",
+      "type": "backend",
+      "label": "内置工具",
+      "sublabel": "run_sql · visualize_data",
+      "pos": [540, 330],
+      "size": [160, 64],
+      "sources": [
+        { "path": "src/vanna/tools/run_sql.py", "line": 43 },
+        { "path": "src/vanna/tools/run_sql.py", "line": 113 }
+      ]
+    },
+    {
+      "id": "sql",
+      "type": "database",
+      "label": "SqlRunner",
+      "sublabel": "SQLite / Postgres 等",
+      "pos": [540, 440],
+      "size": [160, 64],
+      "sources": [
+        { "path": "src/vanna/capabilities/sql_runner/base.py", "line": 22 },
+        { "path": "src/vanna/integrations/sqlite/sql_runner.py", "line": 17, "end_line": 32 }
+      ]
+    }
+  ],
+  "connections": [
+    { "id": "browser-fastapi", "from": "browser", "to": "fastapi", "label": "SSE 请求", "variant": "emphasis" },
+    { "id": "fastapi-handler", "from": "fastapi", "to": "handler", "label": "handle_stream" },
+    { "id": "handler-agent", "from": "handler", "to": "agent", "label": "send_message" },
+    { "id": "agent-llm", "from": "agent", "to": "llm", "label": "stream", "variant": "emphasis" },
+    { "id": "agent-store", "from": "agent", "to": "store", "label": "读 / 写", "fromSide": "top", "toSide": "bottom" },
+    { "id": "agent-registry", "from": "agent", "to": "registry", "label": "工具调用", "fromSide": "bottom", "toSide": "top" },
+    { "id": "registry-tools", "from": "registry", "to": "tools", "label": "execute", "fromSide": "left", "toSide": "right" },
+    { "id": "tools-sql", "from": "tools", "to": "sql", "label": "run_sql", "fromSide": "bottom", "toSide": "top" }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "产品做什么",
+      "items": [
+        "用户用自然语言提问，结果以表格、图表、文本卡片流式返回",
+        "所有输出都是 UiComponent，同一份数据既能渲染富组件也能降级为纯文本"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "编排与权限",
+      "items": [
+        "Agent 先解析身份，再按用户分组过滤可见工具",
+        "工具循环上限 max_tool_iterations，默认 10 轮",
+        "组件由服务端逐块 yield，服务端不保存组件树"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "可替换后端",
+      "items": [
+        "LlmService、SqlRunner、AgentMemory、FileSystem 均为抽象基类",
+        "integrations 下每个供应商一个目录，local 与 mock 提供无依赖实现"
+      ]
+    }
+  ]
+}
