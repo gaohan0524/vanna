@@ -168,7 +168,8 @@ class AgentConfig(BaseModel):
     """
 
     # 单个用户回合内工具调用的最大次数（LLM 生成/修复 SQL 的重试上限）
-    max_tool_iterations: int = Field(default=10, gt=0)
+    # 默认与 analytics_agent 的 AGENT_MAX_ITERATIONS 对齐，统一为 8。
+    max_tool_iterations: int = Field(default=8, gt=0)
     # 触顶后是否再做一次「禁用工具」的收尾总结（基于已收集结果给出最佳回答）
     summarize_on_tool_limit: bool = Field(
         default=True,

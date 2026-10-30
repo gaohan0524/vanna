@@ -13,6 +13,10 @@ from typing import Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# 单轮工具调用上限的唯一业务默认值。
+# 其他位置只引用这个常量，不再各自写 5/8/10。
+DEFAULT_AGENT_MAX_ITERATIONS = 8
+
 
 def load_dotenv(path: Path) -> None:
     """Load ``KEY=VALUE`` pairs from a .env file without extra dependencies.
@@ -100,7 +104,7 @@ class Settings:
     llm_num_ctx: int = 8192
     llm_timeout_s: int = 600
     llm_max_predict: int = 512
-    agent_max_iterations: int = 8
+    agent_max_iterations: int = DEFAULT_AGENT_MAX_ITERATIONS
 
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
@@ -132,7 +136,9 @@ class Settings:
             llm_num_ctx=_env_int("LLM_NUM_CTX", 8192),
             llm_timeout_s=_env_int("LLM_TIMEOUT_S", 600),
             llm_max_predict=_env_int("LLM_MAX_PREDICT", 512),
-            agent_max_iterations=_env_int("AGENT_MAX_ITERATIONS", 5),
+            agent_max_iterations=_env_int(
+                "AGENT_MAX_ITERATIONS", DEFAULT_AGENT_MAX_ITERATIONS
+            ),
             deepseek_api_key=_env("DEEPSEEK_API_KEY"),
             deepseek_base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
             memory_backend=_env("MEMORY_BACKEND", "demo").lower(),

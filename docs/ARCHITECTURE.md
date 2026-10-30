@@ -141,7 +141,7 @@ sequenceDiagram
     AG->>CS: get_conversation()
     CS-->>AG: 历史消息
 
-    loop max_tool_iterations（默认 10）
+    loop max_tool_iterations（默认 8）
         AG->>TR: get_schemas(user)
         TR-->>AG: 该用户可见的工具 schema
         AG->>AG: context_enrichers / system_prompt_builder<br/>llm_context_enhancer

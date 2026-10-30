@@ -30,7 +30,7 @@ if tool_iterations >= self.config.max_tool_iterations:
 
 ```python
 class AgentConfig(BaseModel):
-    max_tool_iterations: int = 10
+    max_tool_iterations: int = 8
     summarize_on_tool_limit: bool = True
 ```
 

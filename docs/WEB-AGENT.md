@@ -128,7 +128,8 @@ AGENT_MAX_ITERATIONS=8
 
 注意：
 
-- `AGENT_MAX_ITERATIONS` 由 Agent 配置读取，不再由 Web 页单独设成 16；
+- `AGENT_MAX_ITERATIONS` 统一默认 **8**，业务层只在 `analytics_agent/config.py` 定义；
+- 需要调整时只改 `.env` 的 `AGENT_MAX_ITERATIONS`，不要在各入口重复写默认值；
 - Stage 3 记忆默认 `MEMORY_BACKEND=demo`；要接 Chroma 才设置 `chroma_local`；
 - 种子未导入时，即使开 Chroma 也检索不到知识。
 
