@@ -483,6 +483,66 @@ class ChromaLocalMemory(AgentMemory):
         return output
 
     # ------------------------------------------------------------------ 最近记忆
+    async def list_memories(
+        self, context: ToolContext, limit: int = 200
+    ) -> List[Dict[str, Any]]:
+        """列出当前用户可见的记忆，返回可读文档和 metadata。
+
+        这是给管理/调试页面用的只读接口，不返回 embedding 向量；
+        返回的 ``content`` / ``question`` 就是 Chroma 中保存的 document。
+        """
+        where = self._access_filter(context)
+
+        def _list():
+            rows = self._collection.get(
+                where=where,
+                include=["documents", "metadatas"],
+                limit=limit,
+            )
+            output: List[Dict[str, Any]] = []
+            for memory_id, document, metadata in zip(
+                rows.get("ids") or [],
+                rows.get("documents") or [],
+                rows.get("metadatas") or [],
+            ):
+                if not metadata:
+                    continue
+                meta: Dict[str, Any] = {}
+                raw_meta = metadata.get("metadata_json")
+                if raw_meta:
+                    try:
+                        meta = json.loads(raw_meta)
+                    except (TypeError, ValueError):
+                        meta = {}
+                kind = metadata.get("kind")
+                args: Dict[str, Any] = {}
+                if kind == "tool":
+                    try:
+                        args = json.loads(metadata.get("args_json") or "{}")
+                    except (TypeError, ValueError):
+                        args = {}
+                output.append(
+                    {
+                        "memory_id": memory_id,
+                        "kind": kind,
+                        "document": document or "",
+                        "content": document if kind == "text" else "",
+                        "question": document if kind == "tool" else "",
+                        "sql": args.get("sql") if kind == "tool" else "",
+                        "source": meta.get("source") or metadata.get("seed_source", ""),
+                        "version": meta.get("version")
+                        or metadata.get("seed_version", 1),
+                        "tags": meta.get("tags", []),
+                        "scope": metadata.get("scope", "user"),
+                        "owner_id": metadata.get("owner_id", ""),
+                        "reviewed": bool(metadata.get("reviewed", False)),
+                        "timestamp": metadata.get("timestamp", ""),
+                    }
+                )
+            return sorted(output, key=lambda item: item["timestamp"], reverse=True)
+
+        return await asyncio.to_thread(_list)
+
     async def get_recent_memories(
         self, context: ToolContext, limit: int = 10
     ) -> List[ToolMemory]:

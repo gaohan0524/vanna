@@ -55,6 +55,8 @@ Settings
 | `analytics_agent/web/index.html` | 业务侧首页模板，带 Plotly |
 | `load_index_html` | 读取业务首页，不污染框架默认页 |
 | `ChatHandler` + SSE | `/api/vanna/v2/chat_sse` |
+| `/memory` | 记忆查看页面（HTML） |
+| `/api/memory` | 当前用户可见记忆（JSON） |
 | `/health` | 健康检查 |
 
 ### 3.1 为什么首页放在业务目录
@@ -76,6 +78,58 @@ analytics_agent/web/index.html
 - `web_app.py` 通过 `load_index_html()` 读取，路径清晰、易于交付。
 
 如果以后多个业务 Agent 共用同一套前端，再抽成框架组件；当前不做提前抽象。
+
+### 3.2 查看记忆
+
+启动后访问：
+
+```text
+http://localhost:8000/memory
+```
+
+JSON API：
+
+```text
+http://localhost:8000/api/memory
+```
+
+页面显示当前用户可见的：
+
+- 文本记忆：正文、来源、版本、tags；
+- 工具记忆：标准问法、SQL、来源、版本；
+- scope（shared / team / user）和 reviewed 状态。
+
+页面**不显示 embedding 向量**。Chroma 实际存储三类东西：
+
+```text
+document    可读文本（文本知识正文 / 用户问题）
+metadata    可读结构化字段（source/version/scope/sql_hash...）
+embedding   浮点数组，只用于相似度计算
+```
+
+所以：
+
+```text
+能看：文本、问题、SQL、来源、标签
+不能看：向量本身
+```
+
+向量本身是模型输出的数字数组，对人工排查没有意义；可读的 document 和 metadata 才是记忆事实。
+
+要看到种子数据，必须确保：
+
+```text
+MEMORY_BACKEND=chroma_local
+MEMORY_COLLECTION=analytics_memory_v1
+```
+
+并已经执行过：
+
+```bash
+python -m analytics_agent.memory.seeding --apply
+```
+
+默认 `MEMORY_BACKEND=demo` 时，页面会显示空记忆。
 
 ## 4. 用户与权限
 

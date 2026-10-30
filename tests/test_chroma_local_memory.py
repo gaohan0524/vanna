@@ -193,3 +193,38 @@ def test_private_memory_delete(tmp_path):
     deleted, after = asyncio.run(run())
     assert deleted is True
     assert after == []
+
+
+def test_list_memories_returns_readable_documents_and_respects_scope(tmp_path):
+    memory = _memory(tmp_path)
+
+    async def run():
+        owner = _context("u-a", "team-a", memory)
+        other = _context("u-b", "team-b", memory)
+        await memory.save_text_memory(
+            "共享知识：净收入要扣退款",
+            owner,
+            metadata={"scope": "shared", "source": "test#shared", "version": 1},
+        )
+        await memory.save_tool_usage(
+            "私有问题：各渠道 GMV",
+            "run_sql",
+            {
+                "sql": "SELECT channel, SUM(amount_cents) FROM shop.orders GROUP BY channel"
+            },
+            owner,
+            metadata={"scope": "user", "source": "test#private", "version": 1},
+        )
+        return await memory.list_memories(other), await memory.list_memories(owner)
+
+    other_items, owner_items = asyncio.run(run())
+
+    assert len(other_items) == 1
+    assert other_items[0]["kind"] == "text"
+    assert "净收入" in other_items[0]["content"]
+    assert other_items[0]["source"] == "test#shared"
+
+    assert len(owner_items) == 2
+    tool_items = [item for item in owner_items if item["kind"] == "tool"]
+    assert tool_items
+    assert "GROUP BY channel" in tool_items[0]["sql"]

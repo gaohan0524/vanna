@@ -6,7 +6,11 @@ import asyncio
 
 from vanna.core.user import RequestContext
 
-from analytics_agent.web_app import WebUserResolver, load_index_html
+from analytics_agent.web_app import (
+    WebUserResolver,
+    load_index_html,
+    load_memory_html,
+)
 
 
 def _user(email: str | None):
@@ -37,3 +41,10 @@ def test_business_index_html_is_separate_file():
 
     assert "<title>智能体</title>" in html
     assert "plotly-2.35.2.min.js" in html
+
+
+def test_memory_html_is_available():
+    html = load_memory_html()
+
+    assert "Analytics Agent 记忆查看" in html
+    assert "/api/memory" in html

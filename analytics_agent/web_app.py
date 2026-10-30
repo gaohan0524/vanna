@@ -30,16 +30,17 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 import pandas as pd
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
 from vanna import Agent, User
+from vanna.core.tool import ToolContext
 from vanna.core.user import RequestContext, UserResolver
 from vanna.integrations.plotly import PlotlyChartGenerator
 from vanna.servers.base import ChatHandler
 from vanna.servers.fastapi.routes import register_chat_routes
 
-from analytics_agent.agent_factory import build_agent
+from analytics_agent.agent_factory import build_agent, build_memory
 from analytics_agent.config import Settings
 
 
@@ -54,11 +55,17 @@ def _admin_emails() -> set[str]:
 
 
 _WEB_INDEX_PATH = Path(__file__).parent / "web" / "index.html"
+_WEB_MEMORY_PATH = Path(__file__).parent / "web" / "memory.html"
 
 
 def load_index_html() -> str:
     """读取业务侧首页模板；模板不放进 vanna 框架默认页面。"""
     return _WEB_INDEX_PATH.read_text(encoding="utf-8")
+
+
+def load_memory_html() -> str:
+    """读取记忆查看页模板。"""
+    return _WEB_MEMORY_PATH.read_text(encoding="utf-8")
 
 
 class BarFirstChartGenerator(PlotlyChartGenerator):
@@ -102,15 +109,53 @@ class WebUserResolver(UserResolver):
         return User(id=email, email=email, group_memberships=[group])
 
 
-def create_agent(settings: Settings) -> Agent:
+def create_agent(settings: Settings, memory=None) -> Agent:
     """构建交付用 Agent：Stage 1/2 的 prompt、7 个工具和护栏都启用。"""
 
     return build_agent(
         settings,
+        agent_memory=memory,
         stream_responses=True,
         user_resolver=WebUserResolver(),
         plotly_generator=BarFirstChartGenerator(),
     )
+
+
+async def _memory_payload(request: Request, memory, backend: str) -> Dict[str, Any]:
+    """返回当前 cookie 用户可见的、可读的文本/工具记忆。
+
+    不返回 embedding 向量：向量是数字数组，对人工排查没有意义；
+    Chroma 中的 document 和 metadata 才是可读事实。
+    """
+    resolver = WebUserResolver()
+    request_context = RequestContext(
+        cookies=dict(request.cookies),
+        headers=dict(request.headers),
+    )
+    user = await resolver.resolve_user(request_context)
+    tool_context = ToolContext(
+        user=user,
+        conversation_id="memory_viewer",
+        request_id="memory_viewer",
+        agent_memory=memory,
+    )
+
+    list_fn = getattr(memory, "list_memories", None)
+    items = await list_fn(tool_context, limit=500) if list_fn else []
+    counts = {
+        "text": sum(1 for item in items if item.get("kind") == "text"),
+        "tool": sum(1 for item in items if item.get("kind") == "tool"),
+    }
+    return {
+        "backend": backend,
+        "user": {
+            "id": user.id,
+            "groups": user.group_memberships,
+        },
+        "counts": counts,
+        "total": len(items),
+        "items": items,
+    }
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
@@ -121,13 +166,22 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     """
 
     s = settings or Settings.from_env()
+    memory = build_memory(s)
     app = FastAPI(title="Analytics Agent")
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
         return load_index_html()
 
-    register_chat_routes(app, ChatHandler(create_agent(s)), {})
+    @app.get("/memory", response_class=HTMLResponse)
+    async def memory_page() -> str:
+        return load_memory_html()
+
+    @app.get("/api/memory")
+    async def memory_api(request: Request) -> Dict[str, Any]:
+        return await _memory_payload(request, memory, s.memory_backend)
+
+    register_chat_routes(app, ChatHandler(create_agent(s, memory)), {})
 
     @app.get("/health")
     async def health() -> dict[str, str]:

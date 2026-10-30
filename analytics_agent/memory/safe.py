@@ -82,6 +82,19 @@ class SafeAgentMemory(AgentMemory):
             logger.warning("工具记忆检索失败，跳过本次检索", exc_info=True)
             return []
 
+    async def list_memories(
+        self, context: ToolContext, limit: int = 200
+    ) -> List[Dict[str, Any]]:
+        """列出可读记忆；后端不支持或读取失败时返回空列表。"""
+        list_fn = getattr(self._backend, "list_memories", None)
+        if list_fn is None:
+            return []
+        try:
+            return await list_fn(context, limit=limit)
+        except Exception:
+            logger.warning("记忆列表读取失败，跳过本次读取", exc_info=True)
+            return []
+
     async def get_recent_memories(
         self, context: ToolContext, limit: int = 10
     ) -> List[ToolMemory]:

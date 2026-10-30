@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Analytics Agent - 记忆查看</title>
+<style>
+  :root { --navy:#023d60; --teal:#15a8a8; --line:#e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#f5f7f9; color:#1f2933;
+         font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px; }
+  h1 { color:var(--navy); font-size:22px; margin:0 0 4px; }
+  .sub { color:#6b7280; font-size:13px; margin-bottom:18px; }
+  .summary { display:flex; gap:12px; flex-wrap:wrap; margin-bottom:18px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px;
+          padding:14px 16px; min-width:140px; }
+  .card b { display:block; color:var(--navy); font-size:20px; }
+  .card span { color:#6b7280; font-size:12px; }
+  .toolbar { margin-bottom:12px; display:flex; gap:8px; align-items:center; }
+  .toolbar a { color:var(--teal); text-decoration:none; font-size:14px; }
+  .item { background:#fff; border:1px solid var(--line); border-radius:12px;
+          padding:14px 16px; margin-bottom:10px; }
+  .meta { color:#6b7280; font-size:12px; margin-bottom:6px; }
+  .kind { display:inline-block; border-radius:999px; padding:1px 8px;
+          font-size:11px; color:#fff; background:var(--teal); margin-right:6px; }
+  .kind.tool { background:var(--navy); }
+  .content { white-space:pre-wrap; line-height:1.6; font-size:14px; }
+  details { margin-top:8px; }
+  summary { cursor:pointer; color:var(--navy); font-size:13px; }
+  pre { background:#0b1f2a; color:#d7f2f2; padding:10px; border-radius:8px;
+        overflow:auto; font-size:12px; white-space:pre-wrap; }
+  .empty { background:#fff; border:1px dashed var(--line); border-radius:12px;
+           padding:24px; color:#6b7280; }
+  .error { color:#b91c1c; background:#fff; border:1px solid #fecaca;
+           border-radius:12px; padding:16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Analytics Agent 记忆查看</h1>
+  <div class="sub">
+    当前用户可见的 shared / team / user 记忆。这里显示的是 Chroma 中保存的
+    document 和 metadata，不是 embedding 向量。
+  </div>
+  <div class="toolbar">
+    <a href="/">返回对话</a>
+    <a href="/api/memory" target="_blank">查看原始 JSON</a>
+  </div>
+  <div id="summary" class="summary"></div>
+  <div id="items"></div>
+</div>
+<script>
+(function () {
+  var summaryEl = document.getElementById('summary');
+  var itemsEl = document.getElementById('items');
+
+  function esc(value) {
+    return String(value == null ? '' : value)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function renderSummary(data) {
+    summaryEl.innerHTML =
+      '<div class="card"><b>' + data.total + '</b><span>总记录</span></div>' +
+      '<div class="card"><b>' + data.counts.text + '</b><span>文本记忆</span></div>' +
+      '<div class="card"><b>' + data.counts.tool + '</b><span>工具记忆</span></div>' +
+      '<div class="card"><b>' + esc(data.backend) + '</b><span>后端</span></div>' +
+      '<div class="card"><b>' + esc(data.user.id) + '</b><span>当前用户</span></div>';
+  }
+
+  function renderItem(item) {
+    var kind = item.kind === 'tool' ? '工具' : '文本';
+    var cls = item.kind === 'tool' ? 'tool' : '';
+    var meta = [
+      '来源: ' + (item.source || '-'),
+      '版本: ' + (item.version || '-'),
+      'scope: ' + (item.scope || '-'),
+      'reviewed: ' + (item.reviewed ? 'true' : 'false')
+    ].join(' · ');
+    var body = item.kind === 'text'
+      ? '<div class="content">' + esc(item.content) + '</div>'
+      : '<div class="content">' + esc(item.question) + '</div>' +
+        '<details><summary>查看 SQL</summary><pre>' + esc(item.sql || '') + '</pre></details>';
+    return '<div class="item"><div class="meta"><span class="kind ' + cls + '">' +
+      kind + '</span>' + esc(meta) + '</div>' + body + '</div>';
+  }
+
+  fetch('/api/memory')
+    .then(function (resp) {
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return resp.json();
+    })
+    .then(function (data) {
+      renderSummary(data);
+      if (!data.items.length) {
+        itemsEl.innerHTML = '<div class="empty">当前用户没有可用记忆。' +
+          '请确认 MEMORY_BACKEND=chroma_local，且已执行种子导入。</div>';
+        return;
+      }
+      itemsEl.innerHTML = data.items.map(renderItem).join('');
+    })
+    .catch(function (err) {
+      itemsEl.innerHTML = '<div class="error">读取失败：' + esc(err) + '</div>';
+    });
+})();
+</script>
+</body>
+</html>
