@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 3 / T3-1 ~ T3-6** 的详细执行版。
 >
-> - 状态：**进行中（2026-10-30，T3-1/T3-2 完成，T3-6 待开始）**
+> - 状态：**进行中（2026-10-30，T3-1/T3-2/T3-6 完成，T3-3 待开始）**
 > - 前置：Stage 2 完成；G2 基线冻结为 v8 两次结果
 > - Stage 2 基线：EX **81.8% / 86.4%**、behavior **100%**、平均工具轮次 **1.27~1.43**、P95 **15.1s / 14.5s**、两次差异 **4.5pt**
 > - 当前代码：`stage2-v10`；v9/v10 的 B-05、B-02、I-30 修正是**基线后未复评变更**
@@ -911,15 +911,51 @@ user message:
 
 ### 9.2 导入流程
 
+实现文件：
+
+```text
+analytics_agent/memory/seeding.py
+```
+
 ```text
 读取 YAML
-  → schema 校验
-  → 计算 hash
-  → 与 manifest 比对
+  → schema / reviewed / answer 覆盖校验
+  → 计算文本 hash、SQL hash
+  → 展开 question + paraphrases
+  → 与 Chroma 现有 metadata 比对
   → dry-run 输出新增/更新/跳过
-  → 正式 upsert
+  → 正式 upsert（只写 create/update）
+  → 可选 prune 旧问法/旧版本
   → 写 manifest
 ```
+
+命令：
+
+```bash
+# 默认 dry-run，不写记忆
+python -m analytics_agent.memory.seeding --dry-run
+
+# 正式导入
+python -m analytics_agent.memory.seeding --apply
+
+# 列出某来源
+python -m analytics_agent.memory.seeding --list --source "v1_30.yaml#B-02"
+
+# 回滚 dry-run / 正式删除
+python -m analytics_agent.memory.seeding --delete-source "v1_30.yaml#B-02"
+python -m analytics_agent.memory.seeding --delete-source "v1_30.yaml#B-02" --apply
+```
+
+当前导入结果：
+
+```text
+text vectors      38
+tool variants     86
+total vectors     124
+second import     create=0 update=0 skip=124
+```
+
+工具变体数 86 = 21 个 SQL 模板的 question + paraphrases（A-01 含 5 个问法，其余各 3 个）。
 
 ### 9.3 版本与回滚
 
@@ -931,11 +967,11 @@ user message:
 
 ### 9.4 DoD
 
-- [ ] 连续执行两次导入，第二次新增 0
-- [ ] dry-run 不改库
-- [ ] 可列出某版本记忆
-- [ ] 可按 source/version 回滚
-- [ ] 导入失败不留下半成品
+- [x] 连续执行两次导入，第二次新增 0
+- [x] dry-run 只生成计划，不写入记忆记录（首次会创建空 collection）
+- [x] 可列出某 source/version 的种子记录
+- [x] 可按 source/version 回滚（默认 dry-run，`--apply` 才删除）
+- [ ] 导入失败不留下半成品（Chroma 本地无事务；当前做法是先完整校验/计划，再顺序写入；失败后重跑幂等补齐）
 
 ---
 
@@ -1107,6 +1143,9 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | T3-2 | 种子静态校验与 SQL 执行 | 通过 | `tests/test_seed_data.py` 4 passed；21 条 SQL 全部执行成功、0 error |
 | 2026-10-29 | T3-2 | 生成逐条审核清单 | 完成 | 38 条文本 + 21 条工具，按风险分组；见 `T3-2-SEED-REVIEW.md` |
 | 2026-10-30 | T3-2 | 种子冻结 | 完成 | 用户决定暂不逐条核对；59 条 `reviewed: true`；manifest 转 reviewed |
+| 2026-10-30 | T3-6 | 实现幂等导入 | 完成 | `seeding.py`；38 文本 + 86 工具问法 = 124 向量 |
+| 2026-10-30 | T3-6 | 首次导入 / 二次验证 | 通过 | 首次 create=124；第二次 create=0 update=0 skip=124 |
+| 2026-10-30 | T3-6 | source/version 列表与回滚 | 完成 | `--list` / `--delete-source`，默认 dry-run |
 | 2026-10-29 | 交付 | Web 入口迁移到 `analytics_agent/web_app.py` | 完成 | 复用 `build_agent`；保留 Plotly/admin；旧示例已删除 |
 | 2026-10-29 | 交付 | 首页迁移到 `analytics_agent/web/index.html` | 完成 | 业务 UI 不放框架默认页；`load_index_html()` 读取 |
 

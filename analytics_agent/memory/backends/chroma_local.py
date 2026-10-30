@@ -58,6 +58,25 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
 
+def _flatten_seed_metadata(metadata: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """把种子导入需要的标量字段提升到顶层，供 Chroma where/get 过滤。"""
+    if not metadata:
+        return {}
+    result: Dict[str, Any] = {}
+    for key in (
+        "seed_id",
+        "seed_source",
+        "seed_version",
+        "seed_hash",
+        "seed_kind",
+        "reviewed",
+    ):
+        value = metadata.get(key)
+        if isinstance(value, (str, int, float, bool)):
+            result[key] = value
+    return result
+
+
 def _embedding_name(embedding_function: Any) -> str:
     """读取用于绑定 collection 的模型标识。
 
@@ -248,6 +267,17 @@ class ChromaLocalMemory(AgentMemory):
             )
         )
 
+    def tool_memory_id(
+        self,
+        question: str,
+        tool_name: str,
+        args: Dict[str, Any],
+        context: ToolContext,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """公开的确定性工具 ID，供导入器的 dry-run/幂等比对复用。"""
+        return self._tool_memory_id(question, tool_name, args, context, metadata)
+
     async def save_tool_usage(
         self,
         question: str,
@@ -280,12 +310,25 @@ class ChromaLocalMemory(AgentMemory):
             "user_id": user_id,
             "tenant_id": tenant_id or "",
             "is_text_memory": False,
+            **_flatten_seed_metadata(metadata),
         }
         await asyncio.to_thread(
             self._collection.upsert,
             ids=[memory_id],
             documents=[question],
             metadatas=[meta],
+        )
+
+    def text_memory_id(
+        self,
+        content: str,
+        context: ToolContext,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """公开的确定性文本 ID，供导入器的 dry-run/幂等比对复用。"""
+        scope, owner = self._scope(metadata, context)
+        return "text:" + _sha256(
+            _json({"content": content, "scope": scope, "owner": owner})
         )
 
     async def save_text_memory(
@@ -301,9 +344,7 @@ class ChromaLocalMemory(AgentMemory):
         """
         scope, owner = self._scope(metadata, context)
         user_id, tenant_id, _ = self._owner(context)
-        memory_id = "text:" + _sha256(
-            _json({"content": content, "scope": scope, "owner": owner})
-        )
+        memory_id = self.text_memory_id(content, context, metadata)
         timestamp = datetime.now().isoformat()
         meta = {
             "kind": "text",
@@ -315,6 +356,7 @@ class ChromaLocalMemory(AgentMemory):
             "tenant_id": tenant_id or "",
             "is_text_memory": True,
             "metadata_json": _json(metadata or {}),
+            **_flatten_seed_metadata(metadata),
         }
         await asyncio.to_thread(
             self._collection.upsert,
