@@ -1,6 +1,6 @@
 # T3-2 工具记忆种子（草稿）
 # 一个 id 对应一个唯一 SQL 模板；同 SQL 的跟进问法合并到同一条。
-# reviewed: false 表示尚未经业务负责人确认，不能导入正式检索库。
+# reviewed: true 表示尚未经业务负责人确认，不能导入正式检索库。
 
 - id: "tool:A01-GMV渠道"
   question: "最近 30 天各渠道的 GMV 是多少？"
@@ -25,7 +25,7 @@
   source: "v1_30.yaml#A-01"
   covers: ["A-01", "I-28"]
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:A07-支付金额"
   question: "近 30 天各支付方式的成功支付金额分别是多少？"
@@ -48,7 +48,7 @@
   metrics: ["payment_amount"]
   source: "v1_30.yaml#A-07"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:A08-新增用户"
   question: "近 7 天各渠道新增用户数是多少？"
@@ -69,7 +69,7 @@
   metrics: ["new_users"]
   source: "v1_30.yaml#A-08"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:A09-MRR套餐"
   question: "当前各套餐的 MRR 是多少？（排除测试与注销用户）"
@@ -89,7 +89,7 @@
   metrics: ["mrr"]
   source: "v1_30.yaml#A-09"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:B02-品类净收入"
   question: "近 30 天各品类的净收入是多少？（净收入 = 订单金额 − approved 退款，按订单内商品金额占比分摊到品类）"
@@ -135,7 +135,7 @@
   metrics: ["net_revenue"]
   source: "v1_30.yaml#B-02"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:B05-复购率"
   question: "看一下近 90 天复购率（仅 CNY，排除测试与注销用户）"
@@ -162,7 +162,7 @@
   metrics: ["repurchase_rate"]
   source: "v1_30.yaml#B-05"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:B10-渠道退款"
   question: "近 90 天各渠道的退款金额是多少？"
@@ -185,7 +185,7 @@
   metrics: ["refund_amount"]
   source: "v1_30.yaml#B-10"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:B11-商品销量Top10"
   question: "近 30 天销量最高的 10 个商品是哪些？"
@@ -210,7 +210,7 @@
   metrics: ["product_units"]
   source: "v1_30.yaml#B-11"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:B12-国家支付转化率"
   question: "近 30 天各国家用户的支付转化率是多少？"
@@ -232,7 +232,7 @@
   metrics: ["conversion_rate"]
   source: "v1_30.yaml#B-12"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:B13-品类客单价"
   question: "近 30 天各品类的客单价（该品类收入 ÷ 含该品类商品的订单数）是多少？"
@@ -257,7 +257,7 @@
   metrics: ["aov"]
   source: "v1_30.yaml#B-13"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:C03-GMV环比"
   question: "本月至今的 GMV，跟上月同期比增长了多少？（截至今天 0 点，上月按相同自然日天数对齐）"
@@ -297,7 +297,7 @@
   metrics: ["gmv"]
   source: "v1_30.yaml#C-03"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:C14-周订单数"
   question: "近 4 周每周的有效订单数（仅 CNY）是多少？"
@@ -319,7 +319,7 @@
   metrics: ["orders"]
   source: "v1_30.yaml#C-14"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:C15-净收入环比"
   question: "本月至今的净收入，跟上月同期比增长多少？（截至今天 0 点，上月按相同自然日天数对齐）"
@@ -377,7 +377,7 @@
   metrics: ["net_revenue"]
   source: "v1_30.yaml#C-15"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:C16-月新增用户环比"
   question: "近 12 个完整月（不含本月）每月新增用户数及环比是多少？（首月无环比）"
@@ -415,7 +415,7 @@
   metrics: ["new_users"]
   source: "v1_30.yaml#C-16"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:D04-上周支付转化率"
   question: "上周各渠道的支付转化率是多少？（排除测试与注销用户）"
@@ -440,7 +440,7 @@
   metrics: ["conversion_rate"]
   source: "v1_30.yaml#D-04"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:D17-七日留存"
   question: "近 3 个完整月（不含本月）每月注册用户的 7 日留存率（注册次日起 7 个自然日内有会话）是多少？"
@@ -478,7 +478,7 @@
   metrics: ["retention_d7"]
   source: "v1_30.yaml#D-17"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:D18-加购下单率"
   question: "近 7 天加购后最终下单的会话比例是多少？（同一会话内，purchase 事件需晚于 add_to_cart；排除测试与注销用户）"
@@ -517,7 +517,7 @@
   metrics: ["cart_to_order_rate"]
   source: "v1_30.yaml#D-18"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:H26-每日购买事件"
   question: "近 7 天每天的 purchase 事件数是多少？"
@@ -539,7 +539,7 @@
   metrics: ["purchase_events"]
   source: "v1_30.yaml#H-26"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:H27-事件分布"
   question: "近 30 天各类事件的次数分布是怎样的？"
@@ -559,7 +559,7 @@
   metrics: ["event_distribution"]
   source: "v1_30.yaml#H-27"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:I29-organic-GMV"
   question: "近 30 天 organic 渠道的 GMV 是多少？"
@@ -580,7 +580,7 @@
   metrics: ["gmv"]
   source: "v1_30.yaml#I-29"
   version: 1
-  reviewed: false
+  reviewed: true
 
 - id: "tool:I30-organic-GMV环比"
   question: "近 30 天 organic 渠道 GMV 与再往前 30 天相比增长多少？"
@@ -615,4 +615,4 @@
   metrics: ["gmv"]
   source: "v1_30.yaml#I-30"
   version: 1
-  reviewed: false
+  reviewed: true

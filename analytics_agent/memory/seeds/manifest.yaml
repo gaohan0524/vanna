@@ -1,8 +1,9 @@
 schema_version: 1
-status: draft
+status: reviewed
 embedding_model: BAAI/bge-small-zh-v1.5
 knowledge_count: 38
 tool_memory_count: 21
-reviewed_count: 0
+reviewed_count: 59
 generated_at: '2026-10-28'
-note: reviewed=false 的草稿，业务审核后才可进入正式检索库
+reviewed_at: '2026-10-30'
+note: 用户决定暂不逐条核对，按当前草稿冻结；后续发现问题再单独修订

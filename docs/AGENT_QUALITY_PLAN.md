@@ -1,7 +1,7 @@
 # Vanna 2.0 Text2SQL Agent 质量提升开发计划
 
 - **状态**：进行中（本文档为执行基线，随迭代更新）
-- **当前进度**：**Stage 2 完成（基线 v8）→ Stage 3 进行中**——v8 基线 EX 81.8% / 86.4%、behavior 100%、P95 15.1s / 14.5s；T3-1 完成；T3-2 首批种子草稿已生成（38 条文本、21 条唯一 SQL 模板），待业务审核；交付 Web 入口见 [`WEB-AGENT.md`](./WEB-AGENT.md)。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)、[`STAGE3-RETRIEVAL.md`](./STAGE3-RETRIEVAL.md)
+- **当前进度**：**Stage 2 完成（基线 v8）→ Stage 3 进行中**——v8 基线 EX 81.8% / 86.4%、behavior 100%、P95 15.1s / 14.5s；T3-1 完成；T3-2 种子已按用户决定冻结（38 条文本、21 条唯一 SQL，`reviewed: true`）；下一项 T3-6 幂等导入。交付 Web 入口见 [`WEB-AGENT.md`](./WEB-AGENT.md)。详见 [`STAGE2-TOOLS.md`](./STAGE2-TOOLS.md)、[`STAGE3-RETRIEVAL.md`](./STAGE3-RETRIEVAL.md)
 - **适用范围**：基于 Vanna 2.0 自建的 Text2SQL / 数据分析 Agent（当前基线见 `src/vanna/examples/test.py`：ClickHouse + 本地 LLM + DemoAgentMemory）
 - **前提假设**：模型能力不是瓶颈（使用当前最强模型）。因此本文的优化重点全部放在**上下文供给、工具设计、检索质量、评测闭环**上。
 - **最后更新**：2026-10-28
@@ -612,7 +612,7 @@ L0_RULES = """
 > 当前代码/提示词为 `stage2-v10`（B-05 CNY、B-02 净收入、I-30 单值规则），均属**基线后未复评变更**，作为 carryover 跟踪，不修改 v8 基线。
 > Stage 1 的 61.9% 基于旧 golden，仅历史参考。
 - [x] T3-1 记忆后端替换——2026-10-28：本地 Chroma + BGE + `build_memory` + 语义 smoke + 模型绑定/降级；10 passed
-- [ ] T3-2 种子数据——2026-10-28 首批草稿：`knowledge.yaml` 38 条、`tool_memories.yaml` 21 条唯一 SQL 模板（覆盖 22 条 answer）；静态校验 4 passed；逐条审核清单见 [`T3-2-SEED-REVIEW.md`](./T3-2-SEED-REVIEW.md)
+- [x] T3-2 种子数据——2026-10-30 按用户决定冻结：`knowledge.yaml` 38 条、`tool_memories.yaml` 21 条唯一 SQL 模板（覆盖 22 条 answer）；59 条 `reviewed: true`；清单留存 [`T3-2-SEED-REVIEW.md`](./T3-2-SEED-REVIEW.md)
 - [ ] T3-3 混合检索 + rerank
 - [ ] T3-4 候选表预筛
 - [ ] T3-5 注入位置确定

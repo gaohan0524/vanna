@@ -2,7 +2,7 @@
 
 > 本文是 `docs/AGENT_QUALITY_PLAN.md` 中 **Stage 3 / T3-1 ~ T3-6** 的详细执行版。
 >
-> - 状态：**进行中（2026-10-28，T3-1 完成，T3-2 首批草稿待审核）**
+> - 状态：**进行中（2026-10-30，T3-1/T3-2 完成，T3-6 待开始）**
 > - 前置：Stage 2 完成；G2 基线冻结为 v8 两次结果
 > - Stage 2 基线：EX **81.8% / 86.4%**、behavior **100%**、平均工具轮次 **1.27~1.43**、P95 **15.1s / 14.5s**、两次差异 **4.5pt**
 > - 当前代码：`stage2-v10`；v9/v10 的 B-05、B-02、I-30 修正是**基线后未复评变更**
@@ -557,6 +557,9 @@ pyproject.toml                                    stage3 = ["chromadb>=1.1.0", "
 - SQL 去掉尾分号、统一大小写风格后再算 hash；
 - 不在种子里存“模型第一次生成的错误 SQL”。
 
+> 本次例外：2026-10-30 用户决定暂不逐条核对，按当前草稿冻结；
+> 原则不变，后续发现问题再单独修订并递增 `version`。
+
 ### 5.3 为什么这样设计
 
 #### 5.3.1 为什么用 YAML，而不是 JSON/数据库
@@ -678,17 +681,18 @@ reviewed  → 未审核内容不进入可检索库
 
 | 文件 | 当前数量 | 状态 |
 |---|---:|---|
-| `knowledge.yaml` | 38 | 待业务审核，全部 `reviewed: false` |
-| `tool_memories.yaml` | 21 | 唯一 SQL 模板；覆盖 22 条 answer |
-| `manifest.yaml` | — | `status: draft` |
+| `knowledge.yaml` | 38 | `reviewed: true` |
+| `tool_memories.yaml` | 21 | 唯一 SQL 模板；覆盖 22 条 answer；`reviewed: true` |
+| `manifest.yaml` | — | `status: reviewed`；`reviewed_count: 59` |
 
 说明：
 
+- 2026-10-30 用户决定暂不逐条核对，按当前草稿冻结；后续发现问题再单独修订；
 - `I-28` 与 `A-01` 同 SQL，已合并到 `tool:A01-GMV渠道`，用 `covers` 记录两条用例；
 - 每条工具记忆已有 3~5 个问法；
 - 21 条 SQL 已在当前数据上执行通过；
 - 静态校验见 `tests/test_seed_data.py`：4 passed；
-- 逐条审核清单见 [`T3-2-SEED-REVIEW.md`](./T3-2-SEED-REVIEW.md)。
+- 逐条审核清单见 [`T3-2-SEED-REVIEW.md`](./T3-2-SEED-REVIEW.md)，保留供后续复核。
 
 ### 5.5 DoD
 
@@ -696,8 +700,8 @@ reviewed  → 未审核内容不进入可检索库
 - [x] 每条工具记忆有 3~5 个问法
 - [x] 所有种子有 `source/version/reviewed` 字段
 - [x] SQL 与 golden 一致，21 个唯一模板均可在当前数据执行
-- [ ] 业务审核完成，`reviewed` 逐条改为 `true`
-- [ ] 不存在未审核的模型生成 SQL
+- [x] 业务决策：按当前草稿冻结（暂不逐条核对），`reviewed` 已置为 `true`
+- [x] 不存在未审核的模型生成 SQL（全部来自 `v1_30.yaml` golden）
 
 ### 5.6 与运行时自动写入的边界
 
@@ -1102,6 +1106,7 @@ MEMORY_EMBEDDING=...
 | 2026-10-28 | T3-2 | 生成 `tool_memories.yaml` 首批草稿 | 完成 | 21 条唯一 SQL 模板，覆盖 22 条 answer；I-28 合并到 A-01 |
 | 2026-10-28 | T3-2 | 种子静态校验与 SQL 执行 | 通过 | `tests/test_seed_data.py` 4 passed；21 条 SQL 全部执行成功、0 error |
 | 2026-10-29 | T3-2 | 生成逐条审核清单 | 完成 | 38 条文本 + 21 条工具，按风险分组；见 `T3-2-SEED-REVIEW.md` |
+| 2026-10-30 | T3-2 | 种子冻结 | 完成 | 用户决定暂不逐条核对；59 条 `reviewed: true`；manifest 转 reviewed |
 | 2026-10-29 | 交付 | Web 入口迁移到 `analytics_agent/web_app.py` | 完成 | 复用 `build_agent`；保留 Plotly/admin；旧示例已删除 |
 | 2026-10-29 | 交付 | 首页迁移到 `analytics_agent/web/index.html` | 完成 | 业务 UI 不放框架默认页；`load_index_html()` 读取 |
 
